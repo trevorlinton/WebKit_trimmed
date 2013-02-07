@@ -93,6 +93,7 @@ void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas*
         gc.platformContext()->setDeviceScaleFactor(page->deviceScaleFactor());
     }
     IntRect dirtyRect(rect);
+    gc.clearRect(dirtyRect); //added by node-webkit@trevorlinton this is needed for transparent rendering
     gc.save();
     FrameView* view = mainFrameView(page);
     // FIXME: Can we remove the mainFrame()->document() check?
