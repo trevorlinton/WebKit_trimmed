@@ -100,7 +100,6 @@ public:
     void setXSSAuditorEnabled(bool);
     void setAllowUniversalAccessFromFileURLs(bool);
     void setAllowFileAccessFromFileURLs(bool);
-    void setFrameFlatteningEnabled(bool);
     void setPluginsEnabled(bool);
     void setJavaScriptCanAccessClipboard(bool);
     void setPrivateBrowsingEnabled(bool);
@@ -111,7 +110,6 @@ public:
     void removeOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef destinationProtocol, JSStringRef destinationHost, bool allowDestinationSubdomains);
     void setUserStyleSheetEnabled(bool);
     void setUserStyleSheetLocation(JSStringRef);
-    void setMinimumTimerInterval(double seconds); // Interval specified in seconds.
     void setSpatialNavigationEnabled(bool);
     void setTabKeyCyclesThroughElements(bool);
     void setSerializeHTTPLoads();
@@ -119,23 +117,15 @@ public:
     void setCacheModel(int);
 
     // Special DOM functions.
-    JSValueRef computedStyleIncludingVisitedInfo(JSValueRef element);
     void clearBackForwardList();
     void execCommand(JSStringRef name, JSStringRef argument);
     bool isCommandEnabled(JSStringRef name);
-    JSRetainPtr<JSStringRef> markerTextForListItem(JSValueRef element);
     unsigned windowCount();
 
     // Repaint testing.
     void testRepaint() { m_testRepaint = true; }
     void repaintSweepHorizontally() { m_testRepaintSweepHorizontally = true; }
     void display();
-
-    // Animation testing.
-    unsigned numberOfActiveAnimations() const;
-    bool pauseAnimationAtTimeOnElementWithId(JSStringRef animationName, double time, JSStringRef elementId);
-    bool pauseTransitionAtTimeOnElementWithId(JSStringRef propertyName, double time, JSStringRef elementId);
-    void suspendAnimations();
     
     // UserContent testing.
     void addUserScript(JSStringRef source, bool runAtStart, bool allFrames);
@@ -161,6 +151,11 @@ public:
 
     // Printing
     bool isPageBoxVisible(int pageIndex);
+
+    // Authentication
+    void setHandlesAuthenticationChallenges(bool);
+    void setAuthenticationUsername(JSStringRef);
+    void setAuthenticationPassword(JSStringRef);
 
     void setValueForUser(JSContextRef, JSValueRef element, JSStringRef value);
 
@@ -224,8 +219,6 @@ public:
     bool globalFlag() const { return m_globalFlag; }
     void setGlobalFlag(bool value) { m_globalFlag = value; }
 
-    unsigned workerThreadCount();
-    
     void addChromeInputField(JSValueRef);
     void removeChromeInputField(JSValueRef);
     void focusWebView(JSValueRef);
@@ -239,10 +232,6 @@ public:
     void callSetBackingScaleFactorCallback();
 
     void overridePreference(JSStringRef preference, JSStringRef value);
-
-    // Web intents testing.
-    void sendWebIntentResponse(JSStringRef reply);
-    void deliverWebIntent(JSStringRef action, JSStringRef type, JSStringRef data);
 
     // Cookies testing
     void setAlwaysAcceptCookies(bool);
@@ -269,6 +258,8 @@ public:
     void resetPageVisibility();
 
     bool callShouldCloseOnWebView();
+
+    void setCustomTimeout(int duration);
 
     // Work queue.
     void queueBackNavigation(unsigned howFarBackward);
@@ -321,6 +312,8 @@ private:
     
     bool m_globalFlag;
     bool m_customFullScreenBehavior;
+
+    int m_timeout;
 
     bool m_userStyleSheetEnabled;
     WKRetainPtr<WKStringRef> m_userStyleSheetLocation;

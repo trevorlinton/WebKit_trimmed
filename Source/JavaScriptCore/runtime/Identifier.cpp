@@ -25,6 +25,7 @@
 #include "JSObject.h"
 #include "JSScope.h"
 #include "NumericStrings.h"
+#include "Operations.h"
 #include <new>
 #include <string.h>
 #include <wtf/Assertions.h>
@@ -50,7 +51,7 @@ void deleteIdentifierTable(IdentifierTable* table)
 struct IdentifierASCIIStringTranslator {
     static unsigned hash(const LChar* c)
     {
-        return StringHasher::computeHashAndMaskTop8Bits<LChar>(c);
+        return StringHasher::computeHashAndMaskTop8Bits(c);
     }
 
     static bool equal(StringImpl* r, const LChar* s)
@@ -69,7 +70,7 @@ struct IdentifierASCIIStringTranslator {
 struct IdentifierLCharFromUCharTranslator {
     static unsigned hash(const CharBuffer<UChar>& buf)
     {
-        return StringHasher::computeHashAndMaskTop8Bits<UChar>(buf.s, buf.length);
+        return StringHasher::computeHashAndMaskTop8Bits(buf.s, buf.length);
     }
     
     static bool equal(StringImpl* str, const CharBuffer<UChar>& buf)
@@ -206,7 +207,7 @@ void Identifier::checkCurrentIdentifierTable(ExecState* exec)
 #else
 
 // These only exists so that our exports are the same for debug and release builds.
-// This would be an ASSERT_NOT_REACHED(), but we're in NDEBUG only code here!
+// This would be an RELEASE_ASSERT_NOT_REACHED(), but we're in NDEBUG only code here!
 NO_RETURN_DUE_TO_CRASH void Identifier::checkCurrentIdentifierTable(JSGlobalData*) { CRASH(); }
 NO_RETURN_DUE_TO_CRASH void Identifier::checkCurrentIdentifierTable(ExecState*) { CRASH(); }
 

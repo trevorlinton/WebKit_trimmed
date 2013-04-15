@@ -28,7 +28,7 @@
 
 #include "CodeSpecializationKind.h"
 #include "Intrinsic.h"
-#include "JSValue.h"
+#include "JSCJSValue.h"
 
 namespace JSC {
 
@@ -63,6 +63,7 @@ public:
         , m_couldTakeSlowPath(false)
         , m_isProved(false)
     {
+        ASSERT(!!executable == !!structure);
     }
     
     CallLinkStatus& setIsProved(bool isProved)
@@ -104,7 +105,7 @@ public:
     bool operator!() const { return !isSet(); }
     
     bool couldTakeSlowPath() const { return m_couldTakeSlowPath; }
-    bool isClosureCall() const { return !m_callTarget; }
+    bool isClosureCall() const { return m_executable && !m_callTarget; }
     
     JSValue callTarget() const { return m_callTarget; }
     JSFunction* function() const;
@@ -115,7 +116,7 @@ public:
     bool isProved() const { return m_isProved; }
     bool canOptimize() const { return (m_callTarget || m_executable) && !m_couldTakeSlowPath; }
     
-    void dump(PrintStream&);
+    void dump(PrintStream&) const;
     
 private:
     static CallLinkStatus computeFromLLInt(CodeBlock*, unsigned bytecodeIndex);

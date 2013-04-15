@@ -81,10 +81,7 @@
 #include "DOMFileSystem.h"
 #include "DOMUtilitiesPrivate.h"
 #include "DOMWindow.h"
-#include "DOMWindowIntents.h"
 #include "DOMWrapperWorld.h"
-#include "DeliveredIntent.h"
-#include "DeliveredIntentClientImpl.h"
 #include "DirectoryEntry.h"
 #include "Document.h"
 #include "DocumentLoader.h"
@@ -122,7 +119,7 @@
 #include "Page.h"
 #include "PageOverlay.h"
 #include "Performance.h"
-#include "PlatformMessagePortChannel.h"
+#include "PlatformMessagePortChannelChromium.h"
 #include "PluginDocument.h"
 #include "PrintContext.h"
 #include "RenderBox.h"
@@ -155,12 +152,10 @@
 #include "V8DirectoryEntry.h"
 #include "V8FileEntry.h"
 #include "V8GCController.h"
-#include "WebAnimationControllerImpl.h"
 #include "WebConsoleMessage.h"
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
 #include "WebDataSourceImpl.h"
-#include "WebDeliveredIntentClient.h"
 #include "WebDevToolsAgentPrivate.h"
 #include "WebDocument.h"
 #include "WebFindOptions.h"
@@ -169,7 +164,6 @@
 #include "WebHistoryItem.h"
 #include "WebIconURL.h"
 #include "WebInputElement.h"
-#include "WebIntent.h"
 #include "WebNode.h"
 #include "WebPerformance.h"
 #include "WebPlugin.h"
@@ -178,12 +172,12 @@
 #include "WebRange.h"
 #include "WebScriptSource.h"
 #include "WebSecurityOrigin.h"
+#include "WebSerializedScriptValue.h"
 #include "WebViewImpl.h"
 #include "XPathResult.h"
 #include "htmlediting.h"
 #include "markup.h"
 #include "painting/GraphicsContextBuilder.h"
-#include "platform/WebSerializedScriptValue.h"
 #include <algorithm>
 #include <public/Platform.h>
 #include <public/WebFileSystem.h>
@@ -602,7 +596,7 @@ WebSize WebFrameImpl::minimumScrollOffset() const
     FrameView* view = frameView();
     if (!view)
         return WebSize();
-    return view->minimumScrollPosition() - IntPoint();
+    return toIntSize(view->minimumScrollPosition());
 }
 
 WebSize WebFrameImpl::maximumScrollOffset() const
@@ -610,7 +604,7 @@ WebSize WebFrameImpl::maximumScrollOffset() const
     FrameView* view = frameView();
     if (!view)
         return WebSize();
-    return view->maximumScrollPosition() - IntPoint();
+    return toIntSize(view->maximumScrollPosition());
 }
 
 void WebFrameImpl::setScrollOffset(const WebSize& offset)
@@ -643,6 +637,11 @@ int WebFrameImpl::documentElementScrollHeight() const
 bool WebFrameImpl::hasVisibleContent() const
 {
     return frame()->view()->visibleWidth() > 0 && frame()->view()->visibleHeight() > 0;
+}
+
+WebRect WebFrameImpl::visibleContentRect() const
+{
+    return frame()->view()->visibleContentRect();
 }
 
 bool WebFrameImpl::hasHorizontalScrollbar() const
@@ -761,11 +760,6 @@ WebDocument WebFrameImpl::document() const
     return WebDocument(frame()->document());
 }
 
-WebAnimationController* WebFrameImpl::animationController()
-{
-    return &m_animationController;
-}
-
 WebPerformance WebFrameImpl::performance() const
 {
     if (!frame())
@@ -825,8 +819,8 @@ void WebFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
 
     MessageLevel webCoreMessageLevel;
     switch (message.level) {
-    case WebConsoleMessage::LevelTip:
-        webCoreMessageLevel = TipMessageLevel;
+    case WebConsoleMessage::LevelDebug:
+        webCoreMessageLevel = DebugMessageLevel;
         break;
     case WebConsoleMessage::LevelLog:
         webCoreMessageLevel = LogMessageLevel;
@@ -912,7 +906,7 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
 v8::Handle<v8::Value> WebFrameImpl::createFileSystem(WebFileSystem::Type type, const WebString& name, const WebString& path)
 {
     ASSERT(frame());
-    return toV8(DOMFileSystem::create(frame()->document(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, path.utf8().data()), AsyncFileSystemChromium::create()));
+    return toV8(DOMFileSystem::create(frame()->document(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, path.utf8().data()), AsyncFileSystemChromium::create()), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
 }
 
 v8::Handle<v8::Value> WebFrameImpl::createSerializableFileSystem(WebFileSystem::Type type, const WebString& name, const WebString& path)
@@ -920,7 +914,7 @@ v8::Handle<v8::Value> WebFrameImpl::createSerializableFileSystem(WebFileSystem::
     ASSERT(frame());
     RefPtr<DOMFileSystem> fileSystem = DOMFileSystem::create(frame()->document(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, path.utf8().data()), AsyncFileSystemChromium::create());
     fileSystem->makeClonable();
-    return toV8(fileSystem.release());
+    return toV8(fileSystem.release(), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
 }
 
 v8::Handle<v8::Value> WebFrameImpl::createFileEntry(WebFileSystem::Type type, const WebString& fileSystemName, const WebString& fileSystemPath, const WebString& filePath, bool isDirectory)
@@ -929,8 +923,8 @@ v8::Handle<v8::Value> WebFrameImpl::createFileEntry(WebFileSystem::Type type, co
 
     RefPtr<DOMFileSystemBase> fileSystem = DOMFileSystem::create(frame()->document(), fileSystemName, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, fileSystemPath.utf8().data()), AsyncFileSystemChromium::create());
     if (isDirectory)
-        return toV8(DirectoryEntry::create(fileSystem, filePath));
-    return toV8(FileEntry::create(fileSystem, filePath));
+        return toV8(DirectoryEntry::create(fileSystem, filePath), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
+    return toV8(FileEntry::create(fileSystem, filePath), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
 }
 
 void WebFrameImpl::reload(bool ignoreCache)
@@ -1184,7 +1178,7 @@ size_t WebFrameImpl::characterIndexForPoint(const WebPoint& webPoint) const
         return notFound;
 
     IntPoint point = frame()->view()->windowToContents(webPoint);
-    HitTestResult result = frame()->eventHandler()->hitTestResultAtPoint(point, false);
+    HitTestResult result = frame()->eventHandler()->hitTestResultAtPoint(point);
     RefPtr<Range> range = frame()->rangeForPoint(result.roundedPointInInnerNodeFrame());
     if (!range)
         return notFound;
@@ -1299,11 +1293,13 @@ void WebFrameImpl::replaceMisspelledRange(const WebString& text)
     Vector<DocumentMarker*> markers = frame()->document()->markers()->markersInRange(caretRange.get(), DocumentMarker::Spelling | DocumentMarker::Grammar);
     if (markers.size() < 1 || markers[0]->startOffset() >= markers[0]->endOffset())
         return;
-    RefPtr<Range> markerRange = TextIterator::rangeFromLocationAndLength(frame()->selection()->rootEditableElementOrDocumentElement(), markers[0]->startOffset(), markers[0]->endOffset() - markers[0]->startOffset());
-    if (!markerRange.get() || !frame()->selection()->shouldChangeSelection(markerRange.get()))
+    RefPtr<Range> markerRange = Range::create(caretRange->ownerDocument(), caretRange->startContainer(), markers[0]->startOffset(), caretRange->endContainer(), markers[0]->endOffset());
+    if (!markerRange)
+        return;
+    if (!frame()->selection()->shouldChangeSelection(markerRange.get()))
         return;
     frame()->selection()->setSelection(markerRange.get(), CharacterGranularity);
-    frame()->editor()->replaceSelectionWithText(text, false, true);
+    frame()->editor()->replaceSelectionWithText(text, false, false);
 }
 
 bool WebFrameImpl::hasSelection() const
@@ -1375,8 +1371,14 @@ bool WebFrameImpl::selectWordAroundCaret()
 
 void WebFrameImpl::selectRange(const WebPoint& base, const WebPoint& extent)
 {
-    VisiblePosition basePosition = visiblePositionForWindowPoint(base);
-    VisiblePosition extentPosition = visiblePositionForWindowPoint(extent);
+    IntPoint unscaledBase = base;
+    IntPoint unscaledExtent = extent;
+    if (frame()->page()->settings()->applyPageScaleFactorInCompositor()) {
+        unscaledExtent.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
+        unscaledBase.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
+    }
+    VisiblePosition basePosition = visiblePositionForWindowPoint(unscaledBase);
+    VisiblePosition extentPosition = visiblePositionForWindowPoint(unscaledExtent);
     VisibleSelection newSelection = VisibleSelection(basePosition, extentPosition);
     if (frame()->selection()->shouldChangeSelection(newSelection))
         frame()->selection()->setSelection(newSelection, CharacterGranularity);
@@ -1390,8 +1392,15 @@ void WebFrameImpl::selectRange(const WebRange& webRange)
 
 void WebFrameImpl::moveCaretSelectionTowardsWindowPoint(const WebPoint& point)
 {
+    IntPoint unscaledPoint(point);
+    if (frame()->page()->settings()->applyPageScaleFactorInCompositor())
+        unscaledPoint.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
+
     Element* editable = frame()->selection()->rootEditableElement();
-    IntPoint contentsPoint = frame()->view()->windowToContents(IntPoint(point));
+    if (!editable)
+        return;
+
+    IntPoint contentsPoint = frame()->view()->windowToContents(unscaledPoint);
     LayoutPoint localPoint(editable->convertFromPage(contentsPoint));
     VisiblePosition position = editable->renderer()->positionForPoint(localPoint);
     if (frame()->selection()->shouldChangeSelection(position))
@@ -1682,7 +1691,7 @@ void WebFrameImpl::scopeStringMatches(int identifier, const WebString& searchTex
                 break;
 
             searchRange->setStartAfter(
-                resultRange->startContainer()->shadowAncestorNode(), ec);
+                resultRange->startContainer()->deprecatedShadowAncestorNode(), ec);
             searchRange->setEnd(originalEndContainer, originalEndOffset, ec);
             continue;
         }
@@ -2015,7 +2024,7 @@ int WebFrameImpl::nearestFindMatch(const FloatPoint& point, float& distanceSquar
 
 int WebFrameImpl::selectFindMatch(unsigned index, WebRect* selectionRect)
 {
-    ASSERT(index < m_findMatchesCache.size());
+    ASSERT_WITH_SECURITY_IMPLICATION(index < m_findMatchesCache.size());
 
     RefPtr<Range> range = m_findMatchesCache[index].m_range;
     if (!range->boundaryPointsValid() || !range->startContainer()->inDocument())
@@ -2060,32 +2069,6 @@ int WebFrameImpl::selectFindMatch(unsigned index, WebRect* selectionRect)
         *selectionRect = activeMatchRect;
 
     return ordinalOfFirstMatchForFrame(this) + m_activeMatchIndexInCurrentFrame + 1;
-}
-
-void WebFrameImpl::deliverIntent(const WebIntent& intent, WebMessagePortChannelArray* ports, WebDeliveredIntentClient* intentClient)
-{
-#if ENABLE(WEB_INTENTS)
-    OwnPtr<WebCore::DeliveredIntentClient> client(adoptPtr(new DeliveredIntentClientImpl(intentClient)));
-
-    WebSerializedScriptValue intentData = WebSerializedScriptValue::fromString(intent.data());
-    const WebCore::Intent* webcoreIntent = intent;
-
-    // See PlatformMessagePortChannel.cpp
-    OwnPtr<MessagePortChannelArray> channels;
-    if (ports && ports->size()) {
-        channels = adoptPtr(new MessagePortChannelArray(ports->size()));
-        for (size_t i = 0; i < ports->size(); ++i) {
-            RefPtr<PlatformMessagePortChannel> platformChannel = PlatformMessagePortChannel::create((*ports)[i]);
-            (*ports)[i]->setClient(platformChannel.get());
-            (*channels)[i] = MessagePortChannel::create(platformChannel);
-        }
-    }
-    OwnPtr<MessagePortArray> portArray = WebCore::MessagePort::entanglePorts(*(frame()->document()), channels.release());
-
-    RefPtr<DeliveredIntent> deliveredIntent = DeliveredIntent::create(frame(), client.release(), intent.action(), intent.type(), intentData, portArray.release(), webcoreIntent->extras());
-
-    DOMWindowIntents::from(frame()->document()->domWindow())->deliver(deliveredIntent.release());
-#endif
 }
 
 WebString WebFrameImpl::contentAsText(size_t maxChars) const
@@ -2178,7 +2161,6 @@ WebFrameImpl::WebFrameImpl(WebFrameClient* client)
     , m_nextInvalidateAfter(0)
     , m_findMatchMarkersVersion(0)
     , m_findMatchRectsAreValid(false)
-    , m_animationController(this)
     , m_identifier(generateFrameIdentifier())
     , m_inSameDocumentHistoryLoad(false)
 {
@@ -2336,7 +2318,7 @@ void WebFrameImpl::setFindEndstateFocusAndSelection()
         // example, focus links if we have found text within the link.
         Node* node = m_activeMatch->firstNode();
         if (node && node->isInShadowTree()) {
-            Node* host = node->shadowAncestorNode();
+            Node* host = node->deprecatedShadowAncestorNode();
             if (host->hasTagName(HTMLNames::inputTag) || host->hasTagName(HTMLNames::textareaTag))
                 node = host;
         }

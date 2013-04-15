@@ -26,6 +26,7 @@
 #ifndef WebGLRenderingContext_h
 #define WebGLRenderingContext_h
 
+#include "ActiveDOMObject.h"
 #include "CanvasRenderingContext.h"
 #include "DrawingBuffer.h"
 #include "GraphicsContext3D.h"
@@ -41,6 +42,7 @@
 
 namespace WebCore {
 
+class EXTDrawBuffers;
 class EXTTextureFilterAnisotropic;
 class HTMLImageElement;
 class HTMLVideoElement;
@@ -49,6 +51,7 @@ class ImageData;
 class IntSize;
 class OESStandardDerivatives;
 class OESTextureFloat;
+class OESTextureHalfFloat;
 class OESVertexArrayObject;
 class OESElementIndexUint;
 class WebGLActiveInfo;
@@ -75,7 +78,7 @@ class WebGLVertexArrayObjectOES;
 
 typedef int ExceptionCode;
 
-class WebGLRenderingContext : public CanvasRenderingContext {
+class WebGLRenderingContext : public CanvasRenderingContext, public ActiveDOMObject {
 public:
     static PassOwnPtr<WebGLRenderingContext> create(HTMLCanvasElement*, WebGLContextAttributes*);
     virtual ~WebGLRenderingContext();
@@ -317,7 +320,12 @@ public:
     
     unsigned getMaxVertexAttribs() const { return m_maxVertexAttribs; }
 
+    // ActiveDOMObject notifications
+    virtual bool hasPendingActivity() const;
+    virtual void stop();
+
   private:
+    friend class EXTDrawBuffers;
     friend class WebGLFramebuffer;
     friend class WebGLObject;
     friend class OESVertexArrayObject;
@@ -334,6 +342,7 @@ public:
     void addContextObject(WebGLContextObject*);
     void detachAndRemoveAllObjects();
 
+    void destroyGraphicsContext3D();
     void markContextChanged();
     void cleanupAfterGraphicsCall(bool changed)
     {
@@ -470,6 +479,9 @@ public:
     GC3Dint m_maxTextureLevel;
     GC3Dint m_maxCubeMapTextureLevel;
 
+    GC3Dint m_maxDrawBuffers;
+    GC3Dint m_maxColorAttachments;
+
     GC3Dint m_packAlignment;
     GC3Dint m_unpackAlignment;
     bool m_unpackFlipY;
@@ -503,8 +515,10 @@ public:
     int m_numGLErrorsToConsoleAllowed;
 
     // Enabled extension objects.
+    OwnPtr<EXTDrawBuffers> m_extDrawBuffers;
     OwnPtr<EXTTextureFilterAnisotropic> m_extTextureFilterAnisotropic;
     OwnPtr<OESTextureFloat> m_oesTextureFloat;
+    OwnPtr<OESTextureHalfFloat> m_oesTextureHalfFloat;
     OwnPtr<OESStandardDerivatives> m_oesStandardDerivatives;
     OwnPtr<OESVertexArrayObject> m_oesVertexArrayObject;
     OwnPtr<OESElementIndexUint> m_oesElementIndexUint;
@@ -705,9 +719,14 @@ public:
     // a Safari or Chrome extension.
     bool allowPrivilegedExtensions() const;
 
+    enum ConsoleDisplayPreference {
+        DisplayInConsole,
+        DontDisplayInConsole
+    };
+
     // Wrapper for GraphicsContext3D::synthesizeGLError that sends a message
     // to the JavaScript console.
-    void synthesizeGLError(GC3Denum, const char* functionName, const char* description);
+    void synthesizeGLError(GC3Denum, const char* functionName, const char* description, ConsoleDisplayPreference = DisplayInConsole);
 
     String ensureNotNull(const String&) const;
 
@@ -720,6 +739,11 @@ public:
 
     // Clamp the width and height to GL_MAX_VIEWPORT_DIMS.
     IntSize clampedCanvasSize();
+
+    // First time called, if EXT_draw_buffers is supported, query the value; otherwise return 0.
+    // Later, return the cached value.
+    GC3Dint getMaxDrawBuffers();
+    GC3Dint getMaxColorAttachments();
 
     friend class WebGLStateRestorer;
 };

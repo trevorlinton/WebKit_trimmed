@@ -147,7 +147,7 @@ String int32ToWebCoreString(int value);
 template<class StringClass> struct StringTraits {
     static const StringClass& fromStringResource(WebCoreStringResourceBase*);
     static bool is16BitAtomicString(StringClass&);
-    template<bool ascii>
+    template<bool oneByte>
     static StringClass fromV8String(v8::Handle<v8::String>, int);
 };
 
@@ -161,7 +161,7 @@ struct StringTraits<String> {
     {
         return false;
     }
-    template<bool ascii>
+    template<bool oneByte>
     static String fromV8String(v8::Handle<v8::String>, int);
 };
 
@@ -175,7 +175,7 @@ struct StringTraits<AtomicString> {
     {
         return !string.string().is8Bit();
     }
-    template<bool ascii>
+    template<bool oneByte>
     static AtomicString fromV8String(v8::Handle<v8::String>, int);
 };
 

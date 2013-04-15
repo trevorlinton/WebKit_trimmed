@@ -36,6 +36,7 @@
 #include "JITStubCall.h"
 #include "JSArray.h"
 #include "JSFunction.h"
+#include "Operations.h"
 #include "RepatchBuffer.h"
 #include "ResultType.h"
 #include "SamplingTool.h"
@@ -243,7 +244,7 @@ void JIT::compileOpCall(OpcodeID opcodeID, Instruction* instruction, unsigned ca
         int argCount = instruction[2].u.operand;
         int registerOffset = instruction[3].u.operand;
         
-        if (opcodeID == op_call && canBeOptimized()) {
+        if (opcodeID == op_call && shouldEmitProfiling()) {
             emitLoad(registerOffset + CallFrame::argumentOffsetIncludingThis(0), regT0, regT1);
             Jump done = branch32(NotEqual, regT0, TrustedImm32(JSValue::CellTag));
             loadPtr(Address(regT1, JSCell::structureOffset()), regT1);

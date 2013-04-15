@@ -128,7 +128,7 @@ FloatRect ChromeClientEfl::windowRect()
 
 void ChromeClientEfl::setWindowRect(const FloatRect& rect)
 {
-    if (!ewk_view_setting_enable_auto_resize_window_get(m_view))
+    if (!ewk_view_setting_enable_auto_resize_window_get(m_view) || rect.isEmpty())
         return;
 
     Ecore_Evas* ee = ecore_evas_ecore_evas_get(evas_object_evas_get(m_view));
@@ -420,12 +420,11 @@ void ChromeClientEfl::needTouchEvents(bool needed)
 #endif
 
 #if ENABLE(SQL_DATABASE)
-void ChromeClientEfl::exceededDatabaseQuota(Frame* frame, const String& databaseName)
+void ChromeClientEfl::exceededDatabaseQuota(Frame* frame, const String& databaseName, DatabaseDetails details)
 {
     uint64_t quota;
     SecurityOrigin* origin = frame->document()->securityOrigin();
 
-    DatabaseDetails details = DatabaseManager::manager().detailsForNameAndOrigin(databaseName, origin);
     quota = ewk_view_exceeded_database_quota(m_view,
                                              kit(frame), databaseName.utf8().data(),
                                              details.currentUsage(), details.expectedUsage());

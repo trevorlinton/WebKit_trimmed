@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -193,6 +193,9 @@ struct AbstractValue {
     
     bool merge(const AbstractValue& other)
     {
+        if (other.isClear())
+            return false;
+        
 #if !ASSERT_DISABLED
         AbstractValue oldMe = *this;
 #endif
@@ -231,6 +234,9 @@ struct AbstractValue {
     
     void filter(const StructureSet& other)
     {
+        // FIXME: This could be optimized for the common case of m_type not
+        // having structures, array modes, or a specific value.
+        // https://bugs.webkit.org/show_bug.cgi?id=109663
         m_type &= other.speculationFromStructures();
         m_arrayModes &= other.arrayModesFromStructures();
         m_currentKnownStructure.filter(other);
@@ -415,6 +421,8 @@ struct AbstractValue {
     //    change x's structure and we have no way of proving otherwise, but
     //    x's m_futurePossibleStructure will be whatever structure we had checked
     //    when getting property 'f'.
+    
+    // NB. All fields in this struct must have trivial destructors.
 
     // This is a proven constraint on the structures that this value can have right
     // now. The structure of the current value must belong to this set. The set may

@@ -31,9 +31,9 @@
 #ifndef WebFileChooserParams_h
 #define WebFileChooserParams_h
 
+#include "../../../Platform/chromium/public/WebString.h"
+#include "../../../Platform/chromium/public/WebVector.h"
 #include "WebFileChooserCompletion.h"
-#include "platform/WebString.h"
-#include "platform/WebVector.h"
 
 namespace WebKit {
 
@@ -74,6 +74,9 @@ struct WebFileChooserParams {
     //  - camcorder
     //  - microphone
     WebString capture;
+
+    // initial path of the file dialog
+    WebString initialPath;
 
     WebFileChooserParams()
         : multiSelect(false)

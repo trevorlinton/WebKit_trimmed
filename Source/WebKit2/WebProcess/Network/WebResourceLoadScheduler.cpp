@@ -32,12 +32,17 @@
 #include "NetworkResourceLoadParameters.h"
 #include "WebCoreArgumentCoders.h"
 #include "WebErrors.h"
+#include "WebFrame.h"
+#include "WebFrameLoaderClient.h"
+#include "WebPage.h"
 #include "WebProcess.h"
 #include "WebResourceLoader.h"
+#include <WebCore/Document.h>
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/Frame.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/NetscapePlugInStreamLoader.h>
+#include <WebCore/ReferrerPolicy.h>
 #include <WebCore/ResourceBuffer.h>
 #include <WebCore/ResourceLoader.h>
 #include <WebCore/Settings.h>
@@ -51,7 +56,7 @@ using namespace WebCore;
 namespace WebKit {
 
 WebResourceLoadScheduler::WebResourceLoadScheduler()
-    : m_unschedulableLoadTimer(RunLoop::main(), this, &WebResourceLoadScheduler::unscheduledLoadTimerFired)
+    : m_internallyFailedLoadTimer(RunLoop::main(), this, &WebResourceLoadScheduler::internallyFailedLoadTimerFired)
     , m_suspendPendingRequestsCount(0)
 {
 }
@@ -64,7 +69,7 @@ PassRefPtr<SubresourceLoader> WebResourceLoadScheduler::scheduleSubresourceLoad(
 {
     RefPtr<SubresourceLoader> loader = SubresourceLoader::create(frame, resource, request, options);
     if (loader)
-        scheduleLoad(loader.get(), priority);
+        scheduleLoad(loader.get(), priority, frame->document()->referrerPolicy() == ReferrerPolicyDefault);
     return loader.release();
 }
 
@@ -72,62 +77,62 @@ PassRefPtr<NetscapePlugInStreamLoader> WebResourceLoadScheduler::schedulePluginS
 {
     RefPtr<NetscapePlugInStreamLoader> loader = NetscapePlugInStreamLoader::create(frame, client, request);
     if (loader)
-        scheduleLoad(loader.get(), ResourceLoadPriorityLow);
+        scheduleLoad(loader.get(), ResourceLoadPriorityLow, frame->document()->referrerPolicy() == ReferrerPolicyDefault);
     return loader.release();
 }
 
-void WebResourceLoadScheduler::scheduleLoad(ResourceLoader* resourceLoader, ResourceLoadPriority priority)
+void WebResourceLoadScheduler::scheduleLoad(ResourceLoader* resourceLoader, ResourceLoadPriority priority, bool shouldClearReferrerOnHTTPSToHTTPRedirect)
 {
-    LOG(NetworkScheduling, "(WebProcess) WebResourceLoadScheduler::scheduleLoad, url '%s' priority %i", resourceLoader->url().string().utf8().data(), priority);
-
     ASSERT(resourceLoader);
     ASSERT(priority != ResourceLoadPriorityUnresolved);
     priority = ResourceLoadPriorityHighest;
 
-    // If there's a web archive resource for this URL, we don't need to schedule the load since it will never touch the network.
-    if (resourceLoader->documentLoader()->archiveResourceForURL(resourceLoader->request().url())) {
-        startResourceLoader(resourceLoader);
+    ResourceLoadIdentifier identifier = resourceLoader->identifier();
+    ASSERT(identifier);
+
+    // If the DocumentLoader schedules this as an archive resource load,
+    // then we should remember the ResourceLoader in our records but not schedule it in the NetworkProcess.
+    if (resourceLoader->documentLoader()->scheduleArchiveLoad(resourceLoader, resourceLoader->request())) {
+        LOG(NetworkScheduling, "(WebProcess) WebResourceLoadScheduler::scheduleLoad, url '%s' will be handled as an archive resource.", resourceLoader->url().string().utf8().data());
+        m_webResourceLoaders.set(identifier, WebResourceLoader::create(resourceLoader));
         return;
     }
     
-    ResourceLoadIdentifier identifier;
-    
-    ResourceRequest request = resourceLoader->request();
-    
-    // FIXME (NetworkProcess): When the ResourceLoader asks its FrameLoaderClient about using
-    // credential storage it passes along its identifier.
-    // But at this point it doesn't have the correct identifier yet.
-    // In practice clients we know about don't care about the identifier, but this is another reason
-    // we need to make sure ResourceLoaders get correct identifiers right off the bat.
-    StoredCredentials allowStoredCredentials = resourceLoader->shouldUseCredentialStorage() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+    LOG(NetworkScheduling, "(WebProcess) WebResourceLoadScheduler::scheduleLoad, url '%s' will be scheduled with the NetworkProcess with priority %i", resourceLoader->url().string().utf8().data(), priority);
 
-    NetworkResourceLoadParameters loadParameters(request, priority, resourceLoader->shouldSniffContent() ? SniffContent : DoNotSniffContent, allowStoredCredentials, resourceLoader->frameLoader()->frame()->settings()->privateBrowsingEnabled());
-    if (!WebProcess::shared().networkConnection()->connection()->sendSync(Messages::NetworkConnectionToWebProcess::ScheduleResourceLoad(loadParameters), Messages::NetworkConnectionToWebProcess::ScheduleResourceLoad::Reply(identifier), 0)) {
+    ContentSniffingPolicy contentSniffingPolicy = resourceLoader->shouldSniffContent() ? SniffContent : DoNotSniffContent;
+    StoredCredentials allowStoredCredentials = resourceLoader->shouldUseCredentialStorage() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+    bool privateBrowsingEnabled = resourceLoader->frameLoader()->frame()->settings()->privateBrowsingEnabled();
+
+    WebFrame* webFrame = static_cast<WebFrameLoaderClient*>(resourceLoader->frameLoader()->client())->webFrame();
+    WebPage* webPage = webFrame->page();
+
+    NetworkResourceLoadParameters loadParameters(identifier, webPage->pageID(), webFrame->frameID(), resourceLoader->request(), priority, contentSniffingPolicy, allowStoredCredentials, privateBrowsingEnabled, shouldClearReferrerOnHTTPSToHTTPRedirect);
+    if (!WebProcess::shared().networkConnection()->connection()->send(Messages::NetworkConnectionToWebProcess::ScheduleResourceLoad(loadParameters), 0)) {
         // We probably failed to schedule this load with the NetworkProcess because it had crashed.
         // This load will never succeed so we will schedule it to fail asynchronously.
-        addUnschedulableLoad(resourceLoader);
+        scheduleInternallyFailedLoad(resourceLoader);
         return;
     }
     
-    resourceLoader->setIdentifier(identifier);
     m_webResourceLoaders.set(identifier, WebResourceLoader::create(resourceLoader));
     
     notifyDidScheduleResourceRequest(resourceLoader);
 }
 
-void WebResourceLoadScheduler::addUnschedulableLoad(WebCore::ResourceLoader* resourceLoader)
+void WebResourceLoadScheduler::scheduleInternallyFailedLoad(WebCore::ResourceLoader* resourceLoader)
 {
-    m_unschedulableResourceLoaders.add(resourceLoader);
-    m_unschedulableLoadTimer.startOneShot(0);
+    m_internallyFailedResourceLoaders.add(resourceLoader);
+    m_internallyFailedLoadTimer.startOneShot(0);
 }
 
-void WebResourceLoadScheduler::unscheduledLoadTimerFired()
+void WebResourceLoadScheduler::internallyFailedLoadTimerFired()
 {
-    Vector<RefPtr<ResourceLoader> > unschedulableLoaders;
-    copyToVector(m_unschedulableResourceLoaders, unschedulableLoaders);
+    Vector<RefPtr<ResourceLoader> > internallyFailedResourceLoaders;
+    copyToVector(m_internallyFailedResourceLoaders, internallyFailedResourceLoaders);
     
-    for (size_t i = 0; i < unschedulableLoaders.size(); ++i)
-        unschedulableLoaders[i]->didFail(internalError(unschedulableLoaders[i]->url()));
+    for (size_t i = 0; i < internallyFailedResourceLoaders.size(); ++i)
+        internallyFailedResourceLoaders[i]->didFail(internalError(internallyFailedResourceLoaders[i]->url()));
 }
 
 void WebResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
@@ -135,15 +140,10 @@ void WebResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
     ASSERT(resourceLoader);
     LOG(NetworkScheduling, "(WebProcess) WebResourceLoadScheduler::remove, url '%s'", resourceLoader->url().string().utf8().data());
 
-    if (m_unschedulableResourceLoaders.contains(resourceLoader)) {
-        m_unschedulableResourceLoaders.remove(resourceLoader);
+    if (m_internallyFailedResourceLoaders.contains(resourceLoader)) {
+        m_internallyFailedResourceLoaders.remove(resourceLoader);
         return;
     }
-
-    // FIXME (NetworkProcess): It's possible for a resourceLoader to be removed before it ever started,
-    // meaning before it even has an identifier.
-    // We should make this not be possible.
-    // The ResourceLoader code path should always for an identifier to ResourceLoaders.
     
     ResourceLoadIdentifier identifier = resourceLoader->identifier();
     if (!identifier) {
@@ -195,13 +195,11 @@ void WebResourceLoadScheduler::setSerialLoadingEnabled(bool enabled)
 
 void WebResourceLoadScheduler::networkProcessCrashed()
 {
-    Vector<RefPtr<WebResourceLoader> > webResourceLoaders;
-    copyValuesToVector(m_webResourceLoaders, webResourceLoaders);
-    
-    for (size_t i = 0; i < webResourceLoaders.size(); ++i)
-        webResourceLoaders[i]->networkProcessCrashed();
+    HashMap<unsigned long, RefPtr<WebResourceLoader> >::iterator end = m_webResourceLoaders.end();
+    for (HashMap<unsigned long, RefPtr<WebResourceLoader> >::iterator i = m_webResourceLoaders.begin(); i != end; ++i)
+        scheduleInternallyFailedLoad(i->value.get()->resourceLoader());
 
-    ASSERT(m_webResourceLoaders.isEmpty());
+    m_webResourceLoaders.clear();
 }
 
 } // namespace WebKit

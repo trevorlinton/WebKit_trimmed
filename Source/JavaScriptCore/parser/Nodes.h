@@ -30,6 +30,7 @@
 #include "JITCode.h"
 #include "Opcode.h"
 #include "ParserArena.h"
+#include "ParserTokens.h"
 #include "ResultType.h"
 #include "SourceCode.h"
 #include "SymbolTable.h"
@@ -46,19 +47,6 @@ namespace JSC {
     class RegisterID;
     class JSScope;
     class ScopeNode;
-
-    typedef unsigned CodeFeatures;
-
-    const CodeFeatures NoFeatures = 0;
-    const CodeFeatures EvalFeature = 1 << 0;
-    const CodeFeatures ArgumentsFeature = 1 << 1;
-    const CodeFeatures WithFeature = 1 << 2;
-    const CodeFeatures CatchFeature = 1 << 3;
-    const CodeFeatures ThisFeature = 1 << 4;
-    const CodeFeatures StrictModeFeature = 1 << 5;
-    const CodeFeatures ShadowsArgumentsFeature = 1 << 6;
-    
-    const CodeFeatures AllFeatures = EvalFeature | ArgumentsFeature | WithFeature | CatchFeature | ThisFeature | StrictModeFeature | ShadowsArgumentsFeature;
 
     enum Operator {
         OpEqual,
@@ -166,7 +154,7 @@ namespace JSC {
         virtual bool isSubtract() const { return false; }
         virtual bool hasConditionContextCodegen() const { return false; }
 
-        virtual void emitBytecodeInConditionContext(BytecodeGenerator&, Label*, Label*, bool) { ASSERT_NOT_REACHED(); }
+        virtual void emitBytecodeInConditionContext(BytecodeGenerator&, Label*, Label*, bool) { RELEASE_ASSERT_NOT_REACHED(); }
 
         virtual ExpressionNode* stripUnaryPlus() { return this; }
 
@@ -1393,16 +1381,25 @@ namespace JSC {
         virtual RegisterID* emitBytecode(BytecodeGenerator&, RegisterID* = 0);
     };
 
-    class FunctionParameters : public Vector<Identifier>, public RefCounted<FunctionParameters> {
+    class FunctionParameters : public RefCounted<FunctionParameters> {
         WTF_MAKE_FAST_ALLOCATED;
     public:
-        static PassRefPtr<FunctionParameters> create(ParameterNode* firstParameter) { return adoptRef(new FunctionParameters(firstParameter)); }
+        static PassRefPtr<FunctionParameters> create(ParameterNode*);
+        ~FunctionParameters();
+
+        unsigned size() const { return m_size; }
+        const Identifier& at(unsigned index) const { ASSERT(index < m_size); return identifiers()[index]; }
 
     private:
-        FunctionParameters(ParameterNode*);
+        FunctionParameters(ParameterNode*, unsigned size);
+
+        Identifier* identifiers() { return reinterpret_cast<Identifier*>(&m_storage); }
+        const Identifier* identifiers() const { return reinterpret_cast<const Identifier*>(&m_storage); }
+
+        unsigned m_size;
+        void* m_storage;
     };
 
-    enum FunctionNameIsInScopeToggle { FunctionNameIsNotInScope, FunctionNameIsInScope };
     class FunctionBodyNode : public ScopeNode {
     public:
         static const bool isFunctionNode = true;
@@ -1499,7 +1496,8 @@ namespace JSC {
         RegisterID* emitBytecodeForBlock(BytecodeGenerator&, RegisterID* input, RegisterID* destination);
 
     private:
-        SwitchInfo::SwitchType tryOptimizedSwitch(Vector<ExpressionNode*, 8>& literalVector, int32_t& min_num, int32_t& max_num);
+        SwitchInfo::SwitchType tryTableSwitch(Vector<ExpressionNode*, 8>& literalVector, int32_t& min_num, int32_t& max_num);
+        static const size_t s_tableSwitchMinimum = 10;
         ClauseListNode* m_list1;
         CaseClauseNode* m_defaultClause;
         ClauseListNode* m_list2;

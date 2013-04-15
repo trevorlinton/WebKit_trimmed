@@ -79,7 +79,7 @@ public:
 
     virtual AffineTransform* supplementalTransform() { return 0; }
 
-    void invalidateSVGAttributes() { ensureAttributeData()->m_animatedSVGAttributesAreDirty = true; }
+    void invalidateSVGAttributes() { ensureUniqueElementData()->m_animatedSVGAttributesAreDirty = true; }
 
     const HashSet<SVGElementInstance*>& instancesForElement() const;
 
@@ -93,7 +93,7 @@ public:
     SVGElement* correspondingElement();
     void setCorrespondingElement(SVGElement*);
 
-    virtual void updateAnimatedSVGAttribute(const QualifiedName&) const;
+    void synchronizeAnimatedSVGAttribute(const QualifiedName&) const;
  
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
@@ -136,12 +136,12 @@ protected:
 
     void reportAttributeParsingError(SVGParsingError, const QualifiedName&, const AtomicString&);
 
+private:
+    friend class SVGElementInstance;
+
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=77938
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-private:
-    friend class SVGElementInstance;
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
@@ -170,7 +170,7 @@ struct SVGAttributeHashTranslator {
 
 inline SVGElement* toSVGElement(Element* element)
 {
-    ASSERT(!element || element->isSVGElement());
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isSVGElement());
     return static_cast<SVGElement*>(element);
 }
 

@@ -44,6 +44,7 @@
 #include <WebCore/FocusController.h>
 #include <WebCore/Frame.h>
 #include <WebCore/FrameLoadRequest.h>
+#include <WebCore/FrameLoader.h>
 #include <WebCore/FrameLoaderClient.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/GraphicsContext.h>
@@ -144,6 +145,7 @@ PluginView::Stream::~Stream()
     
 void PluginView::Stream::start()
 {
+    ASSERT(m_pluginView->m_plugin);
     ASSERT(!m_loader);
 
     Frame* frame = m_pluginView->m_pluginElement->document()->frame();
@@ -308,6 +310,10 @@ void PluginView::destroyPluginAndReset()
         m_isBeingDestroyed = true;
         m_plugin->destroyPlugin();
         m_isBeingDestroyed = false;
+
+        m_pendingURLRequests.clear();
+        m_pendingURLRequestsTimer.stop();
+
 #if PLATFORM(MAC)
         if (m_webPage)
             pluginFocusOrWindowFocusChanged(false);
@@ -437,6 +443,7 @@ void PluginView::setPageScaleFactor(double scaleFactor, IntPoint)
 {
     m_pageScaleFactor = scaleFactor;
     m_webPage->send(Messages::WebPageProxy::PageScaleFactorDidChange(scaleFactor));
+    m_webPage->send(Messages::WebPageProxy::PageZoomFactorDidChange(scaleFactor));
     pageScaleFactorDidChange();
 }
 
@@ -543,7 +550,10 @@ void PluginView::initializePlugin()
 void PluginView::didFailToInitializePlugin()
 {
     m_plugin = 0;
-    m_webPage->send(Messages::WebPageProxy::DidFailToInitializePlugin(m_parameters.mimeType));
+
+    String frameURLString = frame()->loader()->documentLoader()->responseURL().string();
+    String pageURLString = m_webPage->corePage()->mainFrame()->loader()->documentLoader()->responseURL().string();
+    m_webPage->send(Messages::WebPageProxy::DidFailToInitializePlugin(m_parameters.mimeType, frameURLString, pageURLString));
 }
 
 void PluginView::didInitializePlugin()
@@ -628,7 +638,7 @@ void PluginView::storageBlockingStateChanged()
     if (!m_isInitialized || !m_plugin)
         return;
 
-    bool storageBlockingPolicy = !frame()->document()->securityOrigin()->canAccessPluginStorage(frame()->tree()->top()->document()->securityOrigin());
+    bool storageBlockingPolicy = !frame()->document()->securityOrigin()->canAccessPluginStorage(frame()->document()->topOrigin());
 
     m_plugin->storageBlockingStateChanged(storageBlockingPolicy);
 }
@@ -729,6 +739,11 @@ void PluginView::frameRectsChanged()
     viewGeometryDidChange();
 }
 
+void PluginView::clipRectChanged()
+{
+    viewGeometryDidChange();
+}
+
 void PluginView::setParent(ScrollView* scrollView)
 {
     Widget::setParent(scrollView);
@@ -739,12 +754,26 @@ void PluginView::setParent(ScrollView* scrollView)
 
 unsigned PluginView::countFindMatches(const String& target, WebCore::FindOptions options, unsigned maxMatchCount)
 {
+    if (!m_isInitialized || !m_plugin)
+        return 0;
+
     return m_plugin->countFindMatches(target, options, maxMatchCount);
 }
 
 bool PluginView::findString(const String& target, WebCore::FindOptions options, unsigned maxMatchCount)
 {
+    if (!m_isInitialized || !m_plugin)
+        return false;
+
     return m_plugin->findString(target, options, maxMatchCount);
+}
+
+String PluginView::getSelectionString() const
+{
+    if (!m_isInitialized || !m_plugin)
+        return String();
+
+    return m_plugin->getSelectionString();
 }
 
 PassOwnPtr<WebEvent> PluginView::createWebEvent(MouseEvent* event) const
@@ -871,6 +900,22 @@ bool PluginView::shouldAllowNavigationFromDrags() const
         return false;
 
     return m_plugin->shouldAllowNavigationFromDrags();
+}
+
+bool PluginView::getResourceData(const unsigned char*& bytes, unsigned& length) const
+{
+    if (!m_isInitialized || !m_plugin)
+        return false;
+
+    return m_plugin->getResourceData(bytes, length);
+}
+
+bool PluginView::performDictionaryLookupAtLocation(const WebCore::FloatPoint& point)
+{
+    if (!m_isInitialized || !m_plugin)
+        return false;
+
+    return m_plugin->performDictionaryLookupAtLocation(point);
 }
 
 void PluginView::notifyWidget(WidgetNotification notification)
@@ -1352,18 +1397,6 @@ void PluginView::willSendEventToPlugin()
     m_webPage->send(Messages::WebPageProxy::StopResponsivenessTimer());
 }
 
-#if PLATFORM(WIN)
-HWND PluginView::nativeParentWindow()
-{
-    return m_webPage->nativeWindow();
-}
-
-void PluginView::scheduleWindowedPluginGeometryUpdate(const WindowGeometry& geometry)
-{
-    m_webPage->drawingArea()->scheduleChildWindowGeometryUpdate(geometry);
-}
-#endif
-
 #if PLATFORM(MAC)
 void PluginView::pluginFocusOrWindowFocusChanged(bool pluginHasFocusAndWindowHasFocus)
 {
@@ -1430,7 +1463,7 @@ bool PluginView::isPrivateBrowsingEnabled()
     if (!frame())
         return true;
 
-    if (!frame()->document()->securityOrigin()->canAccessPluginStorage(frame()->tree()->top()->document()->securityOrigin()))
+    if (!frame()->document()->securityOrigin()->canAccessPluginStorage(frame()->document()->topOrigin()))
         return true;
 
     Settings* settings = frame()->settings();
@@ -1596,8 +1629,7 @@ void PluginView::pluginSnapshotTimerFired(DeferrableOneShotTimer<PluginView>*)
     }
 #endif
 
-    destroyPluginAndReset();
-    m_plugin = 0;
+    m_pluginElement->setDisplayState(HTMLPlugInElement::DisplayingSnapshot);
 }
 
 bool PluginView::shouldAlwaysAutoStart() const

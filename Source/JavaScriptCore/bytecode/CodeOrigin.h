@@ -38,6 +38,7 @@
 namespace JSC {
 
 struct InlineCallFrame;
+class ExecState;
 class ExecutableBase;
 class JSFunction;
 
@@ -64,8 +65,8 @@ struct CodeOrigin {
         , valueProfileOffset(valueProfileOffset)
         , inlineCallFrame(inlineCallFrame)
     {
-        ASSERT(bytecodeIndex <= maximumBytecodeIndex);
-        ASSERT(valueProfileOffset < (1u << 3));
+        RELEASE_ASSERT(bytecodeIndex <= maximumBytecodeIndex);
+        RELEASE_ASSERT(valueProfileOffset < (1u << 3));
     }
     
     bool isSet() const { return bytecodeIndex != maximumBytecodeIndex; }
@@ -110,11 +111,18 @@ struct InlineCallFrame {
     
     bool isClosureCall() const { return !callee; }
     
+    // Get the callee given a machine call frame to which this InlineCallFrame belongs.
+    JSFunction* calleeForCallFrame(ExecState*) const;
+    
+    String inferredName() const;
     CodeBlockHash hash() const;
     
     CodeBlock* baselineCodeBlock() const;
     
+    void dumpBriefFunctionInformation(PrintStream&) const;
     void dump(PrintStream&) const;
+
+    MAKE_PRINT_METHOD(InlineCallFrame, dumpBriefFunctionInformation, briefFunctionInformation);
 };
 
 struct CodeOriginAtCallReturnOffset {

@@ -142,7 +142,7 @@ public:
     WebCore::IntPoint calculateReflowedScrollPosition(const WebCore::FloatPoint& anchorOffset, double inverseScale);
     void setTextReflowAnchorPoint(const Platform::IntPoint& focalPoint);
 
-    void restoreHistoryViewState(Platform::IntSize contentsSize, Platform::IntPoint scrollPosition, double scale, bool shouldReflowBlock);
+    void restoreHistoryViewState(const WebCore::IntPoint& scrollPosition, double scale, bool shouldReflowBlock);
 
     // Perform actual zoom for block zoom.
     void zoomBlock();
@@ -219,6 +219,7 @@ public:
 #if ENABLE(FULLSCREEN_API)
     void enterFullScreenForElement(WebCore::Element*);
     void exitFullScreenForElement(WebCore::Element*);
+    void adjustFullScreenElementDimensionsIfNeeded();
 #endif
     void contentsSizeChanged(const WebCore::IntSize&);
     void overflowExceedsContentsSize();
@@ -320,12 +321,11 @@ public:
 #endif
 
     void selectionChanged(WebCore::Frame*);
+    void setOverlayExpansionPixelHeight(int);
 
     void updateDelegatedOverlays(bool dispatched = false);
 
     void updateCursor();
-
-    void onInputLocaleChanged(bool isRTL);
 
     ViewMode viewMode() const { return m_viewMode; }
     bool setViewMode(ViewMode); // Returns true if the change requires re-layout.
@@ -409,7 +409,7 @@ public:
 
     // Compositing thread.
     void setRootLayerCompositingThread(WebCore::LayerCompositingThread*);
-    void commitRootLayer(const WebCore::IntRect&, const WebCore::IntSize&, bool);
+    void commitRootLayer(const WebCore::IntRect& layoutRect, const WebCore::IntRect& documentRect, bool);
     bool isAcceleratedCompositingActive() const { return m_compositor; }
     WebPageCompositorPrivate* compositor() const { return m_compositor.get(); }
     void setCompositor(PassRefPtr<WebPageCompositorPrivate>);
@@ -422,7 +422,6 @@ public:
     void releaseLayerResourcesCompositingThread();
     void suspendRootLayerCommit();
     void resumeRootLayerCommit();
-    void blitVisibleContents();
 
     void scheduleCompositingRun();
 #endif
@@ -473,6 +472,8 @@ public:
     NotificationManager& notificationManager() { return m_notificationManager; };
 #endif
 
+    void animateToScaleAndDocumentScrollPosition(double destinationZoomScale, const WebCore::FloatPoint& destinationScrollPosition, bool shouldConstrainScrollingToContentEdge = true);
+
     WebPage* m_webPage;
     WebPageClient* m_client;
     WebCore::InspectorClientBlackBerry* m_inspectorClient;
@@ -482,6 +483,7 @@ public:
     WebSettings* m_webSettings;
     WebCookieJar* m_cookieJar;
     OwnPtr<WebTapHighlight> m_tapHighlight;
+    OwnPtr<WebTapHighlight> m_selectionHighlight;
     OwnPtr<SelectionOverlay> m_selectionOverlay;
 
     bool m_visible;
@@ -529,6 +531,7 @@ public:
 #if ENABLE(VIDEO)
     double m_scaleBeforeFullScreen;
     WebCore::IntPoint m_scrollPositionBeforeFullScreen;
+    int m_orientationBeforeFullScreen;
 #endif
 #endif
 
@@ -541,10 +544,10 @@ public:
     double m_maximumScale;
     bool m_forceRespectViewportArguments;
 
-    // Block zoom animation data.
-    WebCore::FloatPoint m_finalBlockPoint;
-    WebCore::FloatPoint m_finalBlockPointReflowOffset;
-    double m_blockZoomFinalScale;
+    // Block zoom & zoom/scroll animation data.
+    WebCore::FloatPoint m_finalAnimationDocumentScrollPosition;
+    WebCore::FloatPoint m_finalAnimationDocumentScrollPositionReflowOffset;
+    double m_finalAnimationScale;
     RefPtr<WebCore::Node> m_currentPinchZoomNode;
     WebCore::FloatPoint m_anchorInNodeRectRatio;
     RefPtr<WebCore::Node> m_currentBlockZoomNode;
@@ -582,7 +585,7 @@ public:
 
     int m_pendingOrientation;
 
-    RefPtr<WebCore::Node> m_fullscreenVideoNode;
+    RefPtr<WebCore::Node> m_fullscreenNode;
     RefPtr<WebCore::PluginView> m_fullScreenPluginView;
 
     typedef HashMap<const WebCore::Frame*, BackingStoreClient*> BackingStoreClientForFrameMap;

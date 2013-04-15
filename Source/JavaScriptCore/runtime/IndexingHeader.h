@@ -57,7 +57,7 @@ public:
     
     void setVectorLength(uint32_t length)
     {
-        ASSERT(length <= maximumLength);
+        RELEASE_ASSERT(length <= maximumLength);
         m_vectorLength = length;
     }
     
@@ -86,12 +86,12 @@ public:
     
     PropertyStorage propertyStorage()
     {
-        return reinterpret_cast<PropertyStorage>(this);
+        return reinterpret_cast_ptr<PropertyStorage>(this);
     }
     
     ConstPropertyStorage propertyStorage() const
     {
-        return reinterpret_cast<ConstPropertyStorage>(this);
+        return reinterpret_cast_ptr<ConstPropertyStorage>(this);
     }
     
     ArrayStorage* arrayStorage()

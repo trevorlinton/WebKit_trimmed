@@ -349,6 +349,11 @@ void WKPageListenForLayoutMilestones(WKPageRef pageRef, WKLayoutMilestones miles
     toImpl(pageRef)->listenForLayoutMilestones(toLayoutMilestones(milestones));
 }
 
+void WKPageSetVisibilityState(WKPageRef pageRef, WKPageVisibilityState state, bool isInitialState)
+{
+    toImpl(pageRef)->setVisibilityState(toPageVisibilityState(state), isInitialState);
+}
+
 bool WKPageHasHorizontalScrollbar(WKPageRef pageRef)
 {
     return toImpl(pageRef)->hasHorizontalScrollbar();
@@ -387,6 +392,27 @@ bool WKPageIsPinnedToTopSide(WKPageRef pageRef)
 bool WKPageIsPinnedToBottomSide(WKPageRef pageRef)
 {
     return toImpl(pageRef)->isPinnedToBottomSide();
+}
+
+
+bool WKPageRubberBandsAtBottom(WKPageRef pageRef)
+{
+    return toImpl(pageRef)->rubberBandsAtBottom();
+}
+
+void WKPageSetRubberBandsAtBottom(WKPageRef pageRef, bool rubberBandsAtBottom)
+{
+    toImpl(pageRef)->setRubberBandsAtBottom(rubberBandsAtBottom);
+}
+
+bool WKPageRubberBandsAtTop(WKPageRef pageRef)
+{
+    return toImpl(pageRef)->rubberBandsAtTop();
+}
+
+void WKPageSetRubberBandsAtTop(WKPageRef pageRef, bool rubberBandsAtTop)
+{
+    toImpl(pageRef)->setRubberBandsAtTop(rubberBandsAtTop);
 }
 
 void WKPageSetPaginationMode(WKPageRef pageRef, WKPaginationMode paginationMode)
@@ -493,6 +519,21 @@ void WKPageCenterSelectionInVisibleArea(WKPageRef pageRef)
     return toImpl(pageRef)->centerSelectionInVisibleArea();
 }
 
+void WKPageFindStringMatches(WKPageRef pageRef, WKStringRef string, WKFindOptions options, unsigned maxMatchCount)
+{
+    toImpl(pageRef)->findStringMatches(toImpl(string)->string(), toFindOptions(options), maxMatchCount);
+}
+
+void WKPageGetImageForFindMatch(WKPageRef pageRef, int32_t matchIndex)
+{
+    toImpl(pageRef)->getImageForFindMatch(matchIndex);
+}
+
+void WKPageSelectFindMatch(WKPageRef pageRef, int32_t matchIndex)
+{
+    toImpl(pageRef)->selectFindMatch(matchIndex);
+}
+
 void WKPageFindString(WKPageRef pageRef, WKStringRef string, WKFindOptions options, unsigned maxMatchCount)
 {
     toImpl(pageRef)->findString(toImpl(string)->string(), toFindOptions(options), maxMatchCount);
@@ -520,6 +561,11 @@ void WKPageSetPageFindClient(WKPageRef pageRef, const WKPageFindClient* wkClient
     toImpl(pageRef)->initializeFindClient(wkClient);
 }
 
+void WKPageSetPageFindMatchesClient(WKPageRef pageRef, const WKPageFindMatchesClient* wkClient)
+{
+    toImpl(pageRef)->initializeFindMatchesClient(wkClient);
+}
+
 void WKPageSetPageFormClient(WKPageRef pageRef, const WKPageFormClient* wkClient)
 {
     toImpl(pageRef)->initializeFormClient(wkClient);
@@ -533,11 +579,6 @@ void WKPageSetPageLoaderClient(WKPageRef pageRef, const WKPageLoaderClient* wkCl
 void WKPageSetPagePolicyClient(WKPageRef pageRef, const WKPagePolicyClient* wkClient)
 {
     toImpl(pageRef)->initializePolicyClient(wkClient);
-}
-
-void WKPageSetPageResourceLoadClient(WKPageRef pageRef, const WKPageResourceLoadClient* wkClient)
-{
-    toImpl(pageRef)->initializeResourceLoadClient(wkClient);
 }
 
 void WKPageSetPageUIClient(WKPageRef pageRef, const WKPageUIClient* wkClient)
@@ -690,7 +731,7 @@ void WKPageExecuteCommand(WKPageRef pageRef, WKStringRef command)
     toImpl(pageRef)->executeEditCommand(toImpl(command)->string());
 }
 
-#if PLATFORM(MAC) || PLATFORM(WIN)
+#if PLATFORM(MAC)
 struct ComputedPagesContext {
     ComputedPagesContext(WKPageComputePagesForPrintingFunction callback, void* context)
         : callback(callback)
@@ -740,13 +781,6 @@ void WKPageEndPrinting(WKPageRef page)
 }
 #endif
 
-void WKPageDeliverIntentToFrame(WKPageRef page, WKFrameRef frame, WKIntentDataRef intent)
-{
-#if ENABLE(WEB_INTENTS)
-    toImpl(page)->deliverIntentToFrame(toImpl(frame), toImpl(intent));
-#endif
-}
-
 WKImageRef WKPageCreateSnapshotOfVisibleContent(WKPageRef)
 {
     return 0;
@@ -780,4 +814,52 @@ void WKPageSetMayStartMediaWhenInWindow(WKPageRef pageRef, bool mayStartMedia)
 void WKPageSetInvalidMessageFunction(WKPageInvalidMessageFunction)
 {
     // FIXME: Remove this function when doing so won't break WebKit nightlies.
+}
+
+WKStringRef WKPageGetPluginInformationBundleIdentifierKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationBundleIdentifierKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationBundleVersionKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationBundleVersionKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationDisplayNameKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationDisplayNameKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationFrameURLKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationFrameURLKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationMIMETypeKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationMIMETypeKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationPageURLKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationPageURLKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationPluginspageAttributeURLKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationPluginspageAttributeURLKey()).leakRef();
+    return toAPI(key);
+}
+
+WKStringRef WKPageGetPluginInformationPluginURLKey()
+{
+    static WebString* key = WebString::create(WebPageProxy::pluginInformationPluginURLKey()).leakRef();
+    return toAPI(key);
 }

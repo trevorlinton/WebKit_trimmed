@@ -48,7 +48,9 @@
 #include "JSRetainPtr.h"
 #include "JSString.h"
 #include "JSValueRef.h"
+#include "ObjectConstructor.h"
 #include "ObjectPrototype.h"
+#include "Operations.h"
 #include "PropertyNameArray.h"
 #include "RegExpConstructor.h"
 
@@ -414,6 +416,8 @@ bool JSObjectDeletePrivateProperty(JSContextRef ctx, JSObjectRef object, JSStrin
 
 bool JSObjectIsFunction(JSContextRef, JSObjectRef object)
 {
+    if (!object)
+        return false;
     CallData callData;
     JSCell* cell = toJS(object);
     return cell->methodTable()->getCallData(cell, callData) != CallTypeNone;
@@ -423,6 +427,9 @@ JSValueRef JSObjectCallAsFunction(JSContextRef ctx, JSObjectRef object, JSObject
 {
     ExecState* exec = toJS(ctx);
     APIEntryShim entryShim(exec);
+
+    if (!object)
+        return 0;
 
     JSObject* jsObject = toJS(object);
     JSObject* jsThisObject = toJS(thisObject);
@@ -453,6 +460,8 @@ JSValueRef JSObjectCallAsFunction(JSContextRef ctx, JSObjectRef object, JSObject
 
 bool JSObjectIsConstructor(JSContextRef, JSObjectRef object)
 {
+    if (!object)
+        return false;
     JSObject* jsObject = toJS(object);
     ConstructData constructData;
     return jsObject->methodTable()->getConstructData(jsObject, constructData) != ConstructTypeNone;
@@ -462,6 +471,9 @@ JSObjectRef JSObjectCallAsConstructor(JSContextRef ctx, JSObjectRef object, size
 {
     ExecState* exec = toJS(ctx);
     APIEntryShim entryShim(exec);
+
+    if (!object)
+        return 0;
 
     JSObject* jsObject = toJS(object);
 

@@ -32,6 +32,7 @@
 #include "JSGlobalData.h"
 #include "JSScriptRefPrivate.h"
 #include "OpaqueJSString.h"
+#include "Operations.h"
 #include "Parser.h"
 #include "SourceCode.h"
 #include "SourceProvider.h"
@@ -132,7 +133,7 @@ JSValueRef JSScriptEvaluate(JSContextRef context, JSScriptRef script, JSValueRef
     ExecState* exec = toJS(context);
     APIEntryShim entryShim(exec);
     if (script->globalData() != &exec->globalData()) {
-        ASSERT_NOT_REACHED();
+        RELEASE_ASSERT_NOT_REACHED();
         return 0;
     }
     JSValue internalException;

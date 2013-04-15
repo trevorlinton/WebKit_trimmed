@@ -34,6 +34,7 @@
 #include "Lexer.h"
 #include "LiteralParser.h"
 #include "Nodes.h"
+#include "Operations.h"
 #include "Parser.h"
 #include <wtf/dtoa.h>
 #include <stdio.h>
@@ -363,7 +364,7 @@ static double jsHexIntegerLiteral(const CharType*& data, const CharType* end)
 template <typename CharType>
 static double jsStrDecimalLiteral(const CharType*& data, const CharType* end)
 {
-    ASSERT(data < end);
+    RELEASE_ASSERT(data < end);
 
     size_t parsedLength;
     double number = parseDouble(data, end - data, parsedLength);
@@ -559,13 +560,13 @@ EncodedJSValue JSC_HOST_CALL globalFuncParseFloat(ExecState* exec)
 
 EncodedJSValue JSC_HOST_CALL globalFuncIsNaN(ExecState* exec)
 {
-    return JSValue::encode(jsBoolean(isnan(exec->argument(0).toNumber(exec))));
+    return JSValue::encode(jsBoolean(std::isnan(exec->argument(0).toNumber(exec))));
 }
 
 EncodedJSValue JSC_HOST_CALL globalFuncIsFinite(ExecState* exec)
 {
     double n = exec->argument(0).toNumber(exec);
-    return JSValue::encode(jsBoolean(isfinite(n)));
+    return JSValue::encode(jsBoolean(std::isfinite(n)));
 }
 
 EncodedJSValue JSC_HOST_CALL globalFuncDecodeURI(ExecState* exec)

@@ -26,7 +26,6 @@
 #include "HTMLOptGroupElement.h"
 
 #include "Document.h"
-#include "ElementShadow.h"
 #include "HTMLNames.h"
 #include "HTMLSelectElement.h"
 #include "RenderMenuList.h"
@@ -43,7 +42,7 @@ inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Do
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(optgroupTag));
-    setHasCustomCallbacks();
+    setHasCustomStyleCallbacks();
 }
 
 PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(const QualifiedName& tagName, Document* document)
@@ -85,7 +84,7 @@ void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const Atomic
     recalcSelectOptions();
 
     if (name == disabledAttr)
-        invalidateParentDistributionIfNecessary(this, SelectRuleFeatureSet::RuleFeatureDisabled | SelectRuleFeatureSet::RuleFeatureEnabled);
+        didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
 }
 
 void HTMLOptGroupElement::recalcSelectOptions()

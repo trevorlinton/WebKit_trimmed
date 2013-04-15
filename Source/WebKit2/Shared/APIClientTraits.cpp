@@ -39,8 +39,8 @@ const size_t APIClientTraits<WKBundleClient>::interfaceSizesByVersion[] = {
 const size_t APIClientTraits<WKBundlePageLoaderClient>::interfaceSizesByVersion[] = {
     offsetof(WKBundlePageLoaderClient, didLayoutForFrame),
     offsetof(WKBundlePageLoaderClient, didFinishProgress),
-    offsetof(WKBundlePageLoaderClient, didReceiveIntentForFrame),
-    offsetof(WKBundlePageLoaderClient, registerIntentServiceForFrame),
+    offsetof(WKBundlePageLoaderClient, didReceiveIntentForFrame_unavailable),
+    offsetof(WKBundlePageLoaderClient, registerIntentServiceForFrame_unavailable),
     sizeof(WKBundlePageLoaderClient)
 };
 
@@ -62,7 +62,7 @@ const size_t APIClientTraits<WKPageContextMenuClient>::interfaceSizesByVersion[]
 
 const size_t APIClientTraits<WKPageLoaderClient>::interfaceSizesByVersion[] = {
     offsetof(WKPageLoaderClient, didDetectXSSForFrame),
-    offsetof(WKPageLoaderClient, didReceiveIntentForFrame),
+    offsetof(WKPageLoaderClient, didReceiveIntentForFrame_unavailable),
     sizeof(WKPageLoaderClient)
 };
 
@@ -77,9 +77,19 @@ const size_t APIClientTraits<WKBundlePageFormClient>::interfaceSizesByVersion[] 
     sizeof(WKBundlePageFormClient)
 };
 
+const size_t APIClientTraits<WKBundlePageEditorClient>::interfaceSizesByVersion[] = {
+    offsetof(WKBundlePageEditorClient, willWriteToPasteboard),
+    sizeof(WKBundlePageEditorClient)
+};
+
 const size_t APIClientTraits<WKBundlePageUIClient>::interfaceSizesByVersion[] = {
     offsetof(WKBundlePageUIClient, didReachApplicationCacheOriginQuota),
     sizeof(WKBundlePageUIClient)
+};
+
+const size_t APIClientTraits<WKContextClient>::interfaceSizesByVersion[] = {
+    offsetof(WKContextClient, plugInInformationBecameAvailable),
+    sizeof(WKContextClient)
 };
 
 const size_t APIClientTraits<WKContextInjectedBundleClient>::interfaceSizesByVersion[] = {

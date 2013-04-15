@@ -28,6 +28,7 @@
 
 #include "CodeBlock.h"
 #include "LLIntCallLinkInfo.h"
+#include "Operations.h"
 #include <wtf/CommaPrinter.h>
 
 namespace JSC {
@@ -112,6 +113,9 @@ CallLinkStatus CallLinkStatus::computeFor(CodeBlock* profiledBlock, unsigned byt
     JSFunction* target = callLinkInfo.lastSeenCallee.get();
     if (!target)
         return computeFromLLInt(profiledBlock, bytecodeIndex);
+    
+    if (callLinkInfo.hasSeenClosure)
+        return CallLinkStatus(target->executable(), target->structure());
 
     return CallLinkStatus(target);
 #else
@@ -119,7 +123,7 @@ CallLinkStatus CallLinkStatus::computeFor(CodeBlock* profiledBlock, unsigned byt
 #endif
 }
 
-void CallLinkStatus::dump(PrintStream& out)
+void CallLinkStatus::dump(PrintStream& out) const
 {
     if (!isSet()) {
         out.print("Not Set");
@@ -137,9 +141,11 @@ void CallLinkStatus::dump(PrintStream& out)
     if (m_callTarget)
         out.print(comma, "Known target: ", m_callTarget);
     
-    ASSERT(!!m_executable == !!m_structure);
     if (m_executable)
-        out.print(comma, "Executable/CallHash/Structure: ", RawPointer(m_executable), "/", m_executable->hashFor(CodeForCall), "/", RawPointer(m_structure));
+        out.print(comma, "Executable/CallHash: ", RawPointer(m_executable), "/", m_executable->hashFor(CodeForCall));
+    
+    if (m_structure)
+        out.print(comma, "Structure: ", RawPointer(m_structure));
 }
 
 } // namespace JSC

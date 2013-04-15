@@ -37,10 +37,12 @@
 #include "Label.h"
 #include "LabelScope.h"
 #include "Interpreter.h"
+#include "ParserError.h"
 #include "RegisterID.h"
 #include "SymbolTable.h"
 #include "Debugger.h"
 #include "Nodes.h"
+#include "StaticPropertyAnalyzer.h"
 #include "UnlinkedCodeBlock.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/SegmentedVector.h>
@@ -383,6 +385,7 @@ namespace JSC {
         RegisterID* emitEqualityOp(OpcodeID, RegisterID* dst, RegisterID* src1, RegisterID* src2);
         RegisterID* emitUnaryNoDstOp(OpcodeID, RegisterID* src);
 
+        RegisterID* emitCreateThis(RegisterID* dst);
         RegisterID* emitNewObject(RegisterID* dst);
         RegisterID* emitNewArray(RegisterID* dst, ElementNode*, unsigned length); // stops at first elision
 
@@ -507,22 +510,18 @@ namespace JSC {
     private:
         friend class Label;
         
-#if ENABLE(BYTECODE_COMMENTS)
-        // Record a comment in the CodeBlock's comments list for the current
-        // opcode that is about to be emitted.
-        void emitComment();
-        // Register a comment to be associated with the next opcode that will
-        // be emitted.
-        void prependComment(const char* string);
-#else
-        ALWAYS_INLINE void emitComment() { }
-        ALWAYS_INLINE void prependComment(const char*) { }
-#endif
-
         void emitOpcode(OpcodeID);
         UnlinkedArrayAllocationProfile newArrayAllocationProfile();
+        UnlinkedObjectAllocationProfile newObjectAllocationProfile();
         UnlinkedArrayProfile newArrayProfile();
         UnlinkedValueProfile emitProfiledOpcode(OpcodeID);
+        int kill(RegisterID* dst)
+        {
+            int index = dst->index();
+            m_staticPropertyAnalyzer.kill(index);
+            return index;
+        }
+
         void retrieveLastBinaryOp(int& dstIndex, int& src1Index, int& src2Index);
         void retrieveLastUnaryOp(int& dstIndex, int& srcIndex);
         ALWAYS_INLINE void rewindBinaryOp();
@@ -611,9 +610,6 @@ namespace JSC {
         Vector<UnlinkedInstruction>& instructions() { return m_instructions; }
 
         SharedSymbolTable& symbolTable() { return *m_symbolTable; }
-#if ENABLE(BYTECODE_COMMENTS)
-        Vector<Comment>& comments() { return m_comments; }
-#endif
 
         bool shouldOptimizeLocals()
         {
@@ -652,11 +648,6 @@ namespace JSC {
         bool m_shouldEmitProfileHooks;
 
         SharedSymbolTable* m_symbolTable;
-
-#if ENABLE(BYTECODE_COMMENTS)
-        Vector<Comment> m_comments;
-        const char *m_currentCommentString;
-#endif
 
         ScopeNode* m_scopeNode;
         Strong<UnlinkedCodeBlock> m_codeBlock;
@@ -774,6 +765,8 @@ namespace JSC {
         IdentifierResolvePutMap m_resolveBaseMap;
         IdentifierResolvePutMap m_resolveBaseForPutMap;
         IdentifierResolvePutMap m_resolveWithBaseForPutMap;
+
+        StaticPropertyAnalyzer m_staticPropertyAnalyzer;
 
         JSGlobalData* m_globalData;
 

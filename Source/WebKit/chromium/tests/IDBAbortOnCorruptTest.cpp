@@ -56,20 +56,18 @@ public:
         m_wasErrorCalled = true;
     }
     virtual void onSuccess(PassRefPtr<DOMStringList>) { }
-    virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey>, PassRefPtr<SerializedScriptValue>) { }
-    virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>)
+    virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey>, PassRefPtr<SharedBuffer>) { }
+    virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&)
     {
         EXPECT_TRUE(false);
     }
     virtual void onSuccess(PassRefPtr<IDBKey>) { }
-    virtual void onSuccess(PassRefPtr<IDBTransactionBackendInterface>) { }
-    virtual void onSuccess(PassRefPtr<SerializedScriptValue>) { }
-    virtual void onSuccess(PassRefPtr<SerializedScriptValue>, PassRefPtr<IDBKey>, const IDBKeyPath&) { }
+    virtual void onSuccess(PassRefPtr<SharedBuffer>) OVERRIDE { }
+    virtual void onSuccess(PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&) OVERRIDE { }
     virtual void onSuccess(int64_t) OVERRIDE { }
     virtual void onSuccess() OVERRIDE { }
-    virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey>, PassRefPtr<SerializedScriptValue>) { };
-    virtual void onSuccessWithPrefetch(const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<SerializedScriptValue> >&) { }
-    virtual void onBlocked() { }
+    virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey>, PassRefPtr<SharedBuffer>) OVERRIDE { };
+    virtual void onSuccessWithPrefetch(const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<SharedBuffer> >&) OVERRIDE { }
 private:
     MockIDBCallbacks() : m_wasErrorCalled(false) { }
 
@@ -126,7 +124,7 @@ TEST(IDBAbortTest, TheTest)
     RefPtr<FakeIDBDatabaseCallbacks> databaseCallbacks = FakeIDBDatabaseCallbacks::create();
     RefPtr<SecurityOrigin> origin = SecurityOrigin::create("http", "localhost", 81);
     const int64_t DummyVersion = 2;
-    factory->open(name, DummyVersion, callbacks.get(), databaseCallbacks, origin, 0 /*Frame*/, String() /*path*/);
+    factory->open(name, DummyVersion, 1, callbacks.get(), databaseCallbacks, origin, 0 /*Frame*/, String() /*path*/);
 }
 
 } // namespace

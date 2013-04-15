@@ -1,3 +1,206 @@
+2013-03-03  Ryosuke Niwa  <rniwa@webkit.org>
+
+        Some perf. tests have variances that differ greatly between runs
+        https://bugs.webkit.org/show_bug.cgi?id=97510
+
+        Reviewed by Benjamin Poulain.
+
+        In order to control the number of iterations and processes to use from run-perf-tests, always use 20
+        iterations on all tests except Dromaeo, where even doing 5 iterations is prohibitively slow, by default.
+        Without this change, it'll become extremely hard for us to tweak the number of iterations and processes
+        to use from run-perf-tests.
+
+        * Animation/balls.html:
+        * DOM/DOMTable.html:
+        * DOM/resources/dom-perf.js:
+        (runBenchmarkSuite.PerfTestRunner.measureTime):
+        * Dromaeo/resources/dromaeorunner.js:
+        * Layout/floats_100_100.html:
+        * Layout/floats_100_100_nested.html:
+        * Layout/floats_20_100.html:
+        * Layout/floats_20_100_nested.html:
+        * Layout/floats_2_100.html:
+        * Layout/floats_2_100_nested.html:
+        * Layout/floats_50_100.html:
+        * Layout/floats_50_100_nested.html:
+        * Layout/subtree-detaching.html:
+        * Parser/html5-full-render.html:
+        * SVG/SvgHitTesting.html:
+        * resources/runner.js:
+        * resources/results-template.html:
+
+2013-02-25  Ryosuke Niwa  <rniwa@webkit.org>
+
+        Use perf.webkit.org JSON format in results page
+        https://bugs.webkit.org/show_bug.cgi?id=110842
+
+        Reviewed by Benjamin Poulain.
+
+        Updated the results page template to use the new JSON format.
+
+        Since new JSON format doesn't contain statistics such as stdev and min, added statistics.js to compute
+        these values. Also use 95% percentile confidence interval instead of standard deviation in various places.
+
+        * resources/results-template.html: Added statistics.js as dependency.
+        (TestResult): Updated to take a metric instead of its test. Replaced stdev() with confidenceIntervalDelta()
+        now that we have a fancy Statistics class.
+
+        (TestRun.webkitRevision):
+        (PerfTestMetric): Renamed from PerfTest since this object now encapsulates each measurement (such as time,
+        JS heap, and malloc) in test. Also added a conversion table from a metric name to a unit since new format
+        doesn't contain units.
+        (PerfTestMetric.name): Updated to compute the full metric name from test name and metric name, matching
+        the old behavior.
+        (PerfTestMetric.isMemoryTest): Explicitly look for 'JSHeap' and 'Malloc' tests.
+        (PerfTestMetric.smallerIsBetter):
+
+        (attachPlot): Deleted the code to deal with tests that don't provide individual iteration measurement
+        since such tests no longer exist. Also fixed up the code compute y-axis range.
+
+        (createTableRow.markupForRun): Updated to use confidenceIntervalDelta() instead of stdev().
+        
+        (init.addTests): Added. Recursively add metrics.
+
+        * resources/statistics.js: Added. Imported from perf.webkit.org.
+        (Statistics.max):
+        (Statistics.min):
+        (Statistics.sum):
+        (Statistics.squareSum):
+        (Statistics.sampleStandardDeviation):
+        (Statistics.supportedConfidenceLevels):
+        (Statistics.confidenceIntervalDelta):
+        (Statistics.confidenceInterval):
+
+2013-02-11  Alexei Filippov  <alph@chromium.org>
+
+        Web Inspector: Split Profiler domain in protocol into Profiler and HeapProfiler
+        https://bugs.webkit.org/show_bug.cgi?id=108653
+
+        Reviewed by Yury Semikhatsky.
+
+        Currently CPU and heap profilers share the same domain 'Profiler' in the protocol.
+        In fact these two profile types have not too much in common. So put each into its own domain.
+        It should also help when Profiles panel gets split into several tools.
+        This is the phase 1 which adds InspectorHeapProfilerAgent but doesn't
+        change the original InspectorProfilerAgent.
+
+        * inspector/heap-snapshot-performance-test.js:
+        (test.performanceTest.cleanup):
+
+2013-02-05  Dominik Röttsches  <dominik.rottsches@intel.com>
+
+        Add a performance test for arabic line breaking
+        https://bugs.webkit.org/show_bug.cgi?id=108948
+
+        Reviewed by Eric Seidel.
+
+        Adding a perfomance test based to exercise the complex
+        font path used in rendering arabic script.
+
+        * Layout/ArabicLineLayout.html: Added.
+        * Skipped: New test skipped by default as per Ryosuke's request.
+
+2013-01-23  Yury Semikhatsky  <yurys@chromium.org>
+
+        Web Inspector: some measurements are missing in PerformanceTests/inspector/heap-*.html
+        https://bugs.webkit.org/show_bug.cgi?id=107687
+
+        Reviewed by Pavel Feldman.
+
+        * inspector/heap-snapshot-performance-test.js: override methods on JSHeapSnapshot instead
+        of HeapSnapshot, otherwise overrides from JSHeapSnapshot will rule.
+
+2013-01-18  Ryosuke Niwa  <rniwa@webkit.org>
+
+        Skip DOM/TraverseChildNodes.html as intended in r140070.
+
+        * Skipped:
+
+2013-01-17  Dominic Cooney  <dominicc@chromium.org>
+
+        Unreviewed, re-land r140051.
+
+        I overzealously rolled this out; the test was intended to be
+        skipped, but was not skipped because of a typo in Skipped. See
+        <https://bugs.webkit.org/show_bug.cgi?id=107210>
+
+        * Parser/html-parser-srcdoc.html: Added.
+        * Skipped: Big-P Parser.
+
+2013-01-17  Sheriff Bot  <webkit.review.bot@gmail.com>
+
+        Unreviewed, rolling out r140051.
+        http://trac.webkit.org/changeset/140051
+        https://bugs.webkit.org/show_bug.cgi?id=107210
+
+        html-parser-srcdoc.html failing on Chromium Linux Perf and
+        Chromium Mac Perf with a lot of error spew about blocked
+        script execution in 'about:srcdoc' (Requested by dominicc on
+        #webkit).
+
+        * Parser/html-parser-srcdoc.html: Removed.
+        * Skipped:
+
+2013-01-16  Ryosuke Niwa  <rniwa@webkit.org>
+
+        Remove NodeListsNodeData when it's no longer needed
+        https://bugs.webkit.org/show_bug.cgi?id=107074
+
+        Reviewed by Darin Adler.
+
+        Added a micro benchmark to see the benefit of removing NodeListsNodeData.
+        The test traverses all elements in the html5 specification page and accesses childNodes.
+
+        Don't enable this test for now since it's really a micro benchmark specifically
+        designed to test this patch.
+
+        * DOM/TraverseChildNodes.html: Added.
+        * Skipped: Don't enable newly added test by default.
+        * resources/results-template.html: Compare against the unscaled unit (e.g. "bytes") as
+        opposed to scaled units such as "K bytes".
+        * resources/runner.js:
+        (.start): Moved the code to call currentTest.setup from measureRunsPerSecondOnce so that
+        it'll be ran for all test types, namely of PerfTestRunner.measureTime.
+        (.measureRunsPerSecondOnce):
+
+2013-01-17  Eric Seidel  <eric@webkit.org>
+
+        Add a version of the html-parser benchmark which uses srcdoc instead of document.write so it tests the threaded parser
+        https://bugs.webkit.org/show_bug.cgi?id=107158
+
+        Reviewed by Ryosuke Niwa.
+
+        Currently this test even opts-in to the threaded parser if available.
+        We'll remove that line when the threaded parser becomes default or goes away.
+
+        * Parser/html-parser-srcdoc.html: Added.
+
+2013-01-16  Arnaud Renevier  <a.renevier@sisa.samsung.com>
+
+        inconsistency in drawImage with target rect negative dimensions.
+        https://bugs.webkit.org/show_bug.cgi?id=100026
+
+        Reviewed by Dean Jackson.
+
+        Create a drawImage performance test. There is no significative change
+        in performance: 27144.6851528 runs/s without the patch; 27153.517612
+        runs/s with the patch. Test is currently skipped.
+
+        * Canvas/drawimage.html: Added.
+        * Skipped:
+
+2013-01-15  Dominic Cooney  <dominicc@chromium.org>
+
+        Allow zero values as results from the runFunction.
+        https://bugs.webkit.org/show_bug.cgi?id=102500
+
+        Reviewed by Kentaro Hara.
+
+        DOM/DOMWalk.js fails on the Chromium Win perf bot because one or
+        more parts of the test usually return zero at some point.
+
+        * resources/runner.js: Accept merely non-negative results.
+
 2012-12-28  Yury Semikhatsky  <yurys@chromium.org>
 
         Web Inspector: rename distanceToWindow to distance

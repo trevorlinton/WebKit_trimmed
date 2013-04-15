@@ -27,22 +27,24 @@
 #include "config.h"
 #include "ewk_popup_menu.h"
 
-#include "EwkViewImpl.h"
-#include "WebPopupMenuProxyEfl.h"
+#include "EwkView.h"
+#include "WKAPICast.h"
+#include "WKArray.h"
+#include "WKPopupMenuListener.h"
 #include "ewk_popup_menu_item_private.h"
 #include "ewk_popup_menu_private.h"
 
-using namespace WebKit;
-
-EwkPopupMenu::EwkPopupMenu(EwkViewImpl* viewImpl, WebPopupMenuProxyEfl* popupMenuProxy, const Vector<WebKit::WebPopupItem>& items, unsigned selectedIndex)
-    : m_viewImpl(viewImpl)
-    , m_popupMenuProxy(popupMenuProxy)
+EwkPopupMenu::EwkPopupMenu(EwkView* view, WKPopupMenuListenerRef popupMenuListener, WKArrayRef items, unsigned selectedIndex)
+    : m_view(view)
+    , m_popupMenuListener(popupMenuListener)
     , m_popupMenuItems(0)
     , m_selectedIndex(selectedIndex)
 {
-    const size_t size = items.size();
-    for (size_t i = 0; i < size; ++i)
-        m_popupMenuItems = eina_list_append(m_popupMenuItems, EwkPopupMenuItem::create(items[i]).leakPtr());
+    size_t size = WKArrayGetSize(items);
+    for (size_t i = 0; i < size; ++i) {
+        WKPopupItemRef wkItem = static_cast<WKPopupItemRef>(WKArrayGetItemAtIndex(items, i));
+        m_popupMenuItems = eina_list_append(m_popupMenuItems, EwkPopupMenuItem::create(wkItem).leakPtr());
+    }
 }
 
 EwkPopupMenu::~EwkPopupMenu()
@@ -54,7 +56,7 @@ EwkPopupMenu::~EwkPopupMenu()
 
 void EwkPopupMenu::close()
 {
-    m_viewImpl->closePopupMenu();
+    m_view->closePopupMenu();
 }
 
 const Eina_List* EwkPopupMenu::items() const
@@ -69,7 +71,7 @@ unsigned EwkPopupMenu::selectedIndex() const
 
 bool EwkPopupMenu::setSelectedIndex(unsigned selectedIndex)
 {
-    if (!m_popupMenuProxy)
+    if (!m_popupMenuListener)
         return false;
 
     if (selectedIndex >= eina_list_count(m_popupMenuItems))
@@ -79,7 +81,7 @@ bool EwkPopupMenu::setSelectedIndex(unsigned selectedIndex)
         return true;
 
     m_selectedIndex = selectedIndex;
-    m_popupMenuProxy->valueChanged(selectedIndex);
+    WKPopupMenuListenerSetSelection(m_popupMenuListener.get(), selectedIndex);
 
     return true;
 }

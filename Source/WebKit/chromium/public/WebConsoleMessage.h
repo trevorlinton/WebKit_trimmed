@@ -31,16 +31,16 @@
 #ifndef WebConsoleMessage_h
 #define WebConsoleMessage_h
 
-#include "platform/WebString.h"
+#include "../../../Platform/chromium/public/WebString.h"
 
 namespace WebKit {
 
 struct WebConsoleMessage {
     enum Level {
-        LevelTip,
-        LevelLog,
-        LevelWarning,
-        LevelError
+        LevelDebug = 4,
+        LevelLog = 1,
+        LevelWarning = 2,
+        LevelError = 3,
     };
 
     Level level;

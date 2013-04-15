@@ -30,15 +30,20 @@
 #include "MessageReceiverMap.h"
 #include "MessageSender.h"
 #include <WebCore/RunLoop.h>
+#include <wtf/HashMap.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/text/StringHash.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebKit {
+
+class SandboxInitializationParameters;
 
 struct ChildProcessInitializationParameters {
     String uiProcessName;
     String clientIdentifier;
     CoreIPC::Connection::Identifier connectionIdentifier;
+    HashMap<String, String> extraInitializationData;
 };
 
 class ChildProcess : protected CoreIPC::Connection::Client, public CoreIPC::MessageSender<ChildProcess> {
@@ -52,30 +57,15 @@ public:
     void disableTermination();
     void enableTermination();
 
-    class LocalTerminationDisabler {
-    public:
-        explicit LocalTerminationDisabler(ChildProcess& childProcess)
-            : m_childProcess(childProcess)
-        {
-            m_childProcess.disableTermination();
-        }
-
-        ~LocalTerminationDisabler()
-        {
-            m_childProcess.enableTermination();
-        }
-
-    private:
-        ChildProcess& m_childProcess;
-    };
-
     void addMessageReceiver(CoreIPC::StringReference messageReceiverName, CoreIPC::MessageReceiver*);
     void addMessageReceiver(CoreIPC::StringReference messageReceiverName, uint64_t destinationID, CoreIPC::MessageReceiver*);
     void removeMessageReceiver(CoreIPC::StringReference messageReceiverName, uint64_t destinationID);
 
 #if PLATFORM(MAC)
-    bool applicationIsOccluded() const { return !m_processVisibleAssertion; }
-    void setApplicationIsOccluded(bool);
+    bool processSuppressionEnabled() const { return !m_processVisibleAssertion; }
+    void setProcessSuppressionEnabled(bool);
+
+    void shutdownWindowServerConnection();
 #endif
 
     CoreIPC::Connection* parentProcessConnection() const { return m_connection.get(); }
@@ -92,15 +82,18 @@ protected:
 
     void setTerminationTimeout(double seconds) { m_terminationTimeout = seconds; }
 
+    virtual void initializeProcess(const ChildProcessInitializationParameters&);
+    virtual void initializeProcessName(const ChildProcessInitializationParameters&);
+    virtual void initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&);
     virtual void initializeConnection(CoreIPC::Connection*);
-    virtual void initializeSandbox(const String& clientIdentifier);
-    virtual void platformInitialize();
 
     virtual bool shouldTerminate() = 0;
     virtual void terminate();
 
 private:
     void terminationTimerFired();
+
+    void platformInitialize();
 
     // The timeout, in seconds, before this process will be terminated if termination
     // has been enabled. If the timeout is 0 seconds, the process will be terminated immediately.

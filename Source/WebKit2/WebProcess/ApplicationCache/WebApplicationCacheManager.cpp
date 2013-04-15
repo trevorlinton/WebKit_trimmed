@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,10 +40,9 @@ using namespace WebCore;
 
 namespace WebKit {
 
-const AtomicString& WebApplicationCacheManager::supplementName()
+const char* WebApplicationCacheManager::supplementName()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("WebApplicationCacheManager", AtomicString::ConstructFromLiteral));
-    return name;
+    return "WebApplicationCacheManager";
 }
 
 WebApplicationCacheManager::WebApplicationCacheManager(ChildProcess* childProcess)
@@ -52,24 +51,17 @@ WebApplicationCacheManager::WebApplicationCacheManager(ChildProcess* childProces
     m_childProcess->addMessageReceiver(Messages::WebApplicationCacheManager::messageReceiverName(), this);
 }
 
-void WebApplicationCacheManager::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
-{
-    didReceiveWebApplicationCacheManagerMessage(connection, messageID, decoder);
-}
-
 void WebApplicationCacheManager::getApplicationCacheOrigins(uint64_t callbackID)
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_childProcess);
-
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash> origins;
+    HashSet<RefPtr<SecurityOrigin> > origins;
 
     cacheStorage().getOriginsWithCache(origins);
 
     Vector<SecurityOriginData> identifiers;
     identifiers.reserveCapacity(origins.size());
 
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash>::iterator end = origins.end();
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash>::iterator i = origins.begin();
+    HashSet<RefPtr<SecurityOrigin> >::iterator end = origins.end();
+    HashSet<RefPtr<SecurityOrigin> >::iterator i = origins.begin();
     for (; i != end; ++i) {
         RefPtr<SecurityOrigin> origin = *i;
         
@@ -86,8 +78,6 @@ void WebApplicationCacheManager::getApplicationCacheOrigins(uint64_t callbackID)
 
 void WebApplicationCacheManager::deleteEntriesForOrigin(const SecurityOriginData& originData)
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_childProcess);
-
     RefPtr<SecurityOrigin> origin = SecurityOrigin::create(originData.protocol, originData.host, originData.port);
     if (!origin)
         return;
@@ -97,15 +87,11 @@ void WebApplicationCacheManager::deleteEntriesForOrigin(const SecurityOriginData
 
 void WebApplicationCacheManager::deleteAllEntries()
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_childProcess);
-
     cacheStorage().deleteAllEntries();
 }
 
 void WebApplicationCacheManager::setAppCacheMaximumSize(uint64_t size)
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_childProcess);
-
     cacheStorage().setMaximumSize(size);
 }
 

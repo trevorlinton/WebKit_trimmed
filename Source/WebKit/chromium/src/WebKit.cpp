@@ -41,9 +41,7 @@
 #include "TextEncoding.h"
 #include "V8Binding.h"
 #include "V8RecursionScope.h"
-#include "WebMediaPlayerClientImpl.h"
 #include "WebSocket.h"
-#include "platform/WebKitPlatformSupport.h"
 #include "v8.h"
 #include <public/Platform.h>
 #include <public/WebPrerenderingSupport.h>
@@ -53,6 +51,20 @@
 #include <wtf/Threading.h>
 #include <wtf/UnusedParam.h>
 #include <wtf/text/AtomicString.h>
+
+#if ENABLE(INDEXED_DATABASE)
+#include "IDBFactoryBackendProxy.h"
+#endif
+
+#if ENABLE(VIDEO)
+#include "MediaPlayerPrivateChromium.h"
+#include "WebMediaPlayerClientImpl.h"
+#endif
+
+#if ENABLE(WORKERS)
+#include "WebWorkerClientImpl.h"
+#include "WorkerContextProxyChromium.h"
+#endif
 
 #if OS(DARWIN)
 #include "WebSystemInterface.h"
@@ -79,7 +91,7 @@ static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 // Doing so may cause hard to reproduce crashes.
 static bool s_webKitInitialized = false;
 
-static WebKitPlatformSupport* s_webKitPlatformSupport = 0;
+static Platform* s_webKitPlatformSupport = 0;
 
 static bool generateEntropy(unsigned char* buffer, size_t length)
 {
@@ -97,7 +109,7 @@ static void assertV8RecursionScope()
 }
 #endif
 
-void initialize(WebKitPlatformSupport* webKitPlatformSupport)
+void initialize(Platform* webKitPlatformSupport)
 {
     initializeWithoutV8(webKitPlatformSupport);
 
@@ -116,7 +128,7 @@ void initialize(WebKitPlatformSupport* webKitPlatformSupport)
     }
 }
 
-void initializeWithoutV8(WebKitPlatformSupport* webKitPlatformSupport)
+void initializeWithoutV8(Platform* webKitPlatformSupport)
 {
     ASSERT(!s_webKitInitialized);
     s_webKitInitialized = true;
@@ -143,6 +155,18 @@ void initializeWithoutV8(WebKitPlatformSupport* webKitPlatformSupport)
     // the initialization thread-safe, but given that so many code paths use
     // this, initializing this lazily probably doesn't buy us much.
     WebCore::UTF8Encoding();
+
+#if ENABLE(INDEXED_DATABASE)
+    WebCore::setIDBFactoryBackendInterfaceCreateFunction(WebKit::IDBFactoryBackendProxy::create);
+#endif
+
+#if ENABLE(VIDEO)
+    WebCore::MediaPlayerPrivate::setMediaEngineRegisterSelfFunction(WebKit::WebMediaPlayerClientImpl::registerSelf);
+#endif
+
+#if ENABLE(WORKERS)
+    WebCore::setWorkerContextProxyCreateFunction(WebWorkerClientImpl::createWorkerContextProxy);
+#endif
 }
 
 
@@ -165,7 +189,7 @@ void shutdown()
     WebPrerenderingSupport::shutdown();
 }
 
-WebKitPlatformSupport* webKitPlatformSupport()
+Platform* webKitPlatformSupport()
 {
     return s_webKitPlatformSupport;
 }

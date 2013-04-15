@@ -50,13 +50,8 @@
 #include <WebCore/AccessibilityObject.h>
 #include <WebCore/Frame.h>
 #include <WebCore/KURL.h>
-#include <WebCore/MIMETypeRegistry.h>
 #include <WebCore/Page.h>
 #include <wtf/UnusedParam.h>
-
-#if ENABLE(WEB_INTENTS)
-#include "InjectedBundleIntent.h"
-#endif
 
 using namespace WebKit;
 
@@ -295,7 +290,17 @@ void WKBundlePageInstallPageOverlay(WKBundlePageRef pageRef, WKBundlePageOverlay
 
 void WKBundlePageUninstallPageOverlay(WKBundlePageRef pageRef, WKBundlePageOverlayRef pageOverlayRef)
 {
-    toImpl(pageRef)->uninstallPageOverlay(toImpl(pageOverlayRef), false);
+    toImpl(pageRef)->uninstallPageOverlay(toImpl(pageOverlayRef));
+}
+
+void WKBundlePageInstallPageOverlayWithAnimation(WKBundlePageRef pageRef, WKBundlePageOverlayRef pageOverlayRef)
+{
+    toImpl(pageRef)->installPageOverlay(toImpl(pageOverlayRef), true);
+}
+
+void WKBundlePageUninstallPageOverlayWithAnimation(WKBundlePageRef pageRef, WKBundlePageOverlayRef pageOverlayRef)
+{
+    toImpl(pageRef)->uninstallPageOverlay(toImpl(pageOverlayRef), true);
 }
 
 bool WKBundlePageHasLocalDataForURL(WKBundlePageRef pageRef, WKURLRef urlRef)
@@ -347,13 +352,6 @@ double WKBundlePageGetBackingScaleFactor(WKBundlePageRef pageRef)
 void WKBundlePageListenForLayoutMilestones(WKBundlePageRef pageRef, WKLayoutMilestones milestones)
 {
     toImpl(pageRef)->listenForLayoutMilestones(toLayoutMilestones(milestones));
-}
-
-void WKBundlePageDeliverIntentToFrame(WKBundlePageRef pageRef, WKBundleFrameRef frameRef, WKBundleIntentRef intentRef)
-{
-#if ENABLE(WEB_INTENTS)
-    toImpl(pageRef)->deliverCoreIntentToFrame(toImpl(frameRef)->frameID(), toImpl(intentRef)->coreIntent());
-#endif
 }
 
 WKBundleInspectorRef WKBundlePageGetInspector(WKBundlePageRef pageRef)
@@ -447,11 +445,9 @@ void WKBundlePageConfirmCompositionWithText(WKBundlePageRef pageRef, WKStringRef
     toImpl(pageRef)->confirmCompositionForTesting(toWTFString(text));
 }
 
-bool WKBundlePageCanShowMIMEType(WKBundlePageRef, WKStringRef mimeTypeRef)
+bool WKBundlePageCanShowMIMEType(WKBundlePageRef pageRef, WKStringRef mimeTypeRef)
 {
-    const String mimeType = toWTFString(mimeTypeRef);
-
-    return WebCore::MIMETypeRegistry::canShowMIMEType(mimeType);
+    return toImpl(pageRef)->canShowMIMEType(toWTFString(mimeTypeRef));
 }
 
 void WKBundlePageSetViewMode(WKBundlePageRef pageRef, WKStringRef mode)

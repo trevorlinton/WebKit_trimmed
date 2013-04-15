@@ -83,11 +83,6 @@
               'WTF_USE_NEW_THEME=1',
             ],
           }],
-          ['os_posix == 1 and OS != "mac"', {
-            'defines': [
-              'WTF_USE_PTHREADS=1',
-            ],
-          }],
         ],
       },
     },
@@ -118,14 +113,13 @@
         ['exclude', '../wtf/url'],
         ['exclude', '../wtf/wince'],
         ['exclude', '../wtf/wx'],
-        ['exclude', '../wtf/unicode/glib'],
         ['exclude', '../wtf/unicode/qt4'],
         ['exclude', '../wtf/unicode/wchar'],
-        # GLib/GTK, even though its name doesn't really indicate.
-        ['exclude', '/(gtk|glib|gobject)/.*\\.(cpp|h)$'],
+        ['exclude', '/(gtk|gobject)/.*\\.(cpp|h)$'],
         ['exclude', '(Default|Gtk|Mac|None|Qt|Win|Wx|Efl)\\.(cpp|mm)$'],
         ['exclude', 'wtf/OSRandomSource\\.cpp$'],
         ['exclude', 'wtf/MainThread.cpp$'],
+        ['exclude', 'wtf/MetaAllocator\\.(cpp|h)$'],
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -142,6 +136,8 @@
           # Don't complain about using "this" in an initializer list
           # (e.g. in StringImpl.h).
           4355,
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          4267,
         ],
       },
       'export_dependent_settings': [
@@ -149,7 +145,8 @@
         '<(chromium_src_dir)/third_party/icu/icu.gyp:icui18n',
         '<(chromium_src_dir)/third_party/icu/icu.gyp:icuuc',
       ],
-      'msvs_disabled_warnings': [4127, 4355, 4510, 4512, 4610, 4706, 4068],
+      # Disable c4267 warnings until we fix size_t to int truncations.
+      'msvs_disabled_warnings': [4127, 4355, 4510, 4512, 4610, 4706, 4068, 4267],
       'conditions': [
         ['OS=="win"', {
           'sources/': [

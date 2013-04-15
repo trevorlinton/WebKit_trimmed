@@ -35,13 +35,20 @@
 #include "Logging.h"
 #include "NetworkConnectionToWebProcess.h"
 #include "NetworkProcessCreationParameters.h"
+#include "NetworkProcessPlatformStrategies.h"
 #include "NetworkProcessProxyMessages.h"
 #include "RemoteNetworkingContext.h"
+#include "StatisticsData.h"
+#include "WebContextMessages.h"
 #include "WebCookieManager.h"
 #include <WebCore/InitializeLogging.h>
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/RunLoop.h>
 #include <wtf/text/CString.h>
+
+#if USE(SECURITY_FRAMEWORK)
+#include "SecItemShim.h"
+#endif
 
 using namespace WebCore;
 
@@ -57,6 +64,8 @@ NetworkProcess::NetworkProcess()
     : m_hasSetCacheModel(false)
     , m_cacheModel(CacheModelDocumentViewer)
 {
+    NetworkProcessPlatformStrategies::initialize();
+
     addSupplement<AuthenticationManager>();
     addSupplement<WebCookieManager>();
     addSupplement<CustomProtocolManager>();
@@ -64,6 +73,11 @@ NetworkProcess::NetworkProcess()
 
 NetworkProcess::~NetworkProcess()
 {
+}
+
+AuthenticationManager& NetworkProcess::authenticationManager()
+{
+    return *supplement<AuthenticationManager>();
 }
 
 DownloadManager& NetworkProcess::downloadManager()
@@ -86,22 +100,22 @@ bool NetworkProcess::shouldTerminate()
     return false;
 }
 
-void NetworkProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
+void NetworkProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
 {
-    if (messageReceiverMap().dispatchMessage(connection, messageID, decoder))
+    if (messageReceiverMap().dispatchMessage(connection, decoder))
         return;
 
-    didReceiveNetworkProcessMessage(connection, messageID, decoder);
+    didReceiveNetworkProcessMessage(connection, decoder);
 }
 
-void NetworkProcess::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
+void NetworkProcess::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
 {
-    messageReceiverMap().dispatchSyncMessage(connection, messageID, decoder, replyEncoder);
+    messageReceiverMap().dispatchSyncMessage(connection, decoder, replyEncoder);
 }
 
 void NetworkProcess::didClose(CoreIPC::Connection*)
 {
-    // The UIProcess just crashed.
+    // The UIProcess just exited.
     RunLoop::current()->stop();
 }
 
@@ -127,7 +141,7 @@ CoreIPC::Connection* NetworkProcess::downloadProxyConnection()
 
 AuthenticationManager& NetworkProcess::downloadsAuthenticationManager()
 {
-    return *supplement<AuthenticationManager>();
+    return authenticationManager();
 }
 
 void NetworkProcess::initializeNetworkProcess(const NetworkProcessCreationParameters& parameters)
@@ -147,6 +161,15 @@ void NetworkProcess::initializeNetworkProcess(const NetworkProcessCreationParame
     NetworkProcessSupplementMap::const_iterator end = m_supplements.end();
     for (; it != end; ++it)
         it->value->initialize(parameters);
+}
+
+void NetworkProcess::initializeConnection(CoreIPC::Connection* connection)
+{
+    ChildProcess::initializeConnection(connection);
+
+#if USE(SECURITY_FRAMEWORK)
+    SecItemShim::shared().initializeConnection(connection);
+#endif
 }
 
 void NetworkProcess::createNetworkConnectionToWebProcess()
@@ -198,8 +221,28 @@ void NetworkProcess::setCacheModel(uint32_t cm)
     }
 }
 
+void NetworkProcess::getNetworkProcessStatistics(uint64_t callbackID)
+{
+    NetworkResourceLoadScheduler& scheduler = NetworkProcess::shared().networkResourceLoadScheduler();
+
+    StatisticsData data;
+
+    data.statisticsNumbers.set("HostsPendingCount", scheduler.hostsPendingCount());
+    data.statisticsNumbers.set("HostsActiveCount", scheduler.hostsActiveCount());
+    data.statisticsNumbers.set("LoadsPendingCount", scheduler.loadsPendingCount());
+    data.statisticsNumbers.set("LoadsActiveCount", scheduler.loadsActiveCount());
+    data.statisticsNumbers.set("DownloadsActiveCount", shared().downloadManager().activeDownloadCount());
+    data.statisticsNumbers.set("OutstandingAuthenticationChallengesCount", shared().authenticationManager().outstandingAuthenticationChallengeCount());
+
+    parentProcessConnection()->send(Messages::WebContext::DidGetStatistics(data, callbackID), 0);
+}
+
 #if !PLATFORM(MAC)
-void NetworkProcess::initializeSandbox(const String& clientIdentifier)
+void NetworkProcess::initializeProcessName(const ChildProcessInitializationParameters&)
+{
+}
+
+void NetworkProcess::initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&)
 {
 }
 #endif

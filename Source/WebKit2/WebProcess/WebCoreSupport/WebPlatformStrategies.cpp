@@ -29,31 +29,38 @@
 #if USE(PLATFORM_STRATEGIES)
 
 #include "BlockingResponseMap.h"
+#include "DataReference.h"
+#include "NetworkResourceLoadParameters.h"
 #include "PluginInfoStore.h"
+#include "StorageNamespaceProxy.h"
 #include "WebContextMessages.h"
 #include "WebCookieManager.h"
 #include "WebCoreArgumentCoders.h"
+#include "WebErrors.h"
+#include "WebPage.h"
 #include "WebProcess.h"
 #include "WebProcessProxyMessages.h"
 #include <WebCore/Color.h>
 #include <WebCore/KURL.h>
 #include <WebCore/LoaderStrategy.h>
 #include <WebCore/NetworkStorageSession.h>
+#include <WebCore/NetworkingContext.h>
 #include <WebCore/Page.h>
 #include <WebCore/PlatformCookieJar.h>
 #include <WebCore/PlatformPasteboard.h>
+#include <WebCore/ResourceError.h>
+#include <WebCore/StorageNamespace.h>
 #include <wtf/Atomics.h>
 
 #if ENABLE(NETWORK_PROCESS)
+#include "BlobRegistryProxy.h"
 #include "NetworkConnectionToWebProcessMessages.h"
 #include "NetworkProcessConnection.h"
 #include "WebResourceLoadScheduler.h"
 #endif
 
-#if PLATFORM(WIN) && USE(CFNETWORK)
-#include "WebFrameNetworkingContext.h"
-#include <WebKitSystemInterface/WebKitSystemInterface.h>
-#endif
+// FIXME: Remove this once it works well enough to be the default.
+#define ENABLE_UI_PROCESS_STORAGE 0
 
 using namespace WebCore;
 
@@ -99,6 +106,11 @@ PluginStrategy* WebPlatformStrategies::createPluginStrategy()
 }
 
 SharedWorkerStrategy* WebPlatformStrategies::createSharedWorkerStrategy()
+{
+    return this;
+}
+
+StorageStrategy* WebPlatformStrategies::createStorageStrategy()
 {
     return this;
 }
@@ -213,6 +225,37 @@ ResourceLoadScheduler* WebPlatformStrategies::resourceLoadScheduler()
     
     return scheduler;
 }
+
+void WebPlatformStrategies::loadResourceSynchronously(NetworkingContext* context, unsigned long resourceLoadIdentifier, const ResourceRequest& request, StoredCredentials storedCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data)
+{
+    if (!WebProcess::shared().usesNetworkProcess()) {
+        LoaderStrategy::loadResourceSynchronously(context, resourceLoadIdentifier, request, storedCredentials, error, response, data);
+        return;
+    }
+
+    CoreIPC::DataReference dataReference;
+
+    NetworkResourceLoadParameters loadParameters(resourceLoadIdentifier, 0, 0, request, ResourceLoadPriorityHighest, SniffContent, storedCredentials, context->storageSession().isPrivateBrowsingSession(), context->shouldClearReferrerOnHTTPSToHTTPRedirect());
+    if (!WebProcess::shared().networkConnection()->connection()->sendSync(Messages::NetworkConnectionToWebProcess::PerformSynchronousLoad(loadParameters), Messages::NetworkConnectionToWebProcess::PerformSynchronousLoad::Reply(error, response, dataReference), 0)) {
+        response = ResourceResponse();
+        error = internalError(request.url());
+        data.resize(0);
+
+        return;
+    }
+
+    data.resize(dataReference.size());
+    memcpy(data.data(), dataReference.data(), dataReference.size());
+}
+
+#if ENABLE(BLOB)
+BlobRegistry* WebPlatformStrategies::createBlobRegistry()
+{
+    if (!WebProcess::shared().usesNetworkProcess())
+        return LoaderStrategy::createBlobRegistry();
+    return new BlobRegistryProxy;    
+}
+#endif
 #endif
 
 // PluginStrategy
@@ -237,23 +280,6 @@ void WebPlatformStrategies::getPluginInfo(const WebCore::Page*, Vector<WebCore::
 }
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
-static BlockingResponseMap<Vector<WebCore::PluginInfo> >& responseMap()
-{
-    AtomicallyInitializedStatic(BlockingResponseMap<Vector<WebCore::PluginInfo> >&, responseMap = *new BlockingResponseMap<Vector<WebCore::PluginInfo> >);
-    return responseMap;
-}
-
-void handleDidGetPlugins(uint64_t requestID, const Vector<WebCore::PluginInfo>& plugins)
-{
-    responseMap().didReceiveResponse(requestID, adoptPtr(new Vector<WebCore::PluginInfo>(plugins)));
-}
-
-static uint64_t generateRequestID()
-{
-    static int uniqueID;
-    return atomicIncrement(&uniqueID);
-}
-
 void WebPlatformStrategies::populatePluginCache()
 {
     if (m_pluginCacheIsPopulated)
@@ -262,15 +288,29 @@ void WebPlatformStrategies::populatePluginCache()
     ASSERT(m_cachedPlugins.isEmpty());
     
     // FIXME: Should we do something in case of error here?
-    uint64_t requestID = generateRequestID();
-    WebProcess::shared().connection()->send(Messages::WebProcessProxy::GetPlugins(requestID, m_shouldRefreshPlugins), 0);
+    if (!WebProcess::shared().connection()->sendSync(Messages::WebProcessProxy::GetPlugins(m_shouldRefreshPlugins), Messages::WebProcessProxy::GetPlugins::Reply(m_cachedPlugins), 0))
+        return;
 
-    m_cachedPlugins = *responseMap().waitForResponse(requestID);
-    
     m_shouldRefreshPlugins = false;
     m_pluginCacheIsPopulated = true;
 }
 #endif // ENABLE(NETSCAPE_PLUGIN_API)
+
+// StorageStrategy
+
+PassRefPtr<StorageNamespace> WebPlatformStrategies::localStorageNamespace(const String& path, unsigned quota)
+{
+    return StorageStrategy::localStorageNamespace(path, quota);
+}
+
+PassRefPtr<StorageNamespace> WebPlatformStrategies::sessionStorageNamespace(Page* page, unsigned quota)
+{
+#if ENABLE(UI_PROCESS_STORAGE)
+    return StorageNamespaceProxy::createSessionStorageNamespace(WebPage::fromCorePage(page));
+#else
+    return StorageStrategy::sessionStorageNamespace(page, quota);
+#endif
+}
 
 // VisitedLinkStrategy
 

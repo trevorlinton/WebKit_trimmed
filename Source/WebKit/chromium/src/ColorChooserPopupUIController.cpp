@@ -91,9 +91,6 @@ void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
     for (unsigned i = 0; i < suggestions.size(); i++)
         suggestionValues.append(suggestions[i].serialized());
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
-    FrameView* view = static_cast<WebViewImpl*>(m_chromeClient->webView())->page()->mainFrame()->view();
-    IntRect rootViewVisibleContentRect = view->visibleContentRect(true /* include scrollbars */);
-    IntRect rootViewRectInScreen = m_chromeClient->rootViewToScreen(rootViewVisibleContentRect);
 
     PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);
     writer.addData(pickerCommonCss, sizeof(pickerCommonCss));
@@ -103,12 +100,6 @@ void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
     PagePopupClient::addProperty("values", suggestionValues, writer);
     PagePopupClient::addProperty("otherColorLabel", Platform::current()->queryLocalizedString(WebLocalizedString::OtherColorLabel), writer);
     addProperty("anchorRectInScreen", anchorRectInScreen, writer);
-    addProperty("rootViewRectInScreen", rootViewRectInScreen, writer);
-#if OS(MAC_OS_X)
-    addProperty("confineToRootView", true, writer);
-#else
-    addProperty("confineToRootView", false, writer);
-#endif
     PagePopupClient::addString("};\n", writer);
     writer.addData(pickerCommonJs, sizeof(pickerCommonJs));
     writer.addData(colorSuggestionPickerJs, sizeof(colorSuggestionPickerJs));
@@ -129,6 +120,12 @@ void ColorChooserPopupUIController::setValueAndClosePopup(int numValue, const St
     if (numValue == ColorPickerPopupActionChooseOtherColor)
         openColorChooser();
     closePopup();
+}
+
+void ColorChooserPopupUIController::setValue(const String& value)
+{
+    ASSERT(m_client);
+    m_client->didChooseColor(Color(value));
 }
 
 void ColorChooserPopupUIController::didClosePopup()

@@ -26,11 +26,14 @@
 #include "config.h"
 #include "RenderMultiColumnFlowThread.h"
 
+#include "RenderMultiColumnBlock.h"
+
 namespace WebCore {
 
-RenderMultiColumnFlowThread::RenderMultiColumnFlowThread(Node* node)
-    : RenderFlowThread(node)
+RenderMultiColumnFlowThread::RenderMultiColumnFlowThread(Document* document)
+    : RenderFlowThread(document)
 {
+    setFlowThreadState(InsideInFlowThread);
 }
 
 RenderMultiColumnFlowThread::~RenderMultiColumnFlowThread()

@@ -49,6 +49,8 @@
 #include "JSDOMBinding.h"
 #include "JSDOMWindow.h"
 #include "JSLock.h"
+#include "NetworkStorageSession.h"
+#include "Operations.h"
 #include "PageClientEfl.h"
 #include "PageGroup.h"
 #include "PlatformMouseEvent.h"
@@ -271,6 +273,7 @@ struct _Ewk_View_Private_Data {
 #if ENABLE(NAVIGATOR_CONTENT_UTILS) || ENABLE(CUSTOM_SCHEME_HANDLER)
     OwnPtr<WebCore::NavigatorContentUtilsClientEfl> navigatorContentUtilsClient;
 #endif
+    OwnPtr<WebCore::NetworkStorageSession> storageSession;
     struct {
         Ewk_Menu menu;
         WebCore::PopupMenuClient* menuClient;
@@ -368,7 +371,6 @@ struct _Ewk_View_Private_Data {
         } center;
         Ecore_Animator* animator;
     } animatedZoom;
-    SoupSession* soupSession;
     const char* cursorGroup;
     Evas_Object* cursorObject;
 #if ENABLE(INSPECTOR)
@@ -377,7 +379,9 @@ struct _Ewk_View_Private_Data {
 #ifdef HAVE_ECORE_X
     bool isUsingEcoreX;
 #endif
+#if ENABLE(CONTEXT_MENUS)
     Ewk_Context_Menu* contextMenu;
+#endif
 };
 
 #ifndef EWK_TYPE_CHECK
@@ -759,7 +763,9 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
 
     WebCore::Page::PageClients pageClients;
     pageClients.chromeClient = new WebCore::ChromeClientEfl(smartData->self);
+#if ENABLE(CONTEXT_MENUS)
     pageClients.contextMenuClient = new WebCore::ContextMenuClientEfl;
+#endif
     pageClients.editorClient = new WebCore::EditorClientEfl(smartData->self);
     pageClients.dragClient = new WebCore::DragClientEfl;
 #if ENABLE(INSPECTOR)
@@ -820,6 +826,7 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
     priv->pageSettings->setStandardFontFamily("sans");
     priv->pageSettings->setHyperlinkAuditingEnabled(false);
     WebCore::RuntimeEnabledFeatures::setCSSRegionsEnabled(true);
+    WebCore::RuntimeEnabledFeatures::setSeamlessIFramesEnabled(true);
     priv->pageSettings->setScriptEnabled(true);
     priv->pageSettings->setPluginsEnabled(true);
     priv->pageSettings->setLocalStorageEnabled(true);
@@ -837,6 +844,10 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
     priv->pageSettings->setInteractiveFormValidationEnabled(true);
 #if USE(ACCELERATED_COMPOSITING)
     priv->pageSettings->setAcceleratedCompositingEnabled(false);
+    char* debugVisualsEnvironment = getenv("WEBKIT_SHOW_COMPOSITING_DEBUG_VISUALS");
+    bool showDebugVisuals = debugVisualsEnvironment && !strcmp(debugVisualsEnvironment, "1");
+    priv->pageSettings->setShowDebugBorders(showDebugVisuals);
+    priv->pageSettings->setShowRepaintCounter(showDebugVisuals);
 #endif
 
     url = priv->pageSettings->userStyleSheetLocation();
@@ -886,7 +897,7 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
     priv->settings.shouldDisplaySubtitles = priv->pageSettings->shouldDisplaySubtitles();
     priv->settings.shouldDisplayTextDescriptions = priv->pageSettings->shouldDisplayTextDescriptions();
 #endif
-    priv->settings.scriptsCanAccessClipboard = priv->pageSettings->javaScriptCanAccessClipboard() && priv->pageSettings->isDOMPasteAllowed();
+    priv->settings.scriptsCanAccessClipboard = priv->pageSettings->javaScriptCanAccessClipboard() && priv->pageSettings->DOMPasteAllowed();
     priv->settings.resizableTextareas = priv->pageSettings->textAreasAreResizable();
     priv->settings.privateBrowsing = priv->pageSettings->privateBrowsingEnabled();
     priv->settings.caretBrowsing = priv->pageSettings->caretBrowsingEnabled();
@@ -920,7 +931,7 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
 
     priv->history = ewk_history_new(static_cast<WebCore::BackForwardListImpl*>(priv->page->backForwardList()));
 
-    priv->soupSession = WebCore::ResourceHandle::defaultSession();
+    priv->storageSession = WebCore::NetworkStorageSession::createDefaultSession();
 
     priv->pageClient = adoptPtr(new PageClientEfl(smartData->self));
 
@@ -928,7 +939,9 @@ static Ewk_View_Private_Data* _ewk_view_priv_new(Ewk_View_Smart_Data* smartData)
     priv->isUsingEcoreX = WebCore::isUsingEcoreX(smartData->base.evas);
 #endif
 
+#if ENABLE(CONTEXT_MENUS)
     priv->contextMenu = 0;
+#endif
 
 #if USE(ACCELERATED_COMPOSITING)
     priv->isCompositingActive = false;
@@ -967,8 +980,10 @@ static void _ewk_view_priv_del(Ewk_View_Private_Data* priv)
     if (priv->cursorObject)
         evas_object_del(priv->cursorObject);
 
+#if ENABLE(CONTEXT_MENUS)
     if (priv->contextMenu)
         ewk_context_menu_free(priv->contextMenu);
+#endif
 
 #if USE(ACCELERATED_COMPOSITING)
     priv->acceleratedCompositingContext = nullptr;
@@ -1708,6 +1723,8 @@ Eina_Bool ewk_view_context_menu_forward_event(Evas_Object* ewkView, const Evas_E
 
     return true;
 #else
+    UNUSED_PARAM(ewkView);
+    UNUSED_PARAM(downEvent);
     return false;
 #endif
 }
@@ -4373,7 +4390,7 @@ SoupSession* ewk_view_soup_session_get(const Evas_Object* ewkView)
 {
     EWK_VIEW_SD_GET_OR_RETURN(ewkView, smartData, 0);
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, 0);
-    return priv->soupSession;
+    return priv->storageSession->soupSession();
 }
 
 void ewk_view_soup_session_set(Evas_Object* ewkView, SoupSession* session)
@@ -4385,7 +4402,7 @@ void ewk_view_soup_session_set(Evas_Object* ewkView, SoupSession* session)
             "a SoupSessionSync was provided.");
         return;
     }
-    priv->soupSession = session;
+    priv->storageSession->setSoupSession(session);
 }
 
 Eina_Bool ewk_view_setting_enable_xss_auditor_get(const Evas_Object* ewkView)
@@ -4413,6 +4430,7 @@ Eina_Bool ewk_view_setting_should_display_subtitles_get(const Evas_Object *ewkVi
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, false);
     return priv->settings.shouldDisplaySubtitles;
 #else
+    UNUSED_PARAM(ewkView);
     return false;
 #endif
 }
@@ -4424,6 +4442,7 @@ Eina_Bool ewk_view_setting_should_display_captions_get(const Evas_Object *ewkVie
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, false);
     return priv->settings.shouldDisplayCaptions;
 #else
+    UNUSED_PARAM(ewkView);
     return false;
 #endif
 }
@@ -4438,6 +4457,9 @@ void ewk_view_setting_should_display_captions_set(Evas_Object *ewkView, Eina_Boo
         priv->pageSettings->setShouldDisplayCaptions(enable);
         priv->settings.shouldDisplayCaptions = enable;
     }
+#else
+    UNUSED_PARAM(ewkView);
+    UNUSED_PARAM(enable);
 #endif
 }
 
@@ -4451,6 +4473,9 @@ void ewk_view_setting_should_display_subtitles_set(Evas_Object *ewkView, Eina_Bo
         priv->pageSettings->setShouldDisplaySubtitles(enable);
         priv->settings.shouldDisplaySubtitles = enable;
     }
+#else
+    UNUSED_PARAM(ewkView);
+    UNUSED_PARAM(enable);
 #endif
 }
 
@@ -4461,6 +4486,7 @@ Eina_Bool ewk_view_setting_should_display_text_descriptions_get(const Evas_Objec
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, false);
     return priv->settings.shouldDisplayTextDescriptions;
 #else
+    UNUSED_PARAM(ewkView);
     return false;
 #endif
 }
@@ -4475,6 +4501,9 @@ void ewk_view_setting_should_display_text_descriptions_set(Evas_Object *ewkView,
         priv->pageSettings->setShouldDisplayTextDescriptions(enable);
         priv->settings.shouldDisplayTextDescriptions = enable;
     }
+#else
+    UNUSED_PARAM(ewkView);
+    UNUSED_PARAM(enable);
 #endif
 }
 
@@ -4760,10 +4789,15 @@ void ewk_view_fullscreen_exit(const Evas_Object* ewkView)
 
 Ewk_Context_Menu* ewk_view_context_menu_get(const Evas_Object* ewkView)
 {
+#if ENABLE(CONTEXT_MENUS)
     EWK_VIEW_SD_GET_OR_RETURN(ewkView, smartData, 0);
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, 0);
 
     return priv->contextMenu;
+#else
+    UNUSED_PARAM(ewkView);
+    return 0;
+#endif
 }
 
 Eina_Bool ewk_view_setting_tiled_backing_store_enabled_set(Evas_Object* ewkView, Eina_Bool enable)
@@ -4829,6 +4863,13 @@ PlatformPageClient corePageClient(Evas_Object* ewkView)
     EWK_VIEW_SD_GET_OR_RETURN(ewkView, smartData, 0);
     EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, 0);
     return priv->pageClient.get();
+}
+
+WebCore::NetworkStorageSession* storageSession(const Evas_Object* ewkView)
+{
+    EWK_VIEW_SD_GET_OR_RETURN(ewkView, smartData, 0);
+    EWK_VIEW_PRIV_GET_OR_RETURN(smartData, priv, 0);
+    return priv->storageSession.get();
 }
 
 } // namespace EWKPrivate

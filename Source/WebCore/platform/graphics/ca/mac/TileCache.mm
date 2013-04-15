@@ -106,8 +106,10 @@ TileCache::TileCache(WebTileCacheLayer* tileCacheLayer)
     , m_isInWindow(false)
     , m_scrollingPerformanceLoggingEnabled(false)
     , m_aggressivelyRetainsTiles(false)
+    , m_unparentsOffscreenTiles(false)
     , m_acceleratesDrawing(false)
     , m_tilesAreOpaque(false)
+    , m_clipsToExposedRect(false)
     , m_tileDebugBorderWidth(0)
     , m_indicatorMode(ThreadedScrollingIndication)
 {
@@ -295,7 +297,7 @@ void TileCache::setTilesOpaque(bool opaque)
     }
 }
 
-void TileCache::setVisibleRect(const IntRect& visibleRect)
+void TileCache::setVisibleRect(const FloatRect& visibleRect)
 {
     if (m_visibleRect == visibleRect)
         return;
@@ -304,7 +306,28 @@ void TileCache::setVisibleRect(const IntRect& visibleRect)
     revalidateTiles();
 }
 
-void TileCache::prepopulateRect(const IntRect& rect)
+void TileCache::setExposedRect(const FloatRect& exposedRect)
+{
+    if (m_exposedRect == exposedRect)
+        return;
+
+    m_exposedRect = exposedRect;
+    revalidateTiles();
+}
+
+void TileCache::setClipsToExposedRect(bool clipsToExposedRect)
+{
+    if (m_clipsToExposedRect == clipsToExposedRect)
+        return;
+
+    m_clipsToExposedRect = clipsToExposedRect;
+
+    // Going from not clipping to clipping, we don't need to revalidate right away.
+    if (clipsToExposedRect)
+        revalidateTiles();
+}
+
+void TileCache::prepopulateRect(const FloatRect& rect)
 {
     ensureTilesForRect(rect);
 }
@@ -316,8 +339,12 @@ void TileCache::setIsInWindow(bool isInWindow)
 
     m_isInWindow = isInWindow;
 
-    const double tileRevalidationTimeout = 4;
-    scheduleTileRevalidation(m_isInWindow ? 0 : tileRevalidationTimeout);
+    if (m_isInWindow)
+        revalidateTiles();
+    else {
+        const double tileRevalidationTimeout = 4;
+        scheduleTileRevalidation(tileRevalidationTimeout);
+    }
 }
 
 void TileCache::setTileCoverage(TileCoverage coverage)
@@ -390,19 +417,24 @@ void TileCache::getTileIndexRangeForRect(const IntRect& rect, TileIndex& topLeft
     bottomRight.setY(max(bottomYRatio - 1, 0));
 }
 
-IntRect TileCache::computeTileCoverageRect(const IntRect& previousVisibleRect) const
+FloatRect TileCache::computeTileCoverageRect(const FloatRect& previousVisibleRect) const
 {
+    FloatRect visibleRect = m_visibleRect;
+
+    if (m_clipsToExposedRect)
+        visibleRect.intersect(m_exposedRect);
+
     // If the page is not in a window (for example if it's in a background tab), we limit the tile coverage rect to the visible rect.
     // Furthermore, if the page can't have scrollbars (for example if its body element has overflow:hidden) it's very unlikely that the
     // page will ever be scrolled so we limit the tile coverage rect as well.
     if (!m_isInWindow || m_tileCoverage & CoverageForSlowScrolling)
-        return m_visibleRect;
+        return visibleRect;
 
-    bool largeVisibleRectChange = !previousVisibleRect.isEmpty() && !m_visibleRect.intersects(previousVisibleRect);
+    bool largeVisibleRectChange = !previousVisibleRect.isEmpty() && !visibleRect.intersects(previousVisibleRect);
     
     // FIXME: look at how far the document can scroll in each dimension.
-    int coverageHorizontalSize = m_visibleRect.width();
-    int coverageVerticalSize = m_visibleRect.height();
+    float coverageHorizontalSize = visibleRect.width();
+    float coverageVerticalSize = visibleRect.height();
     
     // Inflate the coverage rect so that it covers 2x of the visible width and 3x of the visible height.
     // These values were chosen because it's more common to have tall pages and to scroll vertically,
@@ -414,22 +446,25 @@ IntRect TileCache::computeTileCoverageRect(const IntRect& previousVisibleRect) c
         coverageVerticalSize *= 3;
 
     // Don't extend coverage before 0 or after the end.
-    IntRect coverageBounds = bounds();
-    int coverageLeft = m_visibleRect.x() - (coverageHorizontalSize - m_visibleRect.width()) / 2;
+    FloatRect coverageBounds = bounds();
+    float coverageLeft = visibleRect.x() - (coverageHorizontalSize - visibleRect.width()) / 2;
     coverageLeft = min(coverageLeft, coverageBounds.maxX() - coverageHorizontalSize);
     coverageLeft = max(coverageLeft, coverageBounds.x());
 
-    int coverageTop = m_visibleRect.y() - (coverageVerticalSize - m_visibleRect.height()) / 2;
+    float coverageTop = visibleRect.y() - (coverageVerticalSize - visibleRect.height()) / 2;
     coverageTop = min(coverageTop, coverageBounds.maxY() - coverageVerticalSize);
     coverageTop = max(coverageTop, coverageBounds.y());
 
-    return IntRect(coverageLeft, coverageTop, coverageHorizontalSize, coverageVerticalSize);
+    return FloatRect(coverageLeft, coverageTop, coverageHorizontalSize, coverageVerticalSize);
 }
 
-IntSize TileCache::tileSizeForCoverageRect(const IntRect& coverageRect) const
+IntSize TileCache::tileSizeForCoverageRect(const FloatRect& coverageRect) const
 {
-    if (m_tileCoverage & CoverageForSlowScrolling)
-        return coverageRect.size();
+    if (m_tileCoverage & CoverageForSlowScrolling) {
+        FloatSize tileSize = coverageRect.size();
+        tileSize.scale(m_scale);
+        return expandedIntSize(tileSize);
+    }
 
     return IntSize(defaultTileCacheWidth, defaultTileCacheHeight);
 }
@@ -460,21 +495,21 @@ unsigned TileCache::blankPixelCount() const
     return blankPixelCountForTiles(tiles, m_visibleRect, IntPoint(0,0));
 }
 
-unsigned TileCache::blankPixelCountForTiles(const WebTileLayerList& tiles, IntRect visibleRect, IntPoint tileTranslation)
+unsigned TileCache::blankPixelCountForTiles(const WebTileLayerList& tiles, const FloatRect& visibleRect, const IntPoint& tileTranslation)
 {
     Region paintedVisibleTiles;
 
     for (WebTileLayerList::const_iterator it = tiles.begin(), end = tiles.end(); it != end; ++it) {
         const WebTileLayer* tileLayer = it->get();
 
-        IntRect visiblePart(CGRectOffset([tileLayer frame], tileTranslation.x(), tileTranslation.y()));
+        FloatRect visiblePart(CGRectOffset([tileLayer frame], tileTranslation.x(), tileTranslation.y()));
         visiblePart.intersect(visibleRect);
 
-        if (!visiblePart.isEmpty() && [tileLayer paintCount])
-            paintedVisibleTiles.unite(visiblePart);
+        if (!visiblePart.isEmpty())
+            paintedVisibleTiles.unite(enclosingIntRect(visiblePart));
     }
 
-    Region uncoveredRegion(visibleRect);
+    Region uncoveredRegion(enclosingIntRect(visibleRect));
     uncoveredRegion.subtract(paintedVisibleTiles);
 
     return uncoveredRegion.totalArea();
@@ -546,12 +581,17 @@ void TileCache::revalidateTiles(TileValidationPolicyFlags foregroundValidationPo
     if (!platformLayer)
         return;
 
-    if (m_visibleRect.isEmpty() || bounds().isEmpty())
+    FloatRect visibleRect = m_visibleRect;
+
+    if (m_clipsToExposedRect)
+        visibleRect.intersect(m_exposedRect);
+
+    if (visibleRect.isEmpty() || bounds().isEmpty())
         return;
     
     TileValidationPolicyFlags validationPolicy = m_isInWindow ? foregroundValidationPolicy : backgroundValidationPolicy;
     
-    IntRect tileCoverageRect = computeTileCoverageRect(m_visibleRectAtLastRevalidate);
+    FloatRect tileCoverageRect = computeTileCoverageRect(m_visibleRectAtLastRevalidate);
     FloatRect scaledRect(tileCoverageRect);
     scaledRect.scale(m_scale);
     IntRect coverageRectInTileCoords(enclosingIntRect(scaledRect));
@@ -586,7 +626,9 @@ void TileCache::revalidateTiles(TileValidationPolicyFlags foregroundValidationPo
                 if (tileInfo.cohort == VisibleTileCohort) {
                     tileInfo.cohort = currCohort;
                     ++tilesInCohort;
-                    [tileInfo.layer.get() removeFromSuperlayer];
+                    
+                    if (m_unparentsOffscreenTiles)
+                        [tileInfo.layer.get() removeFromSuperlayer];
                 }
             }
         }
@@ -617,10 +659,10 @@ void TileCache::revalidateTiles(TileValidationPolicyFlags foregroundValidationPo
             TileInfo& tileInfo = m_tiles.add(tileIndex, TileInfo()).iterator->value;
             if (!tileInfo.layer) {
                 tileInfo.layer = createTileLayer(tileRect);
-                if (m_isInWindow)
+                if (!m_unparentsOffscreenTiles || m_isInWindow)
                     [m_tileContainerLayer.get() addSublayer:tileInfo.layer.get()];
             } else {
-                if (m_isInWindow && ![tileInfo.layer.get() superlayer])
+                if ((!m_unparentsOffscreenTiles || m_isInWindow) && ![tileInfo.layer.get() superlayer])
                     [m_tileContainerLayer.get() addSublayer:tileInfo.layer.get()];
 
                 // We already have a layer for this tile. Ensure that its size is correct.
@@ -642,7 +684,7 @@ void TileCache::revalidateTiles(TileValidationPolicyFlags foregroundValidationPo
         m_cohortList.clear();
     }
 
-    if (validationPolicy & UnparentAllTiles) {
+    if (m_unparentsOffscreenTiles && (validationPolicy & UnparentAllTiles)) {
         for (TileMap::iterator it = m_tiles.begin(), end = m_tiles.end(); it != end; ++it)
             [it->value.layer.get() removeFromSuperlayer];
     }
@@ -650,7 +692,7 @@ void TileCache::revalidateTiles(TileValidationPolicyFlags foregroundValidationPo
     if (m_tiledScrollingIndicatorLayer)
         updateTileCoverageMap();
 
-    m_visibleRectAtLastRevalidate = m_visibleRect;
+    m_visibleRectAtLastRevalidate = visibleRect;
 
     if (dirtyRects.isEmpty())
         return;
@@ -708,9 +750,9 @@ void TileCache::cohortRemovalTimerFired(Timer<TileCache>*)
         updateTileCoverageMap();
 }
 
-void TileCache::ensureTilesForRect(const IntRect& rect)
+void TileCache::ensureTilesForRect(const FloatRect& rect)
 {
-    if (!m_isInWindow)
+    if (m_unparentsOffscreenTiles && !m_isInWindow)
         return;
 
     PlatformCALayer* platformLayer = PlatformCALayer::platformCALayer(m_tileCacheLayer);
@@ -857,7 +899,9 @@ void TileCache::setScrollingModeIndication(ScrollingModeIndication scrollingMode
         return;
 
     m_indicatorMode = scrollingMode;
-    updateTileCoverageMap();
+
+    if (m_tiledScrollingIndicatorLayer)
+        updateTileCoverageMap();
 }
 
 WebTileLayer* TileCache::tileLayerAtIndex(const TileIndex& index) const

@@ -41,6 +41,7 @@
 #include "TransformationMatrix.h"
 
 #include <BlackBerryPlatformGLES2Context.h>
+#include <BlackBerryPlatformGLES2Program.h>
 #include <BlackBerryPlatformIntRectRegion.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
@@ -56,10 +57,6 @@ class LayerRenderingResults {
 public:
     LayerRenderingResults() : wasEmpty(true), needsAnimationFrame(false) { }
 
-    void addHolePunchRect(const IntRect&);
-    IntRect holePunchRect(size_t index) const;
-    size_t holePunchRectSize() { return m_holePunchRects.size(); }
-
     static const int NumberOfDirtyRects = 3;
     const IntRect& dirtyRect(int i) const { return m_dirtyRects[i]; }
     void addDirtyRect(const IntRect& dirtyRect);
@@ -72,7 +69,6 @@ public:
     bool needsAnimationFrame;
 
 private:
-    Vector<IntRect> m_holePunchRects; // Rects are in compositing surface coordinates.
     IntRect m_dirtyRects[NumberOfDirtyRects];
 };
 
@@ -108,7 +104,7 @@ public:
     // transform is the model-view-project matrix that goes all the way from contents to normalized device coordinates.
     void compositeLayers(const TransformationMatrix&, LayerCompositingThread* rootLayer);
     void compositeBuffer(const TransformationMatrix&, const FloatRect& contents, BlackBerry::Platform::Graphics::Buffer*, bool contentsOpaque, float opacity);
-    void drawCheckerboardPattern(const TransformationMatrix&, const FloatRect& contents);
+    void drawColor(const TransformationMatrix&, const FloatRect& contents, const Color&);
 
     // Keep track of layers that need cleanup when the LayerRenderer is destroyed
     void addLayer(LayerCompositingThread*);
@@ -153,35 +149,34 @@ private:
     IntRect toOpenGLWindowCoordinates(const FloatRect&) const;
     IntRect toWebKitWindowCoordinates(const FloatRect&) const;
 
-    void bindCommonAttribLocation(int location, const char* attribName);
-
     bool makeContextCurrent();
 
-    bool initializeSharedGLObjects();
+    enum ProgramIndex {
+        LayerProgramRGBA = LayerData::LayerProgramRGBA,
+        LayerProgramBGRA = LayerData::LayerProgramBGRA,
 
-    // GL shader program object IDs.
-    unsigned m_layerProgramObject[LayerData::NumberOfLayerProgramShaders];
-    unsigned m_layerMaskProgramObject[LayerData::NumberOfLayerProgramShaders];
-    unsigned m_colorProgramObject;
-    unsigned m_checkerProgramObject;
+        MaskPrograms,
+        LayerMaskProgramRGBA = MaskPrograms + LayerData::LayerProgramRGBA,
+        LayerMaskProgramBGRA = MaskPrograms + LayerData::LayerProgramBGRA,
+
+        InternalPrograms,
+        ColorProgram = InternalPrograms,
+
+        NumberOfPrograms
+    };
+
+    bool createProgram(ProgramIndex);
+    const BlackBerry::Platform::Graphics::GLES2Program& useProgram(ProgramIndex);
+    const BlackBerry::Platform::Graphics::GLES2Program& useLayerProgram(LayerData::LayerProgram, bool isMask = false);
+
+    BlackBerry::Platform::Graphics::GLES2Program m_programs[NumberOfPrograms];
 
     // Shader uniform and attribute locations.
-    const int m_positionLocation;
-    const int m_texCoordLocation;
 #if ENABLE(CSS_FILTERS)
     OwnPtr<LayerFilterRenderer> m_filterRenderer;
 #endif
 
-    int m_samplerLocation[LayerData::NumberOfLayerProgramShaders];
-    int m_alphaLocation[LayerData::NumberOfLayerProgramShaders];
-    int m_maskSamplerLocation[LayerData::NumberOfLayerProgramShaders];
-    int m_maskSamplerLocationMask[LayerData::NumberOfLayerProgramShaders];
-    int m_maskAlphaLocation[LayerData::NumberOfLayerProgramShaders];
-
     int m_colorColorLocation;
-    int m_checkerScaleLocation;
-    int m_checkerOriginLocation;
-    int m_checkerSurfaceHeightLocation;
 
     // Current draw configuration.
     double m_scale;

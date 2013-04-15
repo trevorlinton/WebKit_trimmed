@@ -26,11 +26,15 @@
 #ifndef FeatureObserver_h
 #define FeatureObserver_h
 
+#include <wtf/BitVector.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
 class DOMWindow;
+class Document;
 
 class FeatureObserver {
     WTF_MAKE_NONCOPYABLE(FeatureObserver);
@@ -41,7 +45,7 @@ public:
     enum Feature {
         PageDestruction,
         LegacyNotifications,
-        UnusedSlot01, // Prior to 10/2012, we used this slot for LegacyBlobBuilder.
+        MultipartMainResource,
         PrefixedIndexedDB,
         WorkerStart,
         SharedWorkerStart,
@@ -57,22 +61,67 @@ public:
         ContentSecurityPolicy,
         ContentSecurityPolicyReportOnly,
         PrefixedContentSecurityPolicyReportOnly,
-        // Add new features above this line.
+        PrefixedTransitionEndEvent,
+        UnprefixedTransitionEndEvent,
+        PrefixedAndUnprefixedTransitionEndEvent,
+        AutoFocusAttribute,
+        AutoSaveAttribute,
+        DataListElement,
+        FormAttribute,
+        IncrementalAttribute,
+        InputTypeColor,
+        InputTypeDate,
+        InputTypeDateTime,
+        InputTypeDateTimeFallback,
+        InputTypeDateTimeLocal,
+        InputTypeEmail,
+        InputTypeMonth,
+        InputTypeNumber,
+        InputTypeRange,
+        InputTypeSearch,
+        InputTypeTel,
+        InputTypeTime,
+        InputTypeURL,
+        InputTypeWeek,
+        InputTypeWeekFallback,
+        ListAttribute,
+        MaxAttribute,
+        MinAttribute,
+        PatternAttribute,
+        PlaceholderAttribute,
+        PrecisionAttribute,
+        PrefixedDirectoryAttribute,
+        PrefixedSpeechAttribute,
+        RequiredAttribute,
+        ResultsAttribute,
+        StepAttribute,
+        PageVisits,
+        HTMLMarqueeElement,
+        CSSOverflowMarquee,
+        Reflection,
+        // Add new features above this line. Don't change assigned numbers of each items.
         NumberOfFeatures, // This enum value must be last.
     };
 
+    static void observe(Document*, Feature);
     static void observe(DOMWindow*, Feature);
+    void didCommitLoad();
 
 private:
     void didObserve(Feature feature)
     {
-        COMPILE_ASSERT(sizeof(m_featureMask) * 8 >= NumberOfFeatures, FeaturesMustNotOverflowBitmask);
         ASSERT(feature != PageDestruction); // PageDestruction is reserved as a scaling factor.
         ASSERT(feature < NumberOfFeatures);
-        m_featureMask |= 1 << static_cast<int>(feature);
+        if (!m_featureBits) {
+            m_featureBits = adoptPtr(new BitVector(NumberOfFeatures));
+            m_featureBits->clearAll();
+        }
+        m_featureBits->quickSet(feature);
     }
 
-    int m_featureMask;
+    void updateMeasurements();
+
+    OwnPtr<BitVector> m_featureBits;
 };
 
 } // namespace WebCore

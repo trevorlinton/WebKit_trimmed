@@ -28,6 +28,7 @@ CheckSecurityForNode
 Clamp
 Conditional=*
 Constructor
+ConstructorConditional=*
 ConstructorParameters=*
 ConstructorRaisesException
 ConstructorTemplate=Event|TypedArray
@@ -55,6 +56,8 @@ EventTarget
 ExtendsDOMGlobalObject
 GenerateIsReachable=ImplDocument|ImplElementRoot|ImplOwnerNodeRoot
 Immutable
+ImplementationLacksVTable
+ImplementationNamespace=*
 ImplementedAs=*
 IndexedGetter
 InitializedByEventConstructor
@@ -94,6 +97,7 @@ ObjCPolymorphic
 ObjCProtocol
 OmitConstructor
 Optional=|DefaultIsNullString|DefaultIsUndefined
+PassContext
 PassThisToCallback=*
 Reflect=*
 Replaceable
@@ -112,6 +116,7 @@ V8CacheAttributeForGC
 V8Custom
 V8CustomConstructor
 V8CustomGetter
+V8CustomIndexedGetter
 V8CustomIsReachable
 V8CustomSetter
 V8CustomToJSObject
@@ -123,4 +128,6 @@ V8GenerateIsReachable=ImplDocument|ImplElementRoot|ImplOwnerRoot|ImplOwnerNodeRo
 V8NoWrapperCache
 V8MeasureAs=*
 V8ReadOnly
+V8SkipVTableValidation
 V8Unforgeable
+V8WrapAsFunction

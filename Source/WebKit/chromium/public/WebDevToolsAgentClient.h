@@ -31,8 +31,8 @@
 #ifndef WebDevToolsAgentClient_h
 #define WebDevToolsAgentClient_h
 
-#include "platform/WebCString.h"
-#include "platform/WebCommon.h"
+#include "../../../Platform/chromium/public/WebCString.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
 
 namespace WebKit {
 class WebString;
@@ -76,6 +76,12 @@ public:
         virtual ~InstrumentedObjectSizeProvider() { }
     };
     virtual void dumpUncountedAllocatedObjects(const InstrumentedObjectSizeProvider*) { }
+
+    typedef void (*TraceEventCallback)(char phase, const unsigned char*, const char* name, unsigned long long id,
+        int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
+        unsigned char flags);
+
+    virtual void setTraceEventCallback(TraceEventCallback) { }
 
 protected:
     ~WebDevToolsAgentClient() { }

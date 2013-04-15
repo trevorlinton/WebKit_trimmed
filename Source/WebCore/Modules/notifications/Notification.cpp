@@ -109,7 +109,7 @@ Notification::Notification(ScriptExecutionContext* context, const String& title)
     , m_state(Idle)
     , m_taskTimer(adoptPtr(new Timer<Notification>(this, &Notification::taskTimerFired)))
 {
-    ASSERT(context->isDocument());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
     m_notificationCenter = DOMWindowNotifications::webkitNotifications(static_cast<Document*>(context)->domWindow());
     
     ASSERT(m_notificationCenter->client());
@@ -169,9 +169,19 @@ const AtomicString& Notification::interfaceName() const
 void Notification::show() 
 {
     // prevent double-showing
-    if (m_state == Idle && m_notificationCenter->client() && m_notificationCenter->client()->show(this)) {
-        m_state = Showing;
-        setPendingActivity(this);
+    if (m_state == Idle && m_notificationCenter->client()) {
+#if ENABLE(NOTIFICATIONS)
+        if (!static_cast<Document*>(scriptExecutionContext())->page())
+            return;
+        if (NotificationController::from(static_cast<Document*>(scriptExecutionContext())->page())->client()->checkPermission(scriptExecutionContext()) != NotificationClient::PermissionAllowed) {
+            dispatchErrorEvent();
+            return;
+        }
+#endif
+        if (m_notificationCenter->client()->show(this)) {
+            m_state = Showing;
+            setPendingActivity(this);
+        }
     }
 }
 
@@ -240,12 +250,7 @@ void Notification::dispatchErrorEvent()
 void Notification::taskTimerFired(Timer<Notification>* timer)
 {
     ASSERT(scriptExecutionContext()->isDocument());
-    ASSERT(static_cast<Document*>(scriptExecutionContext())->page());
     ASSERT_UNUSED(timer, timer == m_taskTimer.get());
-    if (NotificationController::from(static_cast<Document*>(scriptExecutionContext())->page())->client()->checkPermission(scriptExecutionContext()) != NotificationClient::PermissionAllowed) {
-        dispatchErrorEvent();
-        return;
-    }
     show();
 }
 #endif
@@ -254,7 +259,7 @@ void Notification::taskTimerFired(Timer<Notification>* timer)
 #if ENABLE(NOTIFICATIONS)
 const String& Notification::permission(ScriptExecutionContext* context)
 {
-    ASSERT(context->isDocument());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
     ASSERT(static_cast<Document*>(context)->page());
     return permissionString(NotificationController::from(static_cast<Document*>(context)->page())->client()->checkPermission(context));
 }
@@ -280,7 +285,7 @@ const String& Notification::permissionString(NotificationClient::Permission perm
 
 void Notification::requestPermission(ScriptExecutionContext* context, PassRefPtr<NotificationPermissionCallback> callback)
 {
-    ASSERT(context->isDocument());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
     ASSERT(static_cast<Document*>(context)->page());
     NotificationController::from(static_cast<Document*>(context)->page())->client()->requestPermission(context, callback);
 }

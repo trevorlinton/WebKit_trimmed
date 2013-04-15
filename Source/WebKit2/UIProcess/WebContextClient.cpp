@@ -38,4 +38,20 @@ void WebContextClient::plugInAutoStartOriginHashesChanged(WebContext* context)
     m_client.plugInAutoStartOriginHashesChanged(toAPI(context), m_client.clientInfo);
 }
 
+void WebContextClient::networkProcessDidCrash(WebContext* context)
+{
+    if (!m_client.networkProcessDidCrash)
+        return;
+
+    m_client.networkProcessDidCrash(toAPI(context), m_client.clientInfo);
+}
+
+void WebContextClient::plugInInformationBecameAvailable(WebContext* context, ImmutableArray* plugInInfo)
+{
+    if (!m_client.plugInInformationBecameAvailable)
+        return;
+
+    m_client.plugInInformationBecameAvailable(toAPI(context), toAPI(plugInInfo), m_client.clientInfo);
+}
+
 } // namespace WebKit

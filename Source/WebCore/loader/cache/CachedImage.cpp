@@ -39,6 +39,7 @@
 #include "Settings.h"
 #include "SubresourceLoader.h"
 #include <wtf/CurrentTime.h>
+#include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/MemoryObjectInfo.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
@@ -113,6 +114,26 @@ void CachedImage::didRemoveClient(CachedResourceClient* c)
     CachedResource::didRemoveClient(c);
 }
 
+void CachedImage::switchClientsToRevalidatedResource()
+{
+    ASSERT(resourceToRevalidate());
+    ASSERT(resourceToRevalidate()->isImage());
+    // Pending container size requests need to be transferred to the revalidated resource.
+    if (!m_pendingContainerSizeRequests.isEmpty()) {
+        // A copy of pending size requests is needed as they are deleted during CachedResource::switchClientsToRevalidateResouce().
+        ContainerSizeRequests switchContainerSizeRequests;
+        for (ContainerSizeRequests::iterator it = m_pendingContainerSizeRequests.begin(); it != m_pendingContainerSizeRequests.end(); ++it)
+            switchContainerSizeRequests.set(it->key, it->value);
+        CachedResource::switchClientsToRevalidatedResource();
+        CachedImage* revalidatedCachedImage = static_cast<CachedImage*>(resourceToRevalidate());
+        for (ContainerSizeRequests::iterator it = switchContainerSizeRequests.begin(); it != switchContainerSizeRequests.end(); ++it)
+            revalidatedCachedImage->setContainerSizeForRenderer(it->key, it->value.first, it->value.second);
+        return;
+    }
+
+    CachedResource::switchClientsToRevalidatedResource();
+}
+
 void CachedImage::allClientsRemoved()
 {
     m_pendingContainerSizeRequests.clear();
@@ -135,25 +156,6 @@ bool CachedImage::willPaintBrokenImage() const
 {
     return errorOccurred() && m_shouldPaintBrokenImage;
 }
-
-#if ENABLE(SVG)
-inline Image* CachedImage::lookupOrCreateImageForRenderer(const RenderObject* renderer)
-{
-    if (!m_image)
-        return 0;
-    if (!m_image->isSVGImage())
-        return m_image.get();
-    Image* useImage = m_svgImageCache->lookupOrCreateBitmapImageForRenderer(renderer);
-    if (useImage == Image::nullImage())
-        return m_image.get();
-    return useImage;
-}
-#else
-inline Image* CachedImage::lookupOrCreateImageForRenderer(const RenderObject*)
-{
-    return m_image.get();
-}
-#endif
 
 Image* CachedImage::image()
 {
@@ -183,10 +185,19 @@ Image* CachedImage::imageForRenderer(const RenderObject* renderer)
         return brokenImage(1).first;
     }
 
-    if (m_image)
-        return lookupOrCreateImageForRenderer(renderer);
+    if (!m_image)
+        return Image::nullImage();
 
-    return Image::nullImage();
+#if ENABLE(SVG)
+    if (m_image->isSVGImage()) {
+        Image* image = m_svgImageCache->imageForRenderer(renderer);
+        if (image != Image::nullImage())
+            return image;
+    }
+#else
+    UNUSED_PARAM(renderer);
+#endif
+    return m_image.get();
 }
 
 void CachedImage::setContainerSizeForRenderer(const CachedImageClient* renderer, const IntSize& containerSize, float containerZoom)
@@ -194,6 +205,7 @@ void CachedImage::setContainerSizeForRenderer(const CachedImageClient* renderer,
     if (containerSize.isEmpty())
         return;
     ASSERT(renderer);
+    ASSERT(containerZoom);
     if (!m_image) {
         m_pendingContainerSizeRequests.set(renderer, SizeAndZoom(containerSize, containerZoom));
         return;
@@ -204,7 +216,7 @@ void CachedImage::setContainerSizeForRenderer(const CachedImageClient* renderer,
         return;
     }
 
-    m_svgImageCache->setRequestedSizeAndScales(renderer, SVGImageCache::SizeAndScales(containerSize, containerZoom));
+    m_svgImageCache->setContainerSizeForRenderer(renderer, containerSize, containerZoom);
 #else
     UNUSED_PARAM(containerZoom);
     m_image->setContainerSize(containerSize);
@@ -246,24 +258,13 @@ LayoutSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float
 
     if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
         imageSize = static_cast<BitmapImage*>(m_image.get())->sizeRespectingOrientation();
-    else
-        imageSize = m_image->size();
-
 #if ENABLE(SVG)
-    if (m_image->isSVGImage()) {
-        SVGImageCache::SizeAndScales sizeAndScales = m_svgImageCache->requestedSizeAndScales(renderer);
-        if (!sizeAndScales.size.isEmpty()) {
-            float scale = sizeAndScales.scale;
-            if (!scale) {
-                Page* page = renderer->document()->page();
-                scale = page->deviceScaleFactor() * page->pageScaleFactor();
-            }
-
-            imageSize.setWidth(scale * sizeAndScales.size.width() / sizeAndScales.zoom);
-            imageSize.setHeight(scale * sizeAndScales.size.height() / sizeAndScales.zoom);
-        }
+    else if (m_image->isSVGImage()) {
+        imageSize = m_svgImageCache->imageSizeForRenderer(renderer);
     }
 #endif
+    else
+        imageSize = m_image->size();
 
     if (multiplier == 1.0f)
         return imageSize;
@@ -302,9 +303,6 @@ void CachedImage::checkShouldPaintBrokenImage()
 void CachedImage::clear()
 {
     destroyDecodedData();
-#if ENABLE(SVG)
-    m_svgImageCache.clear();
-#endif
     clearImage();
     m_pendingContainerSizeRequests.clear();
     setEncodedSize(0);
@@ -329,10 +327,12 @@ inline void CachedImage::createImage()
     else
         m_image = BitmapImage::create(this);
 
-    // Send queued container size requests.
-    if (m_image && m_image->usesContainerSize()) {
-        for (ContainerSizeRequests::iterator it = m_pendingContainerSizeRequests.begin(); it != m_pendingContainerSizeRequests.end(); ++it)
-            setContainerSizeForRenderer(it->key, it->value.first, it->value.second);
+    if (m_image) {
+        // Send queued container size requests.
+        if (m_image->usesContainerSize()) {
+            for (ContainerSizeRequests::iterator it = m_pendingContainerSizeRequests.begin(); it != m_pendingContainerSizeRequests.end(); ++it)
+                setContainerSizeForRenderer(it->key, it->value.first, it->value.second);
+        }
         m_pendingContainerSizeRequests.clear();
     }
 }
@@ -358,14 +358,16 @@ void CachedImage::data(PassRefPtr<ResourceBuffer> data, bool allDataReceived)
 {
     m_data = data;
 
-    createImage();
+    if (m_data)
+        createImage();
 
     bool sizeAvailable = false;
 
     // Have the image update its data from its internal buffer.
     // It will not do anything now, but will delay decoding until 
     // queried for info (like size or specific image frames).
-    sizeAvailable = m_image->setData(m_data ? m_data->sharedBuffer() : 0, allDataReceived);
+    if (m_image)
+        sizeAvailable = m_image->setData(m_data ? m_data->sharedBuffer() : 0, allDataReceived);
 
     // Go ahead and tell our observers to try to draw if we have either
     // received all the data or the size is known.  Each chunk from the
@@ -373,9 +375,9 @@ void CachedImage::data(PassRefPtr<ResourceBuffer> data, bool allDataReceived)
     // to decode.
     if (sizeAvailable || allDataReceived) {
         size_t maxDecodedImageSize = maximumDecodedImageSize();
-        IntSize s = m_image->size();
+        IntSize s = m_image ? m_image->size() : IntSize();
         size_t estimatedDecodedImageSize = s.width() * s.height() * 4; // no overflow check
-        if (m_image->isNull() || (maxDecodedImageSize > 0 && estimatedDecodedImageSize > maxDecodedImageSize)) {
+        if (!m_image || m_image->isNull() || (maxDecodedImageSize > 0 && estimatedDecodedImageSize > maxDecodedImageSize)) {
             error(errorOccurred() ? status() : DecodeError);
             if (inCache())
                 memoryCache()->remove(this);
@@ -470,13 +472,6 @@ void CachedImage::changedInRect(const Image* image, const IntRect& rect)
 {
     if (!image || image != m_image)
         return;
-#if ENABLE(SVG)
-    // We have to update the cached ImageBuffers if the underlying content changed.
-    if (image->isSVGImage()) {
-        m_svgImageCache->imageContentChanged();
-        return;
-    }
-#endif
     notifyObservers(&rect);
 }
 
@@ -485,18 +480,19 @@ void CachedImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceImage);
     memoryObjectInfo->setClassName("CachedImage");
     CachedResource::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_pendingContainerSizeRequests, "pendingContainerSizeRequests");
     info.addMember(m_image, "m_image");
 #if ENABLE(SVG)
-    info.addMember(m_svgImageCache);
+    info.addMember(m_svgImageCache, "svgImageCache");
 #endif
 }
 
-bool CachedImage::currentFrameHasAlpha(const RenderObject* renderer)
+bool CachedImage::currentFrameKnownToBeOpaque(const RenderObject* renderer)
 {
     Image* image = imageForRenderer(renderer);
     if (image->isBitmapImage())
         image->nativeImageForCurrentFrame(); // force decode
-    return image->currentFrameHasAlpha();
+    return image->currentFrameKnownToBeOpaque();
 }
 
 } // namespace WebCore

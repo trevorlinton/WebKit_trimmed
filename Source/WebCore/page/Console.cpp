@@ -114,8 +114,8 @@ static void printMessageSourceAndLevelPrefix(MessageSource source, MessageLevel 
 
     const char* levelString;
     switch (level) {
-    case TipMessageLevel:
-        levelString = "TIP";
+    case DebugMessageLevel:
+        levelString = "DEBUG";
         break;
     case LogMessageLevel:
         levelString = "LOG";
@@ -125,9 +125,6 @@ static void printMessageSourceAndLevelPrefix(MessageSource source, MessageLevel 
         break;
     case ErrorMessageLevel:
         levelString = "ERROR";
-        break;
-    case DebugMessageLevel:
-        levelString = "DEBUG";
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -176,7 +173,7 @@ void Console::addMessage(MessageSource source, MessageLevel level, const String&
 
     page->chrome()->client()->addMessageToConsole(source, level, message, lineNumber, url);
 
-    if (!shouldPrintExceptions())
+    if (!m_frame->settings()->logsPageMessagesToSystemConsoleEnabled() && !shouldPrintExceptions())
         return;
 
     printSourceURLAndLine(url, lineNumber);
@@ -185,7 +182,7 @@ void Console::addMessage(MessageSource source, MessageLevel level, const String&
     printf(" %s\n", message.utf8().data());
 }
 
-static void internalAddMessage(Page* page, MessageType type, MessageLevel level, ScriptState* state, PassRefPtr<ScriptArguments> prpArguments, bool printExceptions, bool acceptNoArguments = false, bool printTrace = false)
+static void internalAddMessage(Page* page, MessageType type, MessageLevel level, ScriptState* state, PassRefPtr<ScriptArguments> prpArguments, bool acceptNoArguments = false, bool printTrace = false)
 {
     RefPtr<ScriptArguments> arguments = prpArguments;
 
@@ -201,6 +198,7 @@ static void internalAddMessage(Page* page, MessageType type, MessageLevel level,
 
     String message;
     bool gotMessage = arguments->getFirstArgumentAsString(message);
+    InspectorInstrumentation::addMessageToConsole(page, ConsoleAPIMessageSource, type, level, message, state, arguments);
 
     if (!page->settings() || page->settings()->privateBrowsingEnabled())
         return;
@@ -217,37 +215,36 @@ static void internalAddMessage(Page* page, MessageType type, MessageLevel level,
         page->chrome()->client()->addMessageToConsole(ConsoleAPIMessageSource, type, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
     }
 
-    if (printExceptions) {
-        printSourceURLAndLine(lastCaller.sourceURL(), 0);
-        printMessageSourceAndLevelPrefix(ConsoleAPIMessageSource, level);
+    if (!page->settings()->logsPageMessagesToSystemConsoleEnabled() && !Console::shouldPrintExceptions())
+        return;
 
-        for (unsigned i = 0; i < arguments->argumentCount(); ++i) {
-            String argAsString;
-            if (arguments->argumentAt(i).getString(arguments->globalState(), argAsString))
-                printf(" %s", argAsString.utf8().data());
-        }
-        printf("\n");
+    printSourceURLAndLine(lastCaller.sourceURL(), lastCaller.lineNumber());
+    printMessageSourceAndLevelPrefix(ConsoleAPIMessageSource, level);
+
+    for (size_t i = 0; i < arguments->argumentCount(); ++i) {
+        String argAsString = arguments->argumentAt(i).toString(arguments->globalState());
+        printf(" %s", argAsString.utf8().data());
     }
+
+    printf("\n");
 
     if (printTrace) {
         printf("Stack Trace\n");
-        for (unsigned i = 0; i < callStack->size(); ++i) {
+        for (size_t i = 0; i < callStack->size(); ++i) {
             String functionName = String(callStack->at(i).functionName());
             printf("\t%s\n", functionName.utf8().data());
         }
     }
-    InspectorInstrumentation::addMessageToConsole(page, ConsoleAPIMessageSource, type, level, message, state, arguments.release());
 }
 
 void Console::debug(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    // In Firebug, console.debug has the same behavior as console.log. So we'll do the same.
-    log(state, arguments);
+    internalAddMessage(page(), LogMessageType, DebugMessageLevel, state, arguments);
 }
 
 void Console::error(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), LogMessageType, ErrorMessageLevel, state, arguments, shouldPrintExceptions());
+    internalAddMessage(page(), LogMessageType, ErrorMessageLevel, state, arguments);
 }
 
 void Console::info(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
@@ -257,32 +254,37 @@ void Console::info(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 
 void Console::log(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), LogMessageType, LogMessageLevel, state, arguments, shouldPrintExceptions());
+    internalAddMessage(page(), LogMessageType, LogMessageLevel, state, arguments);
 }
 
 void Console::warn(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), LogMessageType, WarningMessageLevel, state, arguments, shouldPrintExceptions());
+    internalAddMessage(page(), LogMessageType, WarningMessageLevel, state, arguments);
 }
 
 void Console::dir(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), DirMessageType, LogMessageLevel, state, arguments, shouldPrintExceptions());
+    internalAddMessage(page(), DirMessageType, LogMessageLevel, state, arguments);
 }
 
 void Console::dirxml(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), DirXMLMessageType, LogMessageLevel, state, arguments, shouldPrintExceptions());
+    internalAddMessage(page(), DirXMLMessageType, LogMessageLevel, state, arguments);
+}
+
+void Console::table(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
+{
+    internalAddMessage(page(), TableMessageType, LogMessageLevel, state, arguments);
 }
 
 void Console::clear(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), ClearMessageType, LogMessageLevel, state, arguments, shouldPrintExceptions(), true);
+    internalAddMessage(page(), ClearMessageType, LogMessageLevel, state, arguments, true);
 }
 
 void Console::trace(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
-    internalAddMessage(page(), TraceMessageType, LogMessageLevel, state, arguments, shouldPrintExceptions(), true, shouldPrintExceptions());
+    internalAddMessage(page(), TraceMessageType, LogMessageLevel, state, arguments, true, true);
 }
 
 void Console::assertCondition(ScriptState* state, PassRefPtr<ScriptArguments> arguments, bool condition)
@@ -290,7 +292,7 @@ void Console::assertCondition(ScriptState* state, PassRefPtr<ScriptArguments> ar
     if (condition)
         return;
 
-    internalAddMessage(page(), AssertMessageType, ErrorMessageLevel, state, arguments, shouldPrintExceptions(), true);
+    internalAddMessage(page(), AssertMessageType, ErrorMessageLevel, state, arguments, true);
 }
 
 void Console::count(ScriptState* state, PassRefPtr<ScriptArguments> arguments)

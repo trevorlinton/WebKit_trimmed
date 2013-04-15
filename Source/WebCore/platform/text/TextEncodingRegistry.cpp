@@ -45,12 +45,6 @@
 #if PLATFORM(MAC)
 #include "TextCodecMac.h"
 #endif
-#if USE(QT4_UNICODE)
-#include "qt/TextCodecQt.h"
-#endif
-#if USE(GLIB_UNICODE)
-#include "gtk/TextCodecGtk.h"
-#endif
 #if OS(WINDOWS) && USE(WCHAR_UNICODE)
 #include "win/TextCodecWin.h"
 #endif
@@ -71,10 +65,19 @@ struct TextEncodingNameHash {
         char c1;
         char c2;
         do {
+#if defined(_MSC_FULL_VER) && _MSC_FULL_VER == 170051106
+            // Workaround for a bug in the VS2012 Update 1 optimizer, remove once the fix is released.
+            // https://connect.microsoft.com/VisualStudio/feedback/details/777533/vs2012-c-optimizing-bug-when-using-inline-and-char-return-type-x86-target-only
+            c1 = toASCIILower(*s1++);
+            c2 = toASCIILower(*s2++);
+            if (c1 != c2)
+                return false;
+#else
             c1 = *s1++;
             c2 = *s2++;
             if (toASCIILower(c1) != toASCIILower(c2))
                 return false;
+#endif
         } while (c1 && c2);
         return !c1 && !c2;
     }
@@ -228,12 +231,6 @@ static void buildBaseTextCodecMaps()
 
     TextCodecUserDefined::registerEncodingNames(addToTextEncodingNameMap);
     TextCodecUserDefined::registerCodecs(addToTextCodecMap);
-
-#if USE(GLIB_UNICODE)
-    // FIXME: This is not needed. The code above covers all the base codecs.
-    TextCodecGtk::registerBaseEncodingNames(addToTextEncodingNameMap);
-    TextCodecGtk::registerBaseCodecs(addToTextCodecMap);
-#endif
 }
 
 static void addEncodingName(HashSet<const char*>* set, const char* name)
@@ -296,19 +293,9 @@ static void extendTextCodecMaps()
     TextCodecICU::registerCodecs(addToTextCodecMap);
 #endif
 
-#if USE(QT4_UNICODE)
-    TextCodecQt::registerEncodingNames(addToTextEncodingNameMap);
-    TextCodecQt::registerCodecs(addToTextCodecMap);
-#endif
-
 #if PLATFORM(MAC)
     TextCodecMac::registerEncodingNames(addToTextEncodingNameMap);
     TextCodecMac::registerCodecs(addToTextCodecMap);
-#endif
-
-#if USE(GLIB_UNICODE)
-    TextCodecGtk::registerExtendedEncodingNames(addToTextEncodingNameMap);
-    TextCodecGtk::registerExtendedCodecs(addToTextCodecMap);
 #endif
 
 #if OS(WINDOWS) && USE(WCHAR_UNICODE)

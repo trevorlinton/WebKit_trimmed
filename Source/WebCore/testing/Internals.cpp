@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,6 +34,7 @@
 #include "ClientRect.h"
 #include "ClientRectList.h"
 #include "ComposedShadowTreeWalker.h"
+#include "ContentDistributor.h"
 #include "Cursor.h"
 #include "DOMStringList.h"
 #include "DOMWindow.h"
@@ -64,6 +66,7 @@
 #include "IntRect.h"
 #include "Language.h"
 #include "MallocStatistics.h"
+#include "MemoryCache.h"
 #include "MockPagePopupDriver.h"
 #include "NodeRenderingContext.h"
 #include "Page.h"
@@ -85,6 +88,7 @@
 #include "TreeScope.h"
 #include "TypeConversions.h"
 #include "ViewportArguments.h"
+#include "WorkerThread.h"
 #include <wtf/text/StringBuffer.h>
 
 #if ENABLE(INPUT_TYPE_COLOR)
@@ -98,6 +102,10 @@
 #if ENABLE(NETWORK_INFO)
 #include "NetworkInfo.h"
 #include "NetworkInfoController.h"
+#endif
+
+#if ENABLE(PROXIMITY_EVENTS)
+#include "DeviceProximityController.h"
 #endif
 
 #if ENABLE(PAGE_POPUP)
@@ -118,6 +126,22 @@
 #include "GraphicsLayer.h"
 #include "GraphicsLayerChromium.h"
 #include "RenderLayerBacking.h"
+#endif
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+#include "CDM.h"
+#include "MockCDM.h"
+#endif
+
+#if ENABLE(VIDEO_TRACK)
+#include "CaptionUserPreferences.h"
+#include "PageGroup.h"
+#endif
+
+#if ENABLE(SPEECH_SYNTHESIS)
+#include "DOMWindowSpeechSynthesis.h"
+#include "PlatformSpeechSynthesizerMock.h"
+#include "SpeechSynthesis.h"
 #endif
 
 namespace WebCore {
@@ -242,11 +266,18 @@ void Internals::resetToConsistentState(Page* page)
     if (page->inspectorController())
         page->inspectorController()->setProfilerEnabled(false);
 #endif
+#if ENABLE(VIDEO_TRACK) && !PLATFORM(WIN)
+    page->group().captionPreferences()->setTestingMode(false);
+#endif
 }
 
 Internals::Internals(Document* document)
     : ContextDestructionObserver(document)
 {
+#if ENABLE(VIDEO_TRACK) && !PLATFORM(WIN)
+    if (document && document->page())
+        document->page()->group().captionPreferences()->setTestingMode(true);
+#endif
 }
 
 Document* Internals::contextDocument() const
@@ -272,6 +303,15 @@ InternalSettings* Internals::settings() const
     return InternalSettings::from(page);
 }
 
+unsigned Internals::workerThreadCount() const
+{
+#if ENABLE(WORKERS)
+    return WorkerThread::workerThreadCount();
+#else
+    return 0;
+#endif
+}
+
 String Internals::address(Node* node)
 {
     char buf[32];
@@ -280,22 +320,33 @@ String Internals::address(Node* node)
     return String(buf);
 }
 
-bool Internals::isPreloaded(Document* document, const String& url)
+bool Internals::isPreloaded(const String& url)
 {
-    if (!document)
-        return false;
-
+    Document* document = contextDocument();
     return document->cachedResourceLoader()->isPreloaded(url);
 }
 
-PassRefPtr<Element> Internals::createContentElement(Document* document, ExceptionCode& ec)
+bool Internals::isLoadingFromMemoryCache(const String& url)
 {
+    if (!contextDocument())
+        return false;
+    CachedResource* resource = memoryCache()->resourceForURL(contextDocument()->completeURL(url));
+    return resource && resource->status() == CachedResource::Cached;
+}
+
+PassRefPtr<Element> Internals::createContentElement(ExceptionCode& ec)
+{
+    Document* document = contextDocument();
     if (!document) {
         ec = INVALID_ACCESS_ERR;
         return 0;
     }
 
+#if ENABLE(SHADOW_DOM)
     return HTMLContentElement::create(document);
+#else
+    return 0;
+#endif
 }
 
 bool Internals::isValidContentSelect(Element* insertionPoint, ExceptionCode& ec)
@@ -305,7 +356,11 @@ bool Internals::isValidContentSelect(Element* insertionPoint, ExceptionCode& ec)
         return false;
     }
 
-    return toInsertionPoint(insertionPoint)->isSelectValid();
+#if ENABLE(SHADOW_DOM)
+    return isHTMLContentElement(insertionPoint) && toHTMLContentElement(insertionPoint)->isSelectValid();
+#else
+    return false;
+#endif
 }
 
 Node* Internals::treeScopeRootNode(Node* node, ExceptionCode& ec)
@@ -335,8 +390,7 @@ bool Internals::hasSelectorForIdInShadow(Element* host, const String& idValue, E
         return 0;
     }
 
-    host->shadow()->ensureSelectFeatureSetCollected();
-    return host->shadow()->selectRuleFeatureSet().hasSelectorForId(idValue);
+    return host->shadow()->distributor().ensureSelectFeatureSet(host->shadow()).hasSelectorForId(idValue);
 }
 
 bool Internals::hasSelectorForClassInShadow(Element* host, const String& className, ExceptionCode& ec)
@@ -346,8 +400,7 @@ bool Internals::hasSelectorForClassInShadow(Element* host, const String& classNa
         return 0;
     }
 
-    host->shadow()->ensureSelectFeatureSetCollected();
-    return host->shadow()->selectRuleFeatureSet().hasSelectorForClass(className);
+    return host->shadow()->distributor().ensureSelectFeatureSet(host->shadow()).hasSelectorForClass(className);
 }
 
 bool Internals::hasSelectorForAttributeInShadow(Element* host, const String& attributeName, ExceptionCode& ec)
@@ -357,8 +410,7 @@ bool Internals::hasSelectorForAttributeInShadow(Element* host, const String& att
         return 0;
     }
 
-    host->shadow()->ensureSelectFeatureSetCollected();
-    return host->shadow()->selectRuleFeatureSet().hasSelectorForAttribute(attributeName);
+    return host->shadow()->distributor().ensureSelectFeatureSet(host->shadow()).hasSelectorForAttribute(attributeName);
 }
 
 bool Internals::hasSelectorForPseudoClassInShadow(Element* host, const String& pseudoClass, ExceptionCode& ec)
@@ -368,8 +420,7 @@ bool Internals::hasSelectorForPseudoClassInShadow(Element* host, const String& p
         return 0;
     }
 
-    host->shadow()->ensureSelectFeatureSetCollected();
-    const SelectRuleFeatureSet& featureSet = host->shadow()->selectRuleFeatureSet();
+    const SelectRuleFeatureSet& featureSet = host->shadow()->distributor().ensureSelectFeatureSet(host->shadow());
     if (pseudoClass == "checked")
         return featureSet.hasSelectorForChecked();
     if (pseudoClass == "enabled")
@@ -387,6 +438,52 @@ bool Internals::hasSelectorForPseudoClassInShadow(Element* host, const String& p
 
     ASSERT_NOT_REACHED();
     return false;
+}
+
+unsigned Internals::numberOfActiveAnimations() const
+{
+    Frame* contextFrame = frame();
+    if (AnimationController* controller = contextFrame->animation())
+        return controller->numberOfActiveAnimations(contextFrame->document());
+    return 0;
+}
+
+void Internals::suspendAnimations(Document* document, ExceptionCode& ec) const
+{
+    if (!document || !document->frame()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    AnimationController* controller = document->frame()->animation();
+    if (!controller)
+        return;
+
+    controller->suspendAnimations();
+}
+
+void Internals::resumeAnimations(Document* document, ExceptionCode& ec) const
+{
+    if (!document || !document->frame()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    AnimationController* controller = document->frame()->animation();
+    if (!controller)
+        return;
+
+    controller->resumeAnimations();
+}
+
+bool Internals::pauseAnimationAtTimeOnElement(const String& animationName, double pauseTime, Element* element, ExceptionCode& ec)
+{
+    if (!element || pauseTime < 0) {
+        ec = INVALID_ACCESS_ERR;
+        return false;
+    }
+    AnimationController* controller = frame()->animation();
+    return controller->pauseAnimationAtTime(element->renderer(), AtomicString(animationName), pauseTime);
 }
 
 bool Internals::pauseAnimationAtTimeOnPseudoElement(const String& animationName, double pauseTime, Element* element, const String& pseudoId, ExceptionCode& ec)
@@ -407,7 +504,17 @@ bool Internals::pauseAnimationAtTimeOnPseudoElement(const String& animationName,
         return false;
     }
 
-    return frame()->animation()->pauseAnimationAtTime(pseudoElement->renderer(), animationName, pauseTime);
+    return frame()->animation()->pauseAnimationAtTime(pseudoElement->renderer(), AtomicString(animationName), pauseTime);
+}
+
+bool Internals::pauseTransitionAtTimeOnElement(const String& propertyName, double pauseTime, Element* element, ExceptionCode& ec)
+{
+    if (!element || pauseTime < 0) {
+        ec = INVALID_ACCESS_ERR;
+        return false;
+    }
+    AnimationController* controller = frame()->animation();
+    return controller->pauseTransitionAtTime(element->renderer(), propertyName, pauseTime);
 }
 
 bool Internals::pauseTransitionAtTimeOnPseudoElement(const String& property, double pauseTime, Element* element, const String& pseudoId, ExceptionCode& ec)
@@ -434,7 +541,7 @@ bool Internals::pauseTransitionAtTimeOnPseudoElement(const String& property, dou
 bool Internals::hasShadowInsertionPoint(const Node* root, ExceptionCode& ec) const
 {
     if (root && root->isShadowRoot())
-        return toShadowRoot(root)->hasShadowInsertionPoint();
+        return ScopeContentDistribution::hasShadowElement(toShadowRoot(root));
 
     ec = INVALID_ACCESS_ERR;
     return 0;
@@ -443,7 +550,7 @@ bool Internals::hasShadowInsertionPoint(const Node* root, ExceptionCode& ec) con
 bool Internals::hasContentElement(const Node* root, ExceptionCode& ec) const
 {
     if (root && root->isShadowRoot())
-        return toShadowRoot(root)->hasContentElement();
+        return ScopeContentDistribution::hasContentElement(toShadowRoot(root));
 
     ec = INVALID_ACCESS_ERR;
     return 0;
@@ -456,7 +563,7 @@ size_t Internals::countElementShadow(const Node* root, ExceptionCode& ec) const
         return 0;
     }
 
-    return toShadowRoot(root)->countElementShadow();
+    return ScopeContentDistribution::countElementShadow(toShadowRoot(root));
 }
 
 bool Internals::attached(Node* node, ExceptionCode& ec)
@@ -553,6 +660,17 @@ size_t Internals::numberOfScopedHTMLStyleChildren(const Node* scope, ExceptionCo
     return 0;
 }
 
+PassRefPtr<CSSComputedStyleDeclaration> Internals::computedStyleIncludingVisitedInfo(Node* node, ExceptionCode& ec) const
+{
+    if (!node) {
+        ec = INVALID_ACCESS_ERR;
+        return 0;
+    }
+
+    bool allowVisitedStyle = true;
+    return CSSComputedStyleDeclaration::create(node, allowVisitedStyle);
+}
+
 Internals::ShadowRootIfShadowDOMEnabledOrNode* Internals::ensureShadowRoot(Element* host, ExceptionCode& ec)
 {
     if (!host) {
@@ -563,7 +681,7 @@ Internals::ShadowRootIfShadowDOMEnabledOrNode* Internals::ensureShadowRoot(Eleme
     if (ElementShadow* shadow = host->shadow())
         return shadow->youngestShadowRoot();
 
-    return ShadowRoot::create(host, ec).get();
+    return host->createShadowRoot(ec).get();
 }
 
 Internals::ShadowRootIfShadowDOMEnabledOrNode* Internals::createShadowRoot(Element* host, ExceptionCode& ec)
@@ -572,7 +690,7 @@ Internals::ShadowRootIfShadowDOMEnabledOrNode* Internals::createShadowRoot(Eleme
         ec = INVALID_ACCESS_ERR;
         return 0;
     }
-    return ShadowRoot::create(host, ec).get();
+    return host->createShadowRoot(ec).get();
 }
 
 Internals::ShadowRootIfShadowDOMEnabledOrNode* Internals::shadowRoot(Element* host, ExceptionCode& ec)
@@ -676,9 +794,11 @@ void Internals::setShadowPseudoId(Element* element, const String& id, ExceptionC
 
 String Internals::visiblePlaceholder(Element* element)
 {
-    HTMLTextFormControlElement* textControl = toTextFormControl(element);
-    if (textControl && textControl->placeholderShouldBeVisible())
-        return textControl->placeholderElement()->textContent();
+    if (element && isHTMLTextFormControlElement(element)) {
+        if (toHTMLTextFormControlElement(element)->placeholderShouldBeVisible())
+            return toHTMLTextFormControlElement(element)->placeholderElement()->textContent();
+    }
+
     return String();
 }
 
@@ -694,41 +814,51 @@ void Internals::selectColorInColorChooser(Element* element, const String& colorV
 }
 #endif
 
-PassRefPtr<DOMStringList> Internals::formControlStateOfPreviousHistoryItem(ExceptionCode& ec)
+Vector<String> Internals::formControlStateOfPreviousHistoryItem(ExceptionCode& ec)
 {
     HistoryItem* mainItem = frame()->loader()->history()->previousItem();
     if (!mainItem) {
         ec = INVALID_ACCESS_ERR;
-        return 0;
+        return Vector<String>();
     }
     String uniqueName = frame()->tree()->uniqueName();
     if (mainItem->target() != uniqueName && !mainItem->childItemWithTarget(uniqueName)) {
         ec = INVALID_ACCESS_ERR;
-        return 0;
+        return Vector<String>();
     }
-    const Vector<String>& state = mainItem->target() == uniqueName ? mainItem->documentState() : mainItem->childItemWithTarget(uniqueName)->documentState();
-    RefPtr<DOMStringList> stringList = DOMStringList::create();
-    for (unsigned i = 0; i < state.size(); ++i)
-        stringList->append(state[i]);
-    return stringList.release();
+    return mainItem->target() == uniqueName ? mainItem->documentState() : mainItem->childItemWithTarget(uniqueName)->documentState();
 }
 
-void Internals::setFormControlStateOfPreviousHistoryItem(PassRefPtr<DOMStringList> state, ExceptionCode& ec)
+void Internals::setFormControlStateOfPreviousHistoryItem(const Vector<String>& state, ExceptionCode& ec)
 {
     HistoryItem* mainItem = frame()->loader()->history()->previousItem();
-    if (!state || !mainItem) {
+    if (!mainItem) {
         ec = INVALID_ACCESS_ERR;
         return;
     }
     String uniqueName = frame()->tree()->uniqueName();
     if (mainItem->target() == uniqueName)
-        mainItem->setDocumentState(*state.get());
+        mainItem->setDocumentState(state);
     else if (HistoryItem* subItem = mainItem->childItemWithTarget(uniqueName))
-        subItem->setDocumentState(*state.get());
+        subItem->setDocumentState(state);
     else
         ec = INVALID_ACCESS_ERR;
 }
 
+#if ENABLE(SPEECH_SYNTHESIS)
+void Internals::enableMockSpeechSynthesizer()
+{
+    Document* document = contextDocument();
+    if (!document || !document->domWindow())
+        return;
+    SpeechSynthesis* synthesis = DOMWindowSpeechSynthesis::speechSynthesis(document->domWindow());
+    if (!synthesis)
+        return;
+    
+    synthesis->setPlatformSynthesizer(PlatformSpeechSynthesizerMock::create(synthesis));
+}
+#endif
+    
 void Internals::setEnableMockPagePopup(bool enabled, ExceptionCode& ec)
 {
 #if ENABLE(PAGE_POPUP)
@@ -756,8 +886,9 @@ PassRefPtr<PagePopupController> Internals::pagePopupController()
 }
 #endif
 
-PassRefPtr<ClientRect> Internals::absoluteCaretBounds(Document* document, ExceptionCode& ec)
+PassRefPtr<ClientRect> Internals::absoluteCaretBounds(ExceptionCode& ec)
 {
+    Document* document = contextDocument();
     if (!document || !document->frame() || !document->frame()->selection()) {
         ec = INVALID_ACCESS_ERR;
         return ClientRect::create();
@@ -1022,6 +1153,16 @@ void Internals::setEditingValue(Element* element, const String& value, Exception
     inputElement->setEditingValue(value);
 }
 
+void Internals::setAutofilled(Element* element, bool enabled, ExceptionCode& ec)
+{
+    HTMLInputElement* inputElement = element->toInputElement();
+    if (!inputElement) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+    inputElement->setAutofilled(enabled);
+}
+
 void Internals::scrollElementToRect(Element* element, long x, long y, long w, long h, ExceptionCode& ec)
 {
     if (!element || !element->document() || !element->document()->view()) {
@@ -1279,24 +1420,38 @@ PassRefPtr<ClientRectList> Internals::touchEventTargetClientRects(Document* docu
 #endif
 
 PassRefPtr<NodeList> Internals::nodesFromRect(Document* document, int x, int y, unsigned topPadding, unsigned rightPadding,
-    unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, ExceptionCode& ec) const
+    unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, bool allowChildFrameContent, ExceptionCode& ec) const
 {
     if (!document || !document->frame() || !document->frame()->view()) {
         ec = INVALID_ACCESS_ERR;
         return 0;
     }
 
-    return document->nodesFromRect(x, y, topPadding, rightPadding, bottomPadding, leftPadding, ignoreClipping, allowShadowContent);
+    HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active;
+    if (ignoreClipping)
+        hitType |= HitTestRequest::IgnoreClipping;
+    if (allowShadowContent)
+        hitType |= HitTestRequest::AllowShadowContent;
+    if (allowChildFrameContent)
+        hitType |= HitTestRequest::AllowChildFrameContent;
+
+    return document->nodesFromRect(x, y, topPadding, rightPadding, bottomPadding, leftPadding, hitType);
 }
 
 void Internals::emitInspectorDidBeginFrame()
 {
-    InspectorInstrumentation::didBeginFrame(contextDocument()->frame()->page());
+#if ENABLE(INSPECTOR)
+    InspectorController* inspectorController = contextDocument()->frame()->page()->inspectorController();
+    inspectorController->didBeginFrame();
+#endif
 }
 
 void Internals::emitInspectorDidCancelFrame()
 {
-    InspectorInstrumentation::didCancelFrame(contextDocument()->frame()->page());
+#if ENABLE(INSPECTOR)
+    InspectorController* inspectorController = contextDocument()->frame()->page()->inspectorController();
+    inspectorController->didCancelFrame();
+#endif
 }
 
 void Internals::setBatteryStatus(Document* document, const String& eventType, bool charging, double chargingTime, double dischargingTime, double level, ExceptionCode& ec)
@@ -1330,6 +1485,23 @@ void Internals::setNetworkInformation(Document* document, const String& eventTyp
     UNUSED_PARAM(eventType);
     UNUSED_PARAM(bandwidth);
     UNUSED_PARAM(metered);
+#endif
+}
+
+void Internals::setDeviceProximity(Document* document, const String& eventType, double value, double min, double max, ExceptionCode& ec)
+{
+    if (!document || !document->page()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+#if ENABLE(PROXIMITY_EVENTS)
+    DeviceProximityController::from(document->page())->didChangeDeviceProximity(value, min, max);
+#else
+    UNUSED_PARAM(eventType);
+    UNUSED_PARAM(value);
+    UNUSED_PARAM(min);
+    UNUSED_PARAM(max);
 #endif
 }
 
@@ -1469,34 +1641,6 @@ bool Internals::isPageBoxVisible(Document* document, int pageNumber, ExceptionCo
     return document->isPageBoxVisible(pageNumber);
 }
 
-void Internals::suspendAnimations(Document* document, ExceptionCode& ec) const
-{
-    if (!document || !document->frame()) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    AnimationController* controller = document->frame()->animation();
-    if (!controller)
-        return;
-
-    controller->suspendAnimations();
-}
-
-void Internals::resumeAnimations(Document* document, ExceptionCode& ec) const
-{
-    if (!document || !document->frame()) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    AnimationController* controller = document->frame()->animation();
-    if (!controller)
-        return;
-
-    controller->resumeAnimations();
-}
-
 String Internals::layerTreeAsText(Document* document, ExceptionCode& ec) const
 {
     return layerTreeAsText(document, 0, ec);
@@ -1558,6 +1702,20 @@ String Internals::mainThreadScrollingReasons(Document* document, ExceptionCode& 
     return page->mainThreadScrollingReasonsAsText();
 }
 
+PassRefPtr<ClientRectList> Internals::nonFastScrollableRects(Document* document, ExceptionCode& ec) const
+{
+    if (!document || !document->frame()) {
+        ec = INVALID_ACCESS_ERR;
+        return 0;
+    }
+
+    Page* page = document->page();
+    if (!page)
+        return 0;
+
+    return page->nonFastScrollableRects(document->frame());
+}
+
 void Internals::garbageCollectDocumentResources(Document* document, ExceptionCode& ec) const
 {
     if (!document) {
@@ -1608,16 +1766,16 @@ int Internals::pageNumber(Element* element, float pageWidth, float pageHeight)
     return PrintContext::pageNumberForElement(element, FloatSize(pageWidth, pageHeight));
 }
 
-PassRefPtr<DOMStringList> Internals::iconURLs(Document* document) const
+Vector<String> Internals::iconURLs(Document* document) const
 {
     Vector<IconURL> iconURLs = document->iconURLs();
-    RefPtr<DOMStringList> stringList = DOMStringList::create();
+    Vector<String> array;
 
     Vector<IconURL>::const_iterator iter(iconURLs.begin());
     for (; iter != iconURLs.end(); ++iter)
-        stringList->append(iter->m_iconURL.string());
+        array.append(iter->m_iconURL.string());
 
-    return stringList.release();
+    return array;
 }
 
 int Internals::numberOfPages(float pageWidth, float pageHeight)
@@ -1709,14 +1867,10 @@ PassRefPtr<TypeConversions> Internals::typeConversions() const
     return TypeConversions::create();
 }
 
-PassRefPtr<DOMStringList> Internals::getReferencedFilePaths() const
+Vector<String> Internals::getReferencedFilePaths() const
 {
-    RefPtr<DOMStringList> stringList = DOMStringList::create();
     frame()->loader()->history()->saveDocumentAndScrollState();
-    const Vector<String>& filePaths = FormController::getReferencedFilePaths(frame()->loader()->history()->currentItem()->documentState());
-    for (size_t i = 0; i < filePaths.size(); ++i)
-        stringList->append(filePaths[i]);
-    return stringList.release();
+    return FormController::getReferencedFilePaths(frame()->loader()->history()->currentItem()->documentState());
 }
 
 void Internals::startTrackingRepaints(Document* document, ExceptionCode& ec)
@@ -1859,6 +2013,22 @@ PassRefPtr<SerializedScriptValue> Internals::deserializeBuffer(PassRefPtr<ArrayB
 void Internals::setUsesOverlayScrollbars(bool enabled)
 {
     WebCore::Settings::setUsesOverlayScrollbars(enabled);
+}
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+void Internals::initializeMockCDM()
+{
+    CDM::registerCDMFactory(MockCDM::create, MockCDM::supportsKeySytem);
+}
+#endif
+
+String Internals::markerTextForListItem(Element* element, ExceptionCode& ec)
+{
+    if (!element) {
+        ec = INVALID_ACCESS_ERR;
+        return String();
+    }
+    return WebCore::markerTextForListItem(element);
 }
 
 }

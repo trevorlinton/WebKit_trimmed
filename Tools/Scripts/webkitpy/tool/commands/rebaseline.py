@@ -50,7 +50,7 @@ def _baseline_name(fs, test_name, suffix):
 
 
 class AbstractRebaseliningCommand(AbstractDeclarativeCommand):
-    # not overriding execute() - pylint: disable-msg=W0223
+    # not overriding execute() - pylint: disable=W0223
 
     move_overwritten_baselines_option = optparse.make_option("--move-overwritten-baselines", action="store_true", default=False,
         help="Move overwritten baselines elsewhere in the baseline path. This is for bringing up new ports.")
@@ -152,7 +152,7 @@ class RebaselineTest(AbstractRebaseliningCommand):
             path = port.path_to_test_expectations_file()
             lock = self._tool.make_file_lock(path + '.lock')
             lock.acquire_lock()
-            expectations = TestExpectations(port, include_overrides=False)
+            expectations = TestExpectations(port, include_generic=False, include_overrides=False)
             for test_configuration in port.all_test_configurations():
                 if test_configuration.version == port.test_configuration().version:
                     expectationsString = expectations.remove_configuration_from_test(test_name, test_configuration)
@@ -266,7 +266,7 @@ class AnalyzeBaselines(AbstractRebaseliningCommand):
 
 
 class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
-    # not overriding execute() - pylint: disable-msg=W0223
+    # not overriding execute() - pylint: disable=W0223
 
     def _run_webkit_patch(self, args, verbose):
         try:

@@ -65,6 +65,8 @@ public:
 
     virtual bool isValid() const { return true; }
 
+    virtual bool shouldClearReferrerOnHTTPSToHTTPRedirect() const = 0;
+
 #if PLATFORM(CHROMIUM)
     // FIXME: Wrap WebCookieJar into a NetworkStorageSession to make the code cross-platform.
     virtual WebKit::WebCookieJar* cookieJar() const = 0;
@@ -75,11 +77,11 @@ public:
     virtual bool localFileContentSniffingEnabled() const = 0; // FIXME: Reconcile with ResourceHandle::forceContentSniffing().
     virtual SchedulePairHashSet* scheduledRunLoopPairs() const { return 0; }
     virtual NSOperationQueue *scheduledOperationQueue() const { return 0; }
+    virtual RetainPtr<CFDataRef> sourceApplicationAuditData() const = 0;
     virtual ResourceError blockedError(const ResourceRequest&) const = 0;
 #endif
 
-#if PLATFORM(MAC) || USE(CFNETWORK)
-
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(SOUP)
     virtual NetworkStorageSession& storageSession() const = 0;
 #endif
 
@@ -98,8 +100,6 @@ public:
 #endif
 
 #if USE(SOUP)
-    // FIXME: Wrap SoupSession into a NetworkStorageSession to make the code cross-platform.
-    virtual SoupSession* soupSession() const = 0;
     virtual uint64_t initiatingPageID() const = 0;
 #endif
 

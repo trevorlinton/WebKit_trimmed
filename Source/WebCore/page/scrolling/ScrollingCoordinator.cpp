@@ -52,6 +52,10 @@
 #include "ScrollingCoordinatorChromium.h"
 #endif
 
+#if USE(COORDINATED_GRAPHICS)
+#include "ScrollingCoordinatorCoordinatedGraphics.h"
+#endif
+
 namespace WebCore {
 
 PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
@@ -64,36 +68,11 @@ PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
     return adoptRef(new ScrollingCoordinatorChromium(page));
 #endif
 
+#if USE(COORDINATED_GRAPHICS)
+    return adoptRef(new ScrollingCoordinatorCoordinatedGraphics(page));
+#endif
+
     return adoptRef(new ScrollingCoordinator(page));
-}
-
-static int fixedPositionScrollOffset(int visibleContentSize, int contentsSize, int scrollPosition, int scrollOrigin, float frameScaleFactor, bool fixedElementsLayoutRelativeToFrame)
-{
-    int maxValue = contentsSize - visibleContentSize;
-    if (maxValue <= 0)
-        return 0;
-
-    if (!scrollOrigin) {
-        if (scrollPosition <= 0)
-            return 0;
-        if (scrollPosition > maxValue)
-            scrollPosition = maxValue;
-    } else {
-        if (scrollPosition >= 0)
-            return 0;
-        if (scrollPosition < -maxValue)
-            scrollPosition = -maxValue;
-    }
-
-    float dragFactor = fixedElementsLayoutRelativeToFrame ? 1 : (contentsSize - visibleContentSize * frameScaleFactor) / maxValue;
-    return scrollPosition * dragFactor / frameScaleFactor;
-}
-
-IntSize scrollOffsetForFixedPosition(const IntRect& visibleContentRect, const IntSize& contentsSize, const IntPoint& scrollPosition, const IntPoint& scrollOrigin, float frameScaleFactor, bool fixedElementsLayoutRelativeToFrame)
-{
-    int x = fixedPositionScrollOffset(visibleContentRect.width(), contentsSize.width(), scrollPosition.x(), scrollOrigin.x(), frameScaleFactor, fixedElementsLayoutRelativeToFrame);
-    int y = fixedPositionScrollOffset(visibleContentRect.height(), contentsSize.height(), scrollPosition.y(), scrollOrigin.y(), frameScaleFactor, fixedElementsLayoutRelativeToFrame);
-    return IntSize(x, y);
 }
 
 ScrollingCoordinator::ScrollingCoordinator(Page* page)
@@ -136,7 +115,7 @@ bool ScrollingCoordinator::coordinatesScrollingForFrameView(FrameView* frameView
 #endif
 }
 
-Region ScrollingCoordinator::computeNonFastScrollableRegion(Frame* frame, const IntPoint& frameLocation)
+Region ScrollingCoordinator::computeNonFastScrollableRegion(const Frame* frame, const IntPoint& frameLocation) const
 {
     Region nonFastScrollableRegion;
     FrameView* frameView = frame->view();
@@ -185,9 +164,15 @@ static void accumulateRendererTouchEventTargetRects(Vector<IntRect>& rects, cons
     if (parentRect.isEmpty() || renderer->isFloating() || renderer->isPositioned() || renderer->hasTransform()) {
         // FIXME: This method is O(N^2) as it walks the tree to the root for every renderer. RenderGeometryMap would fix this.
         IntRect r = enclosingIntRect(renderer->clippedOverflowRectForRepaint(0));
-        if (!r.isEmpty() && !parentRect.contains(r)) {
-            rects.append(r);
-            adjustedParentRect = r;
+        if (!r.isEmpty()) {
+            // Convert to the top-level view's coordinates.
+            ASSERT(renderer->document()->view());
+            r = renderer->document()->view()->convertToRootView(r);
+
+            if (!parentRect.contains(r)) {
+                rects.append(r);
+                adjustedParentRect = r;
+            }
         }
     }
 
@@ -209,9 +194,17 @@ static void accumulateDocumentEventTargetRects(Vector<IntRect>& rects, const Doc
 
         if (touchTarget == document) {
             if (RenderView* view = document->renderView()) {
-                IntRect r = enclosingIntRect(view->clippedOverflowRectForRepaint(0));
-                if (!r.isEmpty())
+                IntRect r;
+                if (touchTarget == document->topDocument())
+                    r = view->documentRect();
+                else
+                    r = enclosingIntRect(view->clippedOverflowRectForRepaint(0));
+
+                if (!r.isEmpty()) {
+                    ASSERT(view->document()->view());
+                    r = view->document()->view()->convertToRootView(r);
                     rects.append(r);
+                }
             }
             return;
         }
@@ -279,6 +272,21 @@ void ScrollingCoordinator::frameViewFixedObjectsDidChange(FrameView* frameView)
     updateShouldUpdateScrollLayerPositionOnMainThread();
 }
 
+GraphicsLayer* ScrollingCoordinator::scrollLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForScrolling();
+}
+
+GraphicsLayer* ScrollingCoordinator::horizontalScrollbarLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForHorizontalScrollbar();
+}
+
+GraphicsLayer* ScrollingCoordinator::verticalScrollbarLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForVerticalScrollbar();
+}
+
 GraphicsLayer* ScrollingCoordinator::scrollLayerForFrameView(FrameView* frameView)
 {
 #if USE(ACCELERATED_COMPOSITING)
@@ -290,6 +298,23 @@ GraphicsLayer* ScrollingCoordinator::scrollLayerForFrameView(FrameView* frameVie
     if (!renderView)
         return 0;
     return renderView->compositor()->scrollLayer();
+#else
+    UNUSED_PARAM(frameView);
+    return 0;
+#endif
+}
+
+GraphicsLayer* ScrollingCoordinator::counterScrollingLayerForFrameView(FrameView* frameView)
+{
+#if USE(ACCELERATED_COMPOSITING)
+    Frame* frame = frameView->frame();
+    if (!frame)
+        return 0;
+
+    RenderView* renderView = frame->contentRenderer();
+    if (!renderView)
+        return 0;
+    return renderView->compositor()->fixedRootBackgroundLayer();
 #else
     UNUSED_PARAM(frameView);
     return 0;
@@ -358,12 +383,17 @@ void ScrollingCoordinator::updateMainFrameScrollPosition(const IntPoint& scrollP
 
 #if USE(ACCELERATED_COMPOSITING)
     if (GraphicsLayer* scrollLayer = scrollLayerForFrameView(frameView)) {
-        if (programmaticScroll || scrollingLayerPositionAction == SetScrollingLayerPosition)
+        GraphicsLayer* counterScrollingLayer = counterScrollingLayerForFrameView(frameView);
+        if (programmaticScroll || scrollingLayerPositionAction == SetScrollingLayerPosition) {
             scrollLayer->setPosition(-frameView->scrollPosition());
-        else {
+            if (counterScrollingLayer)
+                counterScrollingLayer->setPosition(IntPoint(frameView->scrollOffsetForFixedPosition()));
+        } else {
             scrollLayer->syncPosition(-frameView->scrollPosition());
-            LayoutRect viewportRect = frameView->visibleContentRect();
-            viewportRect.setLocation(IntPoint(frameView->scrollOffsetForFixedPosition()));
+            if (counterScrollingLayer)
+                counterScrollingLayer->syncPosition(IntPoint(frameView->scrollOffsetForFixedPosition()));
+
+            LayoutRect viewportRect = frameView->viewportConstrainedVisibleContentRect();
             syncChildPositions(viewportRect);
         }
     }
@@ -388,7 +418,7 @@ void ScrollingCoordinator::handleWheelEventPhase(PlatformWheelEventPhase phase)
 }
 #endif
 
-bool ScrollingCoordinator::hasVisibleSlowRepaintFixedObjects(FrameView* frameView) const
+bool ScrollingCoordinator::hasVisibleSlowRepaintViewportConstrainedObjects(FrameView* frameView) const
 {
     const FrameView::ViewportConstrainedObjectSet* viewportConstrainedObjects = frameView->viewportConstrainedObjects();
     if (!viewportConstrainedObjects)
@@ -401,7 +431,7 @@ bool ScrollingCoordinator::hasVisibleSlowRepaintFixedObjects(FrameView* frameVie
             return true;
         RenderLayer* layer = toRenderBoxModelObject(viewportConstrainedObject)->layer();
         // Any explicit reason that a fixed position element is not composited shouldn't cause slow scrolling.
-        if (!layer->isComposited() && layer->compositor()->fixedPositionLayerNotCompositedReason(layer) == RenderLayerCompositor::NoReason)
+        if (!layer->isComposited() && layer->viewportConstrainedNotCompositedReason() == RenderLayer::NoNotCompositedReason)
             return true;
     }
     return false;
@@ -413,6 +443,8 @@ bool ScrollingCoordinator::hasVisibleSlowRepaintFixedObjects(FrameView* frameVie
 MainThreadScrollingReasons ScrollingCoordinator::mainThreadScrollingReasons() const
 {
     FrameView* frameView = m_page->mainFrame()->view();
+    if (!frameView)
+        return static_cast<MainThreadScrollingReasons>(0);
 
     MainThreadScrollingReasons mainThreadScrollingReasons = (MainThreadScrollingReasons)0;
 
@@ -422,8 +454,8 @@ MainThreadScrollingReasons ScrollingCoordinator::mainThreadScrollingReasons() co
         mainThreadScrollingReasons |= HasSlowRepaintObjects;
     if (!supportsFixedPositionLayers() && frameView->hasViewportConstrainedObjects())
         mainThreadScrollingReasons |= HasViewportConstrainedObjectsWithoutSupportingFixedLayers;
-    if (supportsFixedPositionLayers() && hasVisibleSlowRepaintFixedObjects(frameView))
-        mainThreadScrollingReasons |= HasNonLayerFixedObjects;
+    if (supportsFixedPositionLayers() && hasVisibleSlowRepaintViewportConstrainedObjects(frameView))
+        mainThreadScrollingReasons |= HasNonLayerViewportConstrainedObjects;
     if (m_page->mainFrame()->document()->isImageDocument())
         mainThreadScrollingReasons |= IsImageDocument;
 
@@ -465,8 +497,8 @@ String ScrollingCoordinator::mainThreadScrollingReasonsAsText(MainThreadScrollin
         stringBuilder.append("Has slow repaint objects, ");
     if (reasons & ScrollingCoordinator::HasViewportConstrainedObjectsWithoutSupportingFixedLayers)
         stringBuilder.append("Has viewport constrained objects without supporting fixed layers, ");
-    if (reasons & ScrollingCoordinator::HasNonLayerFixedObjects)
-        stringBuilder.append("Has non-layer fixed objects, ");
+    if (reasons & ScrollingCoordinator::HasNonLayerViewportConstrainedObjects)
+        stringBuilder.append("Has non-layer viewport-constrained objects, ");
     if (reasons & ScrollingCoordinator::IsImageDocument)
         stringBuilder.append("Is image document, ");
 

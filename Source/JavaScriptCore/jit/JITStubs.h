@@ -36,8 +36,6 @@
 #include "MacroAssemblerCodeRef.h"
 #include "Register.h"
 #include "ResolveOperation.h"
-#include "ThunkGenerators.h"
-#include <wtf/HashMap.h>
 
 namespace JSC {
 
@@ -89,7 +87,7 @@ union JITStubArg {
     ArrayAllocationProfile* arrayAllocationProfile() { return static_cast<ArrayAllocationProfile*>(asPointer); }
 };
     
-#if CPU(X86_64)
+#if !OS(WINDOWS) && CPU(X86_64)
 struct JITStackFrame {
     void* reserved; // Unused
     JITStubArg args[6];
@@ -109,6 +107,34 @@ struct JITStackFrame {
     void* savedR12;
     void* savedRBP;
     void* savedRIP;
+
+    // When JIT code makes a call, it pushes its return address just below the rest of the stack.
+    ReturnAddressPtr* returnAddressSlot() { return reinterpret_cast<ReturnAddressPtr*>(this) - 1; }
+};
+#elif OS(WINDOWS) && CPU(X86_64)
+struct JITStackFrame {
+    void* shadow[4]; // Shadow space reserved for a callee's parameters home addresses
+    void* reserved; // Unused, also maintains the 16-bytes stack alignment
+    JITStubArg args[6];
+
+    void* savedRBX;
+    void* savedR15;
+    void* savedR14;
+    void* savedR13;
+    void* savedR12;
+    void* savedRBP;
+    void* savedRIP;
+
+    // Home addresses for our register passed parameters
+    // http://msdn.microsoft.com/en-us/library/ew5tede7.aspx
+    void* code;
+    JSStack* stack;
+    CallFrame* callFrame;
+    void* unused1;
+
+    // Passed on the stack
+    void* unused2;
+    JSGlobalData* globalData;
 
     // When JIT code makes a call, it pushes its return address just below the rest of the stack.
     ReturnAddressPtr* returnAddressSlot() { return reinterpret_cast<ReturnAddressPtr*>(this) - 1; }
@@ -218,6 +244,8 @@ struct JITStackFrame {
     void* preservedS0;
     void* preservedS1;
     void* preservedS2;
+    void* preservedS3;
+    void* preservedS4;
     void* preservedReturnAddress;
 
     ReturnAddressPtr thunkReturnAddress;
@@ -289,6 +317,8 @@ inline bool returnAddressIsInCtiTrampoline(ReturnAddressPtr returnAddress)
         && returnAddress.value() < bitwise_cast<void*>(&ctiTrampolineEnd);
 }
 #endif
+
+void performPlatformSpecificJITAssertions(JSGlobalData*);
 
 extern "C" {
 EncodedJSValue JIT_STUB cti_op_add(STUB_ARGS_DECLARATION) WTF_INTERNAL;

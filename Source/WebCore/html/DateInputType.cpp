@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
+#if ENABLE(INPUT_TYPE_DATE)
 #include "DateInputType.h"
 
-#if ENABLE(INPUT_TYPE_DATE)
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "HTMLInputElement.h"
@@ -59,6 +59,11 @@ inline DateInputType::DateInputType(HTMLInputElement* element)
 PassOwnPtr<InputType> DateInputType::create(HTMLInputElement* element)
 {
     return adoptPtr(new DateInputType(element));
+}
+
+void DateInputType::attach()
+{
+    observeFeatureIfVisible(FeatureObserver::InputTypeDate);
 }
 
 const AtomicString& DateInputType::formControlType() const

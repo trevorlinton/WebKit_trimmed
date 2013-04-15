@@ -45,7 +45,7 @@ class WebViewImpl;
 class InspectorClientImpl : public WebCore::InspectorClient,
                             public WebCore::InspectorFrontendChannel {
 public:
-    InspectorClientImpl(WebViewImpl*);
+    explicit InspectorClientImpl(WebViewImpl*);
     ~InspectorClientImpl();
 
     // InspectorClient methods:
@@ -76,8 +76,14 @@ public:
     virtual bool overridesShowPaintRects();
     virtual void setShowPaintRects(bool);
 
+    virtual bool canShowDebugBorders();
+    virtual void setShowDebugBorders(bool);
+
     virtual bool canShowFPSCounter();
     virtual void setShowFPSCounter(bool);
+
+    virtual bool canContinuouslyPaint();
+    virtual void setContinuousPaintingEnabled(bool);
 
     virtual bool supportsFrameInstrumentation();
 
@@ -85,6 +91,11 @@ public:
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
 
     virtual bool captureScreenshot(WTF::String* data);
+    virtual void setTraceEventCallback(TraceEventCallback);
+
+    virtual bool handleJavaScriptDialog(bool accept);
+
+    virtual bool canSetFileInputFiles();
 
 private:
     WebDevToolsAgentImpl* devToolsAgent();

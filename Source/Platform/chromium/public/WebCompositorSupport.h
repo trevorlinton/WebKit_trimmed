@@ -50,6 +50,7 @@ class WebScrollbarThemeGeometry;
 class WebSolidColorLayer;
 class WebThread;
 class WebTransformAnimationCurve;
+class WebTransformOperations;
 class WebVideoFrameProvider;
 class WebVideoLayer;
 
@@ -67,9 +68,6 @@ public:
     // types have been deleted. No compositor classes or methods should be used
     // after shutdown.
     virtual void shutdown() { }
-
-    // May return 0 if initialization fails.
-    virtual WebLayerTreeView* createLayerTreeView(WebLayerTreeViewClient*, const WebLayer& root, const WebLayerTreeView::Settings&) { return 0; }
 
     // Creates an output surface for the compositor backed by a 3d context.
     virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebKit::WebGraphicsContext3D*) { return 0; }
@@ -103,6 +101,9 @@ public:
     virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
 
     virtual WebTransformAnimationCurve* createTransformAnimationCurve() { return 0; }
+
+    virtual WebTransformOperations* createTransformOperations() { return 0; }
+
 
 protected:
     virtual ~WebCompositorSupport() { }

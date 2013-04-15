@@ -30,14 +30,15 @@
 
 #include "GraphicsContext3D.h"
 
-#include "BitmapImageSingleFrameSkia.h"
 #include "Extensions3DOpenGLES.h"
 #include "GraphicsContext.h"
 #include "OpenGLESShims.h"
 #include "WebGLLayerWebKitThread.h"
 
 #include <BlackBerryPlatformGraphics.h>
+#include <BlackBerryPlatformGraphicsContext.h>
 #include <BlackBerryPlatformLog.h>
+#include <TiledImage.h>
 
 namespace WebCore {
 
@@ -62,9 +63,6 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attrs, HostWi
     , m_depthStencilBuffer(0)
     , m_layerComposited(false)
     , m_internalColorFormat(GL_RGBA)
-    , m_boundFBO(0)
-    , m_activeTexture(GL_TEXTURE0)
-    , m_boundTexture0(0)
     , m_isImaginationHardware(0)
 {
     if (renderStyle != RenderDirectlyToHostWindow) {
@@ -87,7 +85,7 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attrs, HostWi
         ::glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
         if (m_attrs.stencil || m_attrs.depth)
             ::glGenRenderbuffers(1, &m_depthStencilBuffer);
-        m_boundFBO = m_fbo;
+        m_state.boundFBO = m_fbo;
 
 #if USE(ACCELERATED_COMPOSITING)
         static_cast<WebGLLayerWebKitThread*>(m_compositingLayer.get())->setWebGLContext(this);
@@ -188,7 +186,7 @@ bool GraphicsContext3D::reshapeFBOs(const IntSize& size)
     }
 
     bool mustRestoreFBO = false;
-    if (m_boundFBO != m_fbo) {
+    if (m_state.boundFBO != m_fbo) {
         mustRestoreFBO = true;
         ::glBindFramebufferEXT(GraphicsContext3D::FRAMEBUFFER, m_fbo);
     }
@@ -345,16 +343,6 @@ bool GraphicsContext3D::isGLES2Compliant() const
     return true;
 }
 
-bool GraphicsContext3D::isGLES2NPOTStrict() const
-{
-    return true;
-}
-
-bool GraphicsContext3D::isErrorGeneratedOnOutOfBoundsAccesses() const
-{
-    return false;
-}
-
 Platform3DObject GraphicsContext3D::platformTexture() const
 {
     return m_texture;
@@ -375,30 +363,15 @@ PlatformLayer* GraphicsContext3D::platformLayer() const
 void GraphicsContext3D::paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight, int canvasWidth, int canvasHeight,
        GraphicsContext* context)
 {
-    unsigned char* tempPixels = new unsigned char[imageWidth * imageHeight * 4];
-
-    // 3D images have already been converted to BGRA. Don't do it twice!!
-    for (int y = 0; y < imageHeight; y++) {
-        const unsigned char *srcRow = imagePixels + (imageWidth * 4 * y);
-        unsigned char *destRow = tempPixels + (imageWidth * 4 * (imageHeight - y - 1));
-        for (int i = 0; i < imageWidth * 4; i += 4)
-            memcpy(destRow + i, srcRow + i, 4);
-    }
-
-    SkBitmap canvasBitmap;
-
-    canvasBitmap.setConfig(SkBitmap::kARGB_8888_Config, canvasWidth, canvasHeight);
-    canvasBitmap.allocPixels(0, 0);
-    canvasBitmap.lockPixels();
-    memcpy(canvasBitmap.getPixels(), tempPixels, imageWidth * imageHeight * 4);
-    canvasBitmap.unlockPixels();
-    delete [] tempPixels;
-
     FloatRect src(0, 0, canvasWidth, canvasHeight);
     FloatRect dst(0, 0, imageWidth, imageHeight);
-
-    RefPtr<BitmapImageSingleFrameSkia> bitmapImage = BitmapImageSingleFrameSkia::create(canvasBitmap, false);
-    context->drawImage(bitmapImage.get(), ColorSpaceDeviceRGB, dst, src, CompositeCopy, RespectImageOrientation, false);
+    double oldTransform[6];
+    double flipYTransform[6] = { 1.0f, 0.0f, 0.0f, -1.0f, 0.0f, imageHeight - 1 };
+    context->platformContext()->getTransform(oldTransform);
+    context->platformContext()->setTransform(flipYTransform);
+    BlackBerry::Platform::Graphics::TiledImage image(IntSize(imageWidth, imageHeight), reinterpret_cast_ptr<const unsigned*>(imagePixels));
+    context->platformContext()->addImage(dst, src, &image);
+    context->platformContext()->setTransform(oldTransform);
 }
 
 void GraphicsContext3D::setContextLostCallback(PassOwnPtr<ContextLostCallback> callback)
@@ -408,6 +381,32 @@ void GraphicsContext3D::setContextLostCallback(PassOwnPtr<ContextLostCallback> c
 
 void GraphicsContext3D::setErrorMessageCallback(PassOwnPtr<ErrorMessageCallback>)
 {
+}
+
+bool GraphicsContext3D::getImageData(Image* image, GC3Denum format, GC3Denum type, bool premultiplyAlpha, bool ignoreGammaAndColorProfile, Vector<uint8_t>& outputVector)
+{
+    if (!image)
+        return false;
+
+    NativeImagePtr nativeImage = image->nativeImageForCurrentFrame();
+    if (!nativeImage)
+        return false;
+
+    unsigned imageSize = nativeImage->size().width() * nativeImage->size().height();
+    Vector<unsigned> imageData(imageSize);
+    if (!nativeImage->readPixels(imageData.data(), imageSize))
+        return false;
+
+    // Raw image data is premultiplied
+    AlphaOp neededAlphaOp = AlphaDoNothing;
+    if (!premultiplyAlpha)
+        neededAlphaOp = AlphaDoUnmultiply;
+
+    outputVector.resize(imageSize * 4);
+    return packPixels(reinterpret_cast<const uint8_t*>(imageData.data()),
+        SourceFormatBGRA8,
+        nativeImage->size().width(), nativeImage->size().height(), 0,
+        format, type, neededAlphaOp, outputVector.data());
 }
 
 } // namespace WebCore

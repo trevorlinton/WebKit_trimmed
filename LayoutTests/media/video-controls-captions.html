@@ -9,6 +9,66 @@
     <script>
         var captionsButtonElement;
         var captionsButtonCoordinates;
+        var track;
+
+        function addTextTrackThroughJS()
+        {
+            consoleWrite("");
+            consoleWrite("** Add a text track through JS to the video element **");
+            var t = video.addTextTrack('captions', 'English', 'en');
+            t.addCue(new TextTrackCue(0.0, 10.0, 'Some random caption text'));
+        }
+
+        function addUnloadableHTMLTrackElement()
+        {
+            consoleWrite("");
+            consoleWrite("** Add non-default text track through HTML with unloadable URI **");
+
+            track = document.createElement("track");
+            track.setAttribute("kind", "captions");
+            track.setAttribute("srclang", "en");
+            track.setAttribute("src", "invalid.vtt");
+
+            track.addEventListener("error", trackError);
+
+            video.appendChild(track);
+            testExpected("track.readyState", HTMLTrackElement.NONE);
+            testExpected("track.track.mode", "disabled");
+            testExpected("video.textTracks.length", 1);
+        }
+
+        function removeHTMLTrackElement()
+        {
+            consoleWrite("");
+            consoleWrite("** Remove DOM node representing the track element **");
+            var htmlTrack = video.children[0];
+            video.removeChild(htmlTrack);
+        }
+
+        function testClosedCaptionsButtonVisibility(expected)
+        {
+            try {
+                captionsButtonElement = mediaControlsElement(internals.shadowRoot(video).firstChild, "-webkit-media-controls-toggle-closed-captions-button");
+                captionsButtonCoordinates = mediaControlsButtonCoordinates(video, "toggle-closed-captions-button");
+            } catch (exception) {
+                consoleWrite("Failed to find a closed captions button or its coordinates: " + exception);
+                if (expected)
+                    failTest();
+                return;
+            }
+
+            consoleWrite("");
+            if (expected == true) {
+                consoleWrite("** Caption button should be visible and enabled because we have a captions track.");
+                testExpected("captionsButtonCoordinates[0]", 0, ">");
+                testExpected("captionsButtonCoordinates[1]", 0, ">");
+                testExpected("captionsButtonElement.disabled", false);
+            } else {
+                consoleWrite("** Caption button should not be visible as there are no caption tracks.");
+                testExpected("captionsButtonCoordinates[0]", 0, "<=");
+                testExpected("captionsButtonCoordinates[1]", 0, "<=");
+            }
+        }
 
         function startTest()
         {
@@ -17,20 +77,8 @@
                 failTest();
             }
 
-            try {
-                captionsButtonElement = mediaControlsElement(internals.shadowRoot(video).firstChild, "-webkit-media-controls-toggle-closed-captions-button");
-                captionsButtonCoordinates = mediaControlsButtonCoordinates(video, "toggle-closed-captions-button");
-            } catch (exception) {
-                consoleWrite("Failed to find a closed captions button or its coordinates: " + exception);
-                failTest();
-                return;
-            }
-
-            consoleWrite("");
-            consoleWrite("** Caption button should be visible and enabled because we have a captions track.");
-            testExpected("captionsButtonCoordinates[0]", 0, ">");
-            testExpected("captionsButtonCoordinates[1]", 0, ">");
-            testExpected("captionsButtonElement.disabled", false);
+            findMediaElement();
+            testClosedCaptionsButtonVisibility(true);
 
             consoleWrite("");
             consoleWrite("** The captions track should be listed in textTracks, but not yet loaded. **");
@@ -68,8 +116,27 @@
             clickCCButton();
             checkCaptionsDisplay();
 
+            removeHTMLTrackElement();
+            testClosedCaptionsButtonVisibility(false);
+
+            addUnloadableHTMLTrackElement();
+            testClosedCaptionsButtonVisibility(true);
+
+            consoleWrite("");
+            clickCCButton();
+        }
+
+        function trackError()
+        {
+            consoleWrite("** Track failed to load **");
+            testClosedCaptionsButtonVisibility(false);
+
+            addTextTrackThroughJS();
+            testClosedCaptionsButtonVisibility(true);
+
             endTest();
         }
+
 
         function loaded()
         {

@@ -31,6 +31,7 @@
 
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -42,7 +43,9 @@ class AudioIOCallback;
 
 class AudioDestination {
 public:
-    static PassOwnPtr<AudioDestination> create(AudioIOCallback&, float sampleRate);
+    // Pass in (numberOfInputChannels > 0) if live/local audio input is desired.
+    // Port-specific device identification information for live/local input streams can be passed in the inputDeviceId.
+    static PassOwnPtr<AudioDestination> create(AudioIOCallback&, const String& inputDeviceId, unsigned numberOfInputChannels, unsigned numberOfOutputChannels, float sampleRate);
 
     virtual ~AudioDestination() { }
 

@@ -54,24 +54,7 @@ struct PluginModuleInfo {
     cpu_type_t pluginArchitecture;
     String bundleIdentifier;
     String versionString;
-#elif PLATFORM(WIN)
-    uint64_t fileVersion;
 #endif
-
-    PluginModuleInfo isolatedCopy() const
-    {
-        PluginModuleInfo clone;
-        clone.path = path.isolatedCopy();
-        clone.info = info.isolatedCopy();
-#if PLATFORM(MAC)
-        clone.pluginArchitecture = pluginArchitecture;
-        clone.bundleIdentifier = bundleIdentifier.isolatedCopy();
-        clone.versionString = versionString.isolatedCopy();
-#elif PLATFORM(WIN)
-        clone.fileVersion = fileVersion;
-#endif
-        return clone;
-    }
 };
 
 } // namespace WebKit

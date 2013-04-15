@@ -28,6 +28,8 @@
 
 #include "AuthenticationClient.h"
 #include "HTTPHeaderMap.h"
+#include "ResourceHandleTypes.h"
+#include "ResourceLoadPriority.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/RefCounted.h>
 
@@ -88,11 +90,6 @@ class ResourceResponse;
 class SchedulePair;
 class SharedBuffer;
 
-enum StoredCredentials {
-    AllowStoredCredentials,
-    DoNotAllowStoredCredentials
-};
-
 template <typename T> class Timer;
 
 class ResourceHandle : public RefCounted<ResourceHandle>
@@ -104,7 +101,6 @@ public:
     static PassRefPtr<ResourceHandle> create(NetworkingContext*, const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
     static void loadResourceSynchronously(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
 
-    static bool willLoadFromCache(ResourceRequest&, Frame*);
     static void cacheMetadata(const ResourceResponse&, const Vector<char>&);
 
     virtual ~ResourceHandle();
@@ -171,6 +167,7 @@ public:
     void continueDidReceiveAuthenticationChallenge(const Credential& credentialFromPersistentStorage);
     void sendPendingRequest();
     bool shouldUseCredentialStorage();
+    bool cancelledOrClientless();
     static SoupSession* defaultSession();
     static uint64_t getSoupRequestInitiatingPageID(SoupRequest*);
     static void setHostAllowsAnyHTTPSCertificate(const String&);
@@ -194,11 +191,15 @@ public:
 #if PLATFORM(BLACKBERRY)
     void pauseLoad(bool);
 #endif
-      
-    ResourceRequest& firstRequest();
+
+    void didChangePriority(ResourceLoadPriority);
+
+    ResourceRequest& firstRequest() const;
     const String& lastHTTPMethod() const;
 
     void fireFailure(Timer<ResourceHandle>*);
+
+    NetworkingContext* context() const;
 
     using RefCounted<ResourceHandle>::ref;
     using RefCounted<ResourceHandle>::deref;
@@ -214,8 +215,11 @@ public:
     typedef PassRefPtr<ResourceHandle> (*BuiltinConstructor)(const ResourceRequest& request, ResourceHandleClient* client);
     static void registerBuiltinConstructor(const AtomicString& protocol, BuiltinConstructor);
 
+    typedef void (*BuiltinSynchronousLoader)(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
+    static void registerBuiltinSynchronousLoader(const AtomicString& protocol, BuiltinSynchronousLoader);
+
 protected:
-    ResourceHandle(const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
+    ResourceHandle(NetworkingContext*, const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
 
 private:
     enum FailureType {
@@ -228,15 +232,16 @@ private:
 
     void scheduleFailure(FailureType);
 
-    bool start(NetworkingContext*);
+    bool start();
+    static void platformLoadResourceSynchronously(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
 
     virtual void refAuthenticationClient() { ref(); }
     virtual void derefAuthenticationClient() { deref(); }
 
 #if PLATFORM(MAC) && !USE(CFNETWORK)
-    void createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldRelaxThirdPartyCookiePolicy, bool shouldContentSniff);
+    void createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldContentSniff);
 #elif USE(CFNETWORK)
-    void createCFURLConnection(bool shouldUseCredentialStorage, bool shouldRelaxThirdPartyCookiePolicy, bool shouldContentSniff);
+    void createCFURLConnection(bool shouldUseCredentialStorage, bool shouldContentSniff);
 #endif
 
     friend class ResourceHandleInternal;

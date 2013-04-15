@@ -31,6 +31,7 @@
 #include "CrossOriginAccessControl.h"
 #include "Document.h"
 #include "DocumentParser.h"
+#include "Event.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "HTMLNames.h"
@@ -293,6 +294,13 @@ void ScriptElement::executeScript(const ScriptSourceCode& sourceCode)
     if (!m_isExternalScript && !m_element->document()->contentSecurityPolicy()->allowInlineScript(m_element->document()->url(), m_startLineNumber))
         return;
 
+#if ENABLE(NOSNIFF)
+    if (m_isExternalScript && m_cachedScript && !m_cachedScript->mimeTypeAllowedByNosniff()) {
+        m_element->document()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, "Refused to execute script from '" + m_cachedScript->url().elidedString() + "' because its MIME type ('" + m_cachedScript->mimeType() + "') is not executable, and strict MIME type checking is enabled.");
+        return;
+    }
+#endif
+
     RefPtr<Document> document = m_element->document();
     ASSERT(document);
     if (Frame* frame = document->frame()) {
@@ -331,7 +339,14 @@ void ScriptElement::execute(CachedScript* cachedScript)
 void ScriptElement::notifyFinished(CachedResource* resource)
 {
     ASSERT(!m_willBeParserExecuted);
+
+    // CachedResource possibly invokes this notifyFinished() more than
+    // once because ScriptElement doesn't unsubscribe itself from
+    // CachedResource here and does it in execute() instead.
+    // We use m_cachedScript to check if this function is already called.
     ASSERT_UNUSED(resource, resource == m_cachedScript);
+    if (!m_cachedScript)
+        return;
 
     if (m_requestUsesAccessControl
         && !m_element->document()->securityOrigin()->canRequest(m_cachedScript->response().url())

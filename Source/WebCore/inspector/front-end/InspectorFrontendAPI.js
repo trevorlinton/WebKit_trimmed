@@ -110,6 +110,21 @@ var InspectorFrontendAPI = {
         WebInspector.toggleSearchingForNode();
     },
 
+    fileSystemsLoaded: function(fileSystems)
+    {
+        WebInspector.isolatedFileSystemDispatcher.fileSystemsLoaded(fileSystems);
+    },
+
+    fileSystemRemoved: function(fileSystemPath)
+    {
+        WebInspector.isolatedFileSystemDispatcher.fileSystemRemoved(fileSystemPath);
+    },
+
+    fileSystemAdded: function(errorMessage, fileSystem)
+    {
+        WebInspector.isolatedFileSystemDispatcher.fileSystemAdded(errorMessage, fileSystem);
+    },
+
     savedURL: function(url)
     {
         WebInspector.fileManager.savedURL(url);
@@ -150,7 +165,7 @@ var InspectorFrontendAPI = {
      */
     loadTimelineFromURL: function(url) 
     {
-        WebInspector.showPanel("timeline").loadFromURL(url);
+        /** @type {WebInspector.TimelinePanel} */ (WebInspector.showPanel("timeline")).loadFromURL(url);
     },
 
     loadCompleted: function()

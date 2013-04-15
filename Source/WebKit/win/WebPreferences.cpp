@@ -195,7 +195,7 @@ void WebPreferences::initializeDefaultSettings()
     CFDictionaryAddValue(defaults, CFSTR(WebKitDefaultFontSizePreferenceKey), CFSTR("16"));
     CFDictionaryAddValue(defaults, CFSTR(WebKitDefaultFixedFontSizePreferenceKey), CFSTR("13"));
 
-    String defaultDefaultEncoding(WEB_UI_STRING("ISO-8859-1", "The default, default character encoding"));
+    String defaultDefaultEncoding(WEB_UI_STRING("ISO-8859-1", "The default, default character encoding on Windows"));
     CFDictionaryAddValue(defaults, CFSTR(WebKitDefaultTextEncodingNamePreferenceKey), defaultDefaultEncoding.createCFString().get());
 
     CFDictionaryAddValue(defaults, CFSTR(WebKitUserStyleSheetEnabledPreferenceKey), kCFBooleanFalse);
@@ -1304,6 +1304,18 @@ HRESULT WebPreferences::allowContinuousSpellChecking(BOOL* enabled)
 HRESULT WebPreferences::setAllowContinuousSpellChecking(BOOL enabled)
 {
     setBoolValue(CFSTR(AllowContinuousSpellCheckingPreferenceKey), enabled);
+    return S_OK;
+}
+
+HRESULT WebPreferences::areSeamlessIFramesEnabled(BOOL* enabled)
+{
+    *enabled = boolValueForKey(CFSTR(SeamlessIFramesPreferenceKey));
+    return S_OK;
+}
+
+HRESULT WebPreferences::setSeamlessIFramesEnabled(BOOL enabled)
+{
+    setBoolValue(CFSTR(SeamlessIFramesPreferenceKey), enabled);
     return S_OK;
 }
 

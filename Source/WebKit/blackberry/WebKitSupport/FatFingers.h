@@ -73,7 +73,6 @@ private:
     typedef std::pair<WebCore::Node*, Platform::IntRectRegion> IntersectingRegion;
 
     enum CachedResultsStrategy { GetFromRenderTree = 0, GetFromCache };
-    CachedResultsStrategy cachingStrategy() const;
     typedef HashMap<RefPtr<WebCore::Document>, ListHashSet<RefPtr<WebCore::Node> > > CachedRectHitTestResults;
 
     bool checkFingerIntersection(const Platform::IntRectRegion&,
@@ -104,12 +103,11 @@ private:
     bool isElementClickable(WebCore::Element*) const;
 
     inline WebCore::IntRect fingerRectForPoint(const WebCore::IntPoint&) const;
-    void getPaddings(unsigned& top, unsigned& right, unsigned& bottom, unsigned& left) const;
+    void getAdjustedPaddings(const WebCore::IntPoint&, unsigned& top, unsigned& right, unsigned& bottom, unsigned& left) const;
 
     WebPagePrivate* m_webPage;
     WebCore::IntPoint m_contentPos;
     TargetType m_targetType;
-    MatchingApproachForClickable m_matchingApproach;
     CachedRectHitTestResults m_cachedRectHitTestResults;
 };
 
@@ -161,7 +159,7 @@ public:
 
         // Shadow trees can be nested.
         while (result->isInShadowTree())
-            result = toElement(result->shadowAncestorNode());
+            result = toElement(result->deprecatedShadowAncestorNode());
 
         if (!shouldUseRootEditableElement || !result->isElementNode())
             return result;

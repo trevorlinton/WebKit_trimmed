@@ -20,10 +20,13 @@
 #include "GeolocationClientBlackBerry.h"
 
 #include "Chrome.h"
+#include "Frame.h"
 #include "Geolocation.h"
 #include "GeolocationController.h"
 #include "GeolocationError.h"
+#include "GeolocationPosition.h"
 #include "Page.h"
+#include "SecurityOrigin.h"
 #include "WebPage_p.h"
 
 #include <BlackBerryPlatformString.h>
@@ -130,8 +133,6 @@ void GeolocationClientBlackBerry::cancelPermissionRequest(Geolocation* location)
 
     // Remove the geolocation from the pending permission map.
     HashMap<String, Vector<RefPtr<Geolocation> > >::iterator it = m_geolocationRequestMap.find(origin);
-
-    ASSERT(it != m_geolocationRequestMap.end());
     if (it == m_geolocationRequestMap.end())
         return;
 

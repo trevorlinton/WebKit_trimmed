@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,6 +27,7 @@
 #ifndef Internals_h
 #define Internals_h
 
+#include "CSSComputedStyleDeclaration.h"
 #include "ContextDestructionObserver.h"
 #include "ExceptionCodePlaceholder.h"
 #include "NodeList.h"
@@ -71,9 +73,11 @@ public:
 
     String address(Node*);
 
-    bool isPreloaded(Document*, const String& url);
+    bool isPreloaded(const String& url);
+    bool isLoadingFromMemoryCache(const String& url);
 
     size_t numberOfScopedHTMLStyleChildren(const Node*, ExceptionCode&) const;
+    PassRefPtr<CSSComputedStyleDeclaration> computedStyleIncludingVisitedInfo(Node*, ExceptionCode&) const;
 
 #if ENABLE(SHADOW_DOM)
     typedef ShadowRoot ShadowRootIfShadowDOMEnabledOrNode;
@@ -95,10 +99,18 @@ public:
     String shadowPseudoId(Element*, ExceptionCode&);
     void setShadowPseudoId(Element*, const String&, ExceptionCode&);
 
+    // CSS Animation testing.
+    unsigned numberOfActiveAnimations() const;
+    void suspendAnimations(Document*, ExceptionCode&) const;
+    void resumeAnimations(Document*, ExceptionCode&) const;
+    bool pauseAnimationAtTimeOnElement(const String& animationName, double pauseTime, Element*, ExceptionCode&);
     bool pauseAnimationAtTimeOnPseudoElement(const String& animationName, double pauseTime, Element*, const String& pseudoId, ExceptionCode&);
+
+    // CSS Transition testing.
+    bool pauseTransitionAtTimeOnElement(const String& propertyName, double pauseTime, Element*, ExceptionCode&);
     bool pauseTransitionAtTimeOnPseudoElement(const String& property, double pauseTime, Element*, const String& pseudoId, ExceptionCode&);
 
-    PassRefPtr<Element> createContentElement(Document*, ExceptionCode&);
+    PassRefPtr<Element> createContentElement(ExceptionCode&);
     bool isValidContentSelect(Element* insertionPoint, ExceptionCode&);
     Node* treeScopeRootNode(Node*, ExceptionCode&);
     Node* parentTreeScope(Node*, ExceptionCode&);
@@ -120,14 +132,14 @@ public:
 #if ENABLE(INPUT_TYPE_COLOR)
     void selectColorInColorChooser(Element*, const String& colorValue);
 #endif
-    PassRefPtr<DOMStringList> formControlStateOfPreviousHistoryItem(ExceptionCode&);
-    void setFormControlStateOfPreviousHistoryItem(PassRefPtr<DOMStringList>, ExceptionCode&);
+    Vector<String> formControlStateOfPreviousHistoryItem(ExceptionCode&);
+    void setFormControlStateOfPreviousHistoryItem(const Vector<String>&, ExceptionCode&);
     void setEnableMockPagePopup(bool, ExceptionCode&);
 #if ENABLE(PAGE_POPUP)
     PassRefPtr<PagePopupController> pagePopupController();
 #endif
 
-    PassRefPtr<ClientRect> absoluteCaretBounds(Document*, ExceptionCode&);
+    PassRefPtr<ClientRect> absoluteCaretBounds(ExceptionCode&);
 
     PassRefPtr<ClientRect> boundingBox(Element*, ExceptionCode&);
 
@@ -149,6 +161,7 @@ public:
     String suggestedValue(Element* inputElement, ExceptionCode&);
     void setSuggestedValue(Element* inputElement, const String&, ExceptionCode&);
     void setEditingValue(Element* inputElement, const String&, ExceptionCode&);
+    void setAutofilled(Element*, bool enabled, ExceptionCode&);
     void scrollElementToRect(Element*, long x, long y, long w, long h, ExceptionCode&);
 
     void paintControlTints(Document*, ExceptionCode&);
@@ -180,7 +193,7 @@ public:
 #endif
 
     PassRefPtr<NodeList> nodesFromRect(Document*, int x, int y, unsigned topPadding, unsigned rightPadding,
-        unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, ExceptionCode&) const;
+        unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, bool allowChildFrameContent, ExceptionCode&) const;
 
     void emitInspectorDidBeginFrame();
     void emitInspectorDidCancelFrame();
@@ -196,13 +209,13 @@ public:
     static const char* internalsId;
 
     InternalSettings* settings() const;
+    unsigned workerThreadCount() const;
 
     void setBatteryStatus(Document*, const String& eventType, bool charging, double chargingTime, double dischargingTime, double level, ExceptionCode&);
 
     void setNetworkInformation(Document*, const String& eventType, double bandwidth, bool metered, ExceptionCode&);
 
-    void suspendAnimations(Document*, ExceptionCode&) const;
-    void resumeAnimations(Document*, ExceptionCode&) const;
+    void setDeviceProximity(Document*, const String& eventType, double value, double min, double max, ExceptionCode&);
 
     enum {
         // Values need to be kept in sync with Internals.idl.
@@ -215,8 +228,8 @@ public:
     String layerTreeAsText(Document*, ExceptionCode&) const;
     String repaintRectsAsText(Document*, ExceptionCode&) const;
     String scrollingStateTreeAsText(Document*, ExceptionCode&) const;
-
     String mainThreadScrollingReasons(Document*, ExceptionCode&) const;
+    PassRefPtr<ClientRectList> nonFastScrollableRects(Document*, ExceptionCode&) const;
 
     void garbageCollectDocumentResources(Document*, ExceptionCode&) const;
 
@@ -238,7 +251,7 @@ public:
     String counterValue(Element*);
 
     int pageNumber(Element*, float pageWidth = 800, float pageHeight = 600);
-    PassRefPtr<DOMStringList> iconURLs(Document*) const;
+    Vector<String> iconURLs(Document*) const;
 
     int numberOfPages(float pageWidthInPixels = 800, float pageHeightInPixels = 600);
     String pageProperty(String, int, ExceptionCode& = ASSERT_NO_EXCEPTION) const;
@@ -259,7 +272,7 @@ public:
     PassRefPtr<MallocStatistics> mallocStatistics() const;
     PassRefPtr<TypeConversions> typeConversions() const;
 
-    PassRefPtr<DOMStringList> getReferencedFilePaths() const;
+    Vector<String> getReferencedFilePaths() const;
 
     void startTrackingRepaints(Document*, ExceptionCode&);
     void stopTrackingRepaints(Document*, ExceptionCode&);
@@ -271,6 +284,16 @@ public:
 
     String getCurrentCursorInfo(Document*, ExceptionCode&);
 
+    String markerTextForListItem(Element*, ExceptionCode&);
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+    void initializeMockCDM();
+#endif
+
+#if ENABLE(SPEECH_SYNTHESIS)
+    void enableMockSpeechSynthesizer();
+#endif
+                    
 private:
     explicit Internals(Document*);
     Document* contextDocument() const;

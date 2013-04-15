@@ -35,8 +35,8 @@
 
 namespace WebCore {
 
-RenderMediaVolumeSliderContainer::RenderMediaVolumeSliderContainer(Node* node)
-    : RenderBlock(node)
+RenderMediaVolumeSliderContainer::RenderMediaVolumeSliderContainer(Element* element)
+    : RenderBlock(element)
 {
 }
 
@@ -59,8 +59,8 @@ void RenderMediaVolumeSliderContainer::layout()
 
 // ----------------------------
 
-RenderMediaControlTimeDisplay::RenderMediaControlTimeDisplay(Node* node)
-    : RenderDeprecatedFlexibleBox(node)
+RenderMediaControlTimeDisplay::RenderMediaControlTimeDisplay(Element* element)
+    : RenderFlexibleBox(element)
 {
 }
 
@@ -70,7 +70,7 @@ static const int minWidthToDisplayTimeDisplays = 45 + 100 + 45;
 
 void RenderMediaControlTimeDisplay::layout()
 {
-    RenderDeprecatedFlexibleBox::layout();
+    RenderFlexibleBox::layout();
     RenderBox* timelineContainerBox = parentBox();
     while (timelineContainerBox && timelineContainerBox->isAnonymous())
         timelineContainerBox = timelineContainerBox->parentBox();
@@ -83,8 +83,8 @@ void RenderMediaControlTimeDisplay::layout()
 
 #if ENABLE(VIDEO_TRACK)
 
-RenderTextTrackContainerElement::RenderTextTrackContainerElement(Node* node)
-    : RenderBlock(node)
+RenderTextTrackContainerElement::RenderTextTrackContainerElement(Element* element)
+    : RenderBlock(element)
 {
 }
 

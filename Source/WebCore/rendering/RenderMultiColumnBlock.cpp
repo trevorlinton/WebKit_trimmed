@@ -33,8 +33,8 @@ using namespace std;
 
 namespace WebCore {
 
-RenderMultiColumnBlock::RenderMultiColumnBlock(Node* node)
-    : RenderBlock(node)
+RenderMultiColumnBlock::RenderMultiColumnBlock(Element* element)
+    : RenderBlock(element)
     , m_flowThread(0)
     , m_columnCount(1)
     , m_columnWidth(0)
@@ -144,11 +144,20 @@ void RenderMultiColumnBlock::ensureColumnSets()
 
     RenderMultiColumnSet* columnSet = firstChild()->isRenderMultiColumnSet() ? toRenderMultiColumnSet(firstChild()) : 0;
     if (!columnSet) {
-        columnSet = new (renderArena()) RenderMultiColumnSet(document(), flowThread());
+        columnSet = RenderMultiColumnSet::createAnonymous(flowThread());
         columnSet->setStyle(RenderStyle::createAnonymousStyleWithDisplay(style(), BLOCK));
         RenderBlock::addChild(columnSet, firstChild());
     }
     columnSet->setRequiresBalancing(requiresBalancing());
+}
+
+void RenderMultiColumnBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight)
+{
+    RenderBlock::layoutBlock(relayoutChildren, pageLogicalHeight);
+    
+    // Shift the flow thread back up to the top of the block.
+    if (flowThread())
+        flowThread()->setLogicalTop(borderBefore() + paddingBefore());
 }
 
 const char* RenderMultiColumnBlock::renderName() const

@@ -419,6 +419,7 @@ public:
 
         [NSNumber numberWithLongLong:ApplicationCacheStorage::noQuota()], WebKitApplicationCacheTotalQuota,
         [NSNumber numberWithLongLong:ApplicationCacheStorage::noQuota()], WebKitApplicationCacheDefaultOriginQuota,
+        [NSNumber numberWithBool:YES],  WebKitQTKitEnabledPreferenceKey,
         nil];
 
 
@@ -1578,6 +1579,16 @@ static NSString *classIBCreatorID = nil;
     return [self _boolValueForKey:WebKitAVFoundationEnabledKey];
 }
 
+- (void)setQTKitEnabled:(BOOL)flag
+{
+    [self _setBoolValue:flag forKey:WebKitQTKitEnabledPreferenceKey];
+}
+
+- (BOOL)isQTKitEnabled
+{
+    return [self _boolValueForKey:WebKitQTKitEnabledPreferenceKey];
+}
+
 - (void)setHixie76WebSocketProtocolEnabled:(BOOL)flag
 {
 }
@@ -1615,6 +1626,16 @@ static NSString *classIBCreatorID = nil;
 - (void)setMockScrollbarsEnabled:(BOOL)flag
 {
     [self _setBoolValue:flag forKey:WebKitMockScrollbarsEnabledPreferenceKey];
+}
+
+- (BOOL)seamlessIFramesEnabled
+{
+    return [self _boolValueForKey:WebKitSeamlessIFramesEnabledPreferenceKey];
+}
+
+- (void)setSeamlessIFramesEnabled:(BOOL)flag
+{
+    [self _setBoolValue:flag forKey:WebKitSeamlessIFramesEnabledPreferenceKey];
 }
 
 - (NSString *)pictographFontFamily

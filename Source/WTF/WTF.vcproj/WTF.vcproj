@@ -781,6 +781,10 @@
 			>
 		</File>
 		<File
+			RelativePath="..\wtf\FeatureDefines.h"
+			>
+		</File>
+		<File
 			RelativePath="..\wtf\FilePrintStream.cpp"
 			>
 		</File>
@@ -1201,10 +1205,6 @@
 			>
 		</File>
 		<File
-			RelativePath="..\wtf\StringExtras.cpp"
-			>
-		</File>
-		<File
 			RelativePath="..\wtf\StringExtras.h"
 			>
 		</File>
@@ -1326,6 +1326,10 @@
 		</File>
 		<File
 			RelativePath="..\wtf\WTFThreadData.h"
+			>
+		</File>
+		<File
+			RelativePath="..\wtf\WeakPtr.h"
 			>
 		</File>
 	</Files>

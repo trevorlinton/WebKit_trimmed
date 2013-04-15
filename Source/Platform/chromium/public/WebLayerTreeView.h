@@ -56,6 +56,7 @@ public:
             , partialSwapEnabled(false)
             , acceleratedAnimationEnabled(true)
             , pageScalePinchZoomEnabled(false)
+            , recordRenderingStats(false)
             , refreshRate(0)
             , defaultTileSize(WebSize(256, 256))
             , maxUntiledLayerSize(WebSize(512, 512))
@@ -73,6 +74,7 @@ public:
         bool partialSwapEnabled;
         bool acceleratedAnimationEnabled;
         bool pageScalePinchZoomEnabled;
+        bool recordRenderingStats;
         double refreshRate;
         WebSize defaultTileSize;
         WebSize maxUntiledLayerSize;
@@ -94,7 +96,7 @@ public:
 
     // View properties ---------------------------------------------------
 
-    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize = WebSize()) = 0;
+    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize) = 0;
     // Gives the viewport size in layer space.
     virtual WebSize layoutViewportSize() const = 0;
     // Gives the viewport size in physical device pixels (may be different
@@ -102,9 +104,8 @@ public:
     // mode).
     virtual WebSize deviceViewportSize() const = 0;
 
-    // Gives the corrected location for an event, accounting for the pinch-zoom transformation
-    // in the compositor.
-    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint&) const = 0;
+    // FIXME: remove this after WebKit roll
+    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& p) const { return p; }
 
     virtual void setDeviceScaleFactor(float) = 0;
     virtual float deviceScaleFactor() const = 0;
@@ -171,6 +172,10 @@ public:
     // Prevents updates to layer tree from becoming visible.
     virtual void setDeferCommits(bool deferCommits) { }
 
+    // Take responsiblity for this layer's animations, even if this layer hasn't yet
+    // been added to the tree.
+    virtual void registerForAnimations(WebLayer* layer) { }
+
     // Debugging / dangerous ---------------------------------------------
 
     // Fills in a WebRenderingStats struct containing information about the state of the compositor.
@@ -182,6 +187,12 @@ public:
 
     // Toggles the paint rects in the HUD layer
     virtual void setShowPaintRects(bool) { }
+
+    // Toggles the debug borders on layers
+    virtual void setShowDebugBorders(bool) { }
+
+    // Toggles continuous painting
+    virtual void setContinuousPaintingEnabled(bool) { }
 
     // FIXME: Remove this.
     virtual void loseCompositorContext(int numTimes) { }

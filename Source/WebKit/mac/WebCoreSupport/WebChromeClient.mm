@@ -97,11 +97,11 @@ NSString *WebConsoleMessageNetworkMessageSource = @"NetworkMessageSource";
 NSString *WebConsoleMessageConsoleAPIMessageSource = @"ConsoleAPIMessageSource";
 NSString *WebConsoleMessageOtherMessageSource = @"OtherMessageSource";
 
-NSString *WebConsoleMessageTipMessageLevel = @"TipMessageLevel";
+NSString *WebConsoleMessageDebugMessageLevel = @"DebugMessageLevel";
 NSString *WebConsoleMessageLogMessageLevel = @"LogMessageLevel";
 NSString *WebConsoleMessageWarningMessageLevel = @"WarningMessageLevel";
 NSString *WebConsoleMessageErrorMessageLevel = @"ErrorMessageLevel";
-NSString *WebConsoleMessageDebugMessageLevel = @"DebugMessageLevel";
+
 
 @interface NSApplication (WebNSApplicationDetails)
 - (NSCursor *)_cursorRectCursor;
@@ -349,16 +349,14 @@ inline static NSString *stringForMessageSource(MessageSource source)
 inline static NSString *stringForMessageLevel(MessageLevel level)
 {
     switch (level) {
-    case TipMessageLevel:
-        return WebConsoleMessageTipMessageLevel;
+    case DebugMessageLevel:
+        return WebConsoleMessageDebugMessageLevel;
     case LogMessageLevel:
         return WebConsoleMessageLogMessageLevel;
     case WarningMessageLevel:
         return WebConsoleMessageWarningMessageLevel;
     case ErrorMessageLevel:
         return WebConsoleMessageErrorMessageLevel;
-    case DebugMessageLevel:
-        return WebConsoleMessageDebugMessageLevel;
     }
     ASSERT_NOT_REACHED();
     return @"";
@@ -624,7 +622,7 @@ void WebChromeClient::print(Frame* frame)
 
 #if ENABLE(SQL_DATABASE)
 
-void WebChromeClient::exceededDatabaseQuota(Frame* frame, const String& databaseName)
+void WebChromeClient::exceededDatabaseQuota(Frame* frame, const String& databaseName, DatabaseDetails)
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
 

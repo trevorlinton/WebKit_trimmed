@@ -95,6 +95,9 @@ public:
     // Policy delegate.
     void setCustomPolicyDelegate(bool enabled, bool permissive);
 
+    // Page Visibility.
+    void setVisibilityState(WKPageVisibilityState, bool isInitialState);
+
     // Work queue.
     bool shouldProcessWorkQueue() const;
     void processWorkQueue();
@@ -151,6 +154,7 @@ private:
     bool m_dumpPixels;
     bool m_useWaitToDumpWatchdogTimer;
     bool m_useWorkQueue;
+    int m_timeout;
 
     WKRetainPtr<WKDataRef> m_audioResult;
     WKRetainPtr<WKImageRef> m_pixelResult;

@@ -263,7 +263,7 @@ WebInspector.NetworkDispatcher.prototype = {
             // FIXME: move this check to the backend.
             if (!redirectResponse)
                 return;
-            this.responseReceived(requestId, frameId, loaderId, time, "Other", redirectResponse);
+            this.responseReceived(requestId, frameId, loaderId, time, PageAgent.ResourceType.Other, redirectResponse);
             networkRequest = this._appendRedirect(requestId, time, request.url);
         } else
             networkRequest = this._createNetworkRequest(requestId, frameId, loaderId, request.url, documentURL, initiator);
@@ -415,7 +415,6 @@ WebInspector.NetworkDispatcher.prototype = {
 
         networkRequest.requestMethod = "GET";
         networkRequest.requestHeaders = this._headersMapToHeadersArray(request.headers);
-        networkRequest.webSocketRequestKey3 = request.requestKey3;
         networkRequest.startTime = time;
 
         this._updateNetworkRequest(networkRequest);
@@ -435,7 +434,6 @@ WebInspector.NetworkDispatcher.prototype = {
         networkRequest.statusCode = response.status;
         networkRequest.statusText = response.statusText;
         networkRequest.responseHeaders = this._headersMapToHeadersArray(response.headers);
-        networkRequest.webSocketChallengeResponse = response.challengeResponse;
         networkRequest.responseReceivedTime = time;
 
         this._updateNetworkRequest(networkRequest);

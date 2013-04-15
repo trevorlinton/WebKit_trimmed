@@ -50,6 +50,7 @@ DateTimeFieldElement::DateTimeFieldElement(Document* document, FieldOwner& field
 {
     // On accessibility, DateTimeFieldElement acts like spin button.
     setAttribute(roleAttr, "spinbutton");
+    setAttribute(aria_valuetextAttr, AXDateTimeFieldEmptyValueText());
 }
 
 void DateTimeFieldElement::defaultEventHandler(Event* event)
@@ -62,9 +63,11 @@ void DateTimeFieldElement::defaultEventHandler(Event* event)
 
     if (event->isKeyboardEvent()) {
         KeyboardEvent* keyboardEvent = static_cast<KeyboardEvent*>(event);
-        handleKeyboardEvent(keyboardEvent);
-        if (keyboardEvent->defaultHandled())
-            return;
+        if (!isDisabled() && !isFieldOwnerDisabled() && !isFieldOwnerReadOnly()) {
+            handleKeyboardEvent(keyboardEvent);
+            if (keyboardEvent->defaultHandled())
+                return;
+        }
         defaultKeyboardEventHandler(keyboardEvent);
         if (keyboardEvent->defaultHandled())
             return;
@@ -78,15 +81,10 @@ void DateTimeFieldElement::defaultKeyboardEventHandler(KeyboardEvent* keyboardEv
     if (keyboardEvent->type() != eventNames().keydownEvent)
         return;
 
-    const String& keyIdentifier = keyboardEvent->keyIdentifier();
-
-    if (keyIdentifier == "Down") {
-        if (keyboardEvent->getModifierState("Alt"))
-            return;
-        keyboardEvent->setDefaultHandled();
-        stepDown();
+    if (isDisabled() || isFieldOwnerDisabled())
         return;
-    }
+
+    const String& keyIdentifier = keyboardEvent->keyIdentifier();
 
     if (keyIdentifier == "Left") {
         if (!m_fieldOwner)
@@ -105,6 +103,17 @@ void DateTimeFieldElement::defaultKeyboardEventHandler(KeyboardEvent* keyboardEv
         // but it doesn't work for shadow nodes. webkit.org/b/104650
         if (!localeForOwner().isRTL() && m_fieldOwner->focusOnNextField(*this))
             keyboardEvent->setDefaultHandled();
+        return;
+    }
+
+    if (isFieldOwnerReadOnly())
+        return;
+
+    if (keyIdentifier == "Down") {
+        if (keyboardEvent->getModifierState("Alt"))
+            return;
+        keyboardEvent->setDefaultHandled();
+        stepDown();
         return;
     }
 
@@ -140,11 +149,11 @@ void DateTimeFieldElement::focusOnNextField()
     m_fieldOwner->focusOnNextField(*this);
 }
 
-void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& axHelpText)
+void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& axHelpText, int axMinimum, int axMaximum)
 {
     setAttribute(aria_helpAttr, axHelpText);
-    setAttribute(aria_valueminAttr, String::number(minimum()));
-    setAttribute(aria_valuemaxAttr, String::number(maximum()));
+    setAttribute(aria_valueminAttr, String::number(axMinimum));
+    setAttribute(aria_valuemaxAttr, String::number(axMaximum));
     setPseudo(pseudo);
     appendChild(Text::create(document(), visibleValue()));
 }
@@ -154,18 +163,28 @@ bool DateTimeFieldElement::isDateTimeFieldElement() const
     return true;
 }
 
+bool DateTimeFieldElement::isFieldOwnerDisabled() const
+{
+    return m_fieldOwner && m_fieldOwner->isFieldOwnerDisabled();
+}
+
+bool DateTimeFieldElement::isFieldOwnerReadOnly() const
+{
+    return m_fieldOwner && m_fieldOwner->isFieldOwnerReadOnly();
+}
+
 bool DateTimeFieldElement::isFocusable() const
 {
-    if (isReadOnly())
+    if (isDisabled())
         return false;
-    if (m_fieldOwner && m_fieldOwner->isFieldOwnerDisabledOrReadOnly())
+    if (isFieldOwnerDisabled())
         return false;
     return HTMLElement::isFocusable();
 }
 
-bool DateTimeFieldElement::isReadOnly() const
+bool DateTimeFieldElement::isDisabled() const
 {
-    return fastHasAttribute(readonlyAttr);
+    return fastHasAttribute(disabledAttr);
 }
 
 Locale& DateTimeFieldElement::localeForOwner() const
@@ -184,10 +203,10 @@ float DateTimeFieldElement::maximumWidth(const Font&)
     return paddingLeftAndRight;
 }
 
-void DateTimeFieldElement::setReadOnly()
+void DateTimeFieldElement::setDisabled()
 {
-    // Set HTML attribute readonly to change apperance.
-    setBooleanAttribute(readonlyAttr, true);
+    // Set HTML attribute disabled to change apperance.
+    setBooleanAttribute(disabledAttr, true);
     setNeedsStyleRecalc();
 }
 
@@ -206,11 +225,21 @@ void DateTimeFieldElement::updateVisibleValue(EventBehavior eventBehavior)
         return;
 
     textNode->replaceWholeText(newVisibleValue, ASSERT_NO_EXCEPTION);
-    setAttribute(aria_valuetextAttr, hasValue() ? newVisibleValue : AXDateTimeFieldEmptyValueText());
-    setAttribute(aria_valuenowAttr, newVisibleValue);
+    if (hasValue()) {
+        setAttribute(aria_valuetextAttr, newVisibleValue);
+        setAttribute(aria_valuenowAttr, String::number(valueForARIAValueNow()));
+    } else {
+        setAttribute(aria_valuetextAttr, AXDateTimeFieldEmptyValueText());
+        removeAttribute(aria_valuenowAttr);
+    }
 
     if (eventBehavior == DispatchEvent && m_fieldOwner)
         m_fieldOwner->fieldValueChanged();
+}
+
+int DateTimeFieldElement::valueForARIAValueNow() const
+{
+    return valueAsInteger();
 }
 
 } // namespace WebCore

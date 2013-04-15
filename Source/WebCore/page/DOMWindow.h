@@ -69,6 +69,7 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class WebKitPoint;
+    class DOMWindowCSS;
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
     class RequestAnimationFrameCallback;
@@ -121,9 +122,6 @@ namespace WebCore {
         static void dispatchAllPendingUnloadEvents();
 
         static FloatRect adjustWindowRect(Page*, const FloatRect& pendingChanges);
-
-        // FIXME: We can remove this function once V8 showModalDialog is changed to use DOMWindow.
-        static void parseModalDialogFeatures(const String&, HashMap<String, String>&);
 
         bool allowPopUp(); // Call on first window, not target window.
         static bool allowPopUp(Frame* firstFrame);
@@ -264,7 +262,12 @@ namespace WebCore {
         // WebKit animation extensions
 #if ENABLE(REQUEST_ANIMATION_FRAME)
         int requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
+        int webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
         void cancelAnimationFrame(int id);
+#endif
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        DOMWindowCSS* css();
 #endif
 
         // Events
@@ -348,6 +351,7 @@ namespace WebCore {
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkittransitionend, webkitTransitionEnd);
+        DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(transitionend, transitionend);
 
         void captureEvents();
         void releaseEvents();
@@ -457,6 +461,10 @@ namespace WebCore {
 
 #if ENABLE(WEB_TIMING)
         mutable RefPtr<Performance> m_performance;
+#endif
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        mutable RefPtr<DOMWindowCSS> m_css;
 #endif
     };
 

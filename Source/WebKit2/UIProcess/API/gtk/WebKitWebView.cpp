@@ -21,6 +21,8 @@
 #include "config.h"
 #include "WebKitWebView.h"
 
+#include "PlatformCertificateInfo.h"
+#include "WebCertificateInfo.h"
 #include "WebContextMenuItem.h"
 #include "WebContextMenuItemData.h"
 #include "WebData.h"
@@ -41,7 +43,6 @@
 #include "WebKitPolicyClient.h"
 #include "WebKitPrintOperationPrivate.h"
 #include "WebKitPrivate.h"
-#include "WebKitResourceLoadClient.h"
 #include "WebKitResponsePolicyDecision.h"
 #include "WebKitScriptDialogPrivate.h"
 #include "WebKitSettingsPrivate.h"
@@ -131,7 +132,6 @@ enum {
 };
 
 typedef HashMap<uint64_t, GRefPtr<WebKitWebResource> > LoadingResourcesMap;
-typedef HashMap<String, GRefPtr<WebKitWebResource> > ResourcesMap;
 
 struct _WebKitWebViewPrivate {
     ~_WebKitWebViewPrivate()
@@ -170,7 +170,6 @@ struct _WebKitWebViewPrivate {
 
     GRefPtr<WebKitWebResource> mainResource;
     LoadingResourcesMap loadingResourcesMap;
-    ResourcesMap subresourcesMap;
 
     GRefPtr<WebKitWebInspector> inspector;
 
@@ -456,15 +455,13 @@ static void webkitWebViewConstructed(GObject* object)
 
     WebKitWebView* webView = WEBKIT_WEB_VIEW(object);
     WebKitWebViewPrivate* priv = webView->priv;
-    WebKitWebViewBase* webViewBase = WEBKIT_WEB_VIEW_BASE(webView);
+    webkitWebContextCreatePageForWebView(priv->context, webView);
 
-    webkitWebViewBaseCreateWebPage(webViewBase, webkitWebContextGetContext(priv->context), 0);
-    webkitWebViewBaseSetDownloadRequestHandler(webViewBase, webkitWebViewHandleDownloadRequest);
+    webkitWebViewBaseSetDownloadRequestHandler(WEBKIT_WEB_VIEW_BASE(webView), webkitWebViewHandleDownloadRequest);
 
     attachLoaderClientToView(webView);
     attachUIClientToView(webView);
     attachPolicyClientToView(webView);
-    attachResourceLoadClientToView(webView);
     attachFullScreenClientToView(webView);
     attachContextMenuClientToView(webView);
     attachFormClientToView(webView);
@@ -538,6 +535,8 @@ static void webkitWebViewDispose(GObject* object)
     webkitWebViewDisconnectMainResourceResponseChangedSignalHandler(webView);
     webkitWebViewDisconnectSettingsSignalHandlers(webView);
     webkitWebViewDisconnectFaviconDatabaseSignalHandlers(webView);
+
+    webkitWebContextWebViewDestroyed(webView->priv->context, webView);
 
     G_OBJECT_CLASS(webkit_web_view_parent_class)->dispose(object);
 }
@@ -1311,15 +1310,6 @@ static void webkitWebViewSetIsLoading(WebKitWebView* webView, bool isLoading)
     g_object_thaw_notify(G_OBJECT(webView));
 }
 
-static void setCertificateToMainResource(WebKitWebView* webView)
-{
-    WebKitWebViewPrivate* priv = webView->priv;
-    ASSERT(priv->mainResource.get());
-
-    webkitURIResponseSetCertificateInfo(webkit_web_resource_get_response(priv->mainResource.get()),
-                                        webkitWebResourceGetFrame(priv->mainResource.get())->certificateInfo());
-}
-
 static void webkitWebViewEmitLoadChanged(WebKitWebView* webView, WebKitLoadEvent loadEvent)
 {
     if (loadEvent == WEBKIT_LOAD_STARTED) {
@@ -1364,15 +1354,13 @@ void webkitWebViewLoadChanged(WebKitWebView* webView, WebKitLoadEvent loadEvent)
         GOwnPtr<char> faviconURI(webkit_favicon_database_get_favicon_uri(database, priv->activeURI.data()));
         webkitWebViewUpdateFaviconURI(webView, faviconURI.get());
 
-        priv->subresourcesMap.clear();
         if (!priv->mainResource) {
             // When a page is loaded from the history cache, the main resource load callbacks
             // are called when the main frame load is finished. We want to make sure there's a
             // main resource available when load has been committed, so we delay the emission of
             // load-changed signal until main resource object has been created.
             priv->waitingForMainResource = true;
-        } else
-            setCertificateToMainResource(webView);
+        }
     }
 
     if (priv->waitingForMainResource)
@@ -1531,7 +1519,6 @@ void webkitWebViewPrintFrame(WebKitWebView* webView, WebFrameProxy* frame)
 static void mainResourceResponseChangedCallback(WebKitWebResource*, GParamSpec*, WebKitWebView* webView)
 {
     webkitWebViewDisconnectMainResourceResponseChangedSignalHandler(webView);
-    setCertificateToMainResource(webView);
     webkitWebViewEmitDelayedLoadEvents(webView);
 }
 
@@ -1571,16 +1558,6 @@ void webkitWebViewRemoveLoadingWebResource(WebKitWebView* webView, uint64_t reso
     WebKitWebViewPrivate* priv = webView->priv;
     ASSERT(priv->loadingResourcesMap.contains(resourceIdentifier));
     priv->loadingResourcesMap.remove(resourceIdentifier);
-}
-
-WebKitWebResource* webkitWebViewResourceLoadFinished(WebKitWebView* webView, uint64_t resourceIdentifier)
-{
-    WebKitWebViewPrivate* priv = webView->priv;
-    WebKitWebResource* resource = webkitWebViewGetLoadingWebResource(webView, resourceIdentifier);
-    if (resource != priv->mainResource)
-        priv->subresourcesMap.set(String::fromUTF8(webkit_web_resource_get_uri(resource)), resource);
-    webkitWebViewRemoveLoadingWebResource(webView, resourceIdentifier);
-    return resource;
 }
 
 bool webkitWebViewEnterFullScreen(WebKitWebView* webView)
@@ -1845,6 +1822,22 @@ void webkit_web_view_load_request(WebKitWebView* webView, WebKitURIRequest* requ
     g_return_if_fail(WEBKIT_IS_URI_REQUEST(request));
 
     getPage(webView)->loadURLRequest(WebURLRequest::create(webkitURIRequestGetResourceRequest(request)).leakRef());
+}
+
+/**
+ * webkit_web_view_get_page_id:
+ * @web_view: a #WebKitWebView
+ *
+ * Get the identifier of the #WebKitWebPage corresponding to
+ * the #WebKitWebView
+ *
+ * Returns: the page ID of @web_view.
+ */
+guint64 webkit_web_view_get_page_id(WebKitWebView* webView)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), 0);
+
+    return getPage(webView)->pageID();
 }
 
 /**
@@ -2625,7 +2618,6 @@ WebKitJavascriptResult* webkit_web_view_run_javascript_from_gresource_finish(Web
  * @web_view: a #WebKitWebView
  *
  * Return the main resource of @web_view.
- * See also webkit_web_view_get_subresources():
  *
  * Returns: (transfer none): the main #WebKitWebResource of the view
  *    or %NULL if nothing has been loaded.
@@ -2635,28 +2627,6 @@ WebKitWebResource* webkit_web_view_get_main_resource(WebKitWebView* webView)
     g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), 0);
 
     return webView->priv->mainResource.get();
-}
-
-/**
- * webkit_web_view_get_subresources:
- * @web_view: a #WebKitWebView
- *
- * Return the list of subresources of @web_view.
- * See also webkit_web_view_get_main_resource().
- *
- * Returns: (element-type WebKitWebResource) (transfer container): a list of #WebKitWebResource.
- */
-GList* webkit_web_view_get_subresources(WebKitWebView* webView)
-{
-    g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), 0);
-
-    GList* subresources = 0;
-    WebKitWebViewPrivate* priv = webView->priv;
-    ResourcesMap::const_iterator end = priv->subresourcesMap.end();
-    for (ResourcesMap::const_iterator it = priv->subresourcesMap.begin(); it != end; ++it)
-        subresources = g_list_prepend(subresources, it->value.get());
-
-    return g_list_reverse(subresources);
 }
 
 /**
@@ -2917,4 +2887,38 @@ WebKitViewMode webkit_web_view_get_view_mode(WebKitWebView* webView)
     g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), WEBKIT_VIEW_MODE_WEB);
 
     return webView->priv->viewMode;
+}
+
+/**
+ * webkit_web_view_get_tls_info:
+ * @web_view: a #WebKitWebView
+ * @certificate: (out) (transfer none): return location for a #GTlsCertificate
+ * @errors: (out): return location for a #GTlsCertificateFlags the verification status of @certificate
+ *
+ * Retrieves the #GTlsCertificate associated with the @web_view connection,
+ * and the #GTlsCertificateFlags showing what problems, if any, have been found
+ * with that certificate.
+ * If the connection is not HTTPS, this function returns %FALSE.
+ * This function should be called after a response has been received from the
+ * server, so you can connect to #WebKitWebView::load-changed and call this function
+ * when it's emitted with %WEBKIT_LOAD_COMMITTED event.
+ *
+ * Returns: %TRUE if the @web_view connection uses HTTPS and a response has been received
+ *    from the server, or %FALSE otherwise.
+ */
+gboolean webkit_web_view_get_tls_info(WebKitWebView* webView, GTlsCertificate** certificate, GTlsCertificateFlags* errors)
+{
+    g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), FALSE);
+
+    WebFrameProxy* mainFrame = getPage(webView)->mainFrame();
+    if (!mainFrame)
+        return FALSE;
+
+    const PlatformCertificateInfo& certificateInfo = mainFrame->certificateInfo()->platformCertificateInfo();
+    if (certificate)
+        *certificate = certificateInfo.certificate();
+    if (errors)
+        *errors = certificateInfo.tlsErrors();
+
+    return !!certificateInfo.certificate();
 }

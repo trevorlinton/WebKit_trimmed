@@ -34,12 +34,12 @@
 #include <wtf/gobject/GOwnPtr.h>
 #include "IntSize.h"
 #include "NotImplemented.h"
+#include <wtf/MathExtras.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 
 #include <glib/gi18n-lib.h>
 #include <gtk/gtk.h>
-#include <math.h>
 
 namespace WebCore {
 
@@ -407,14 +407,19 @@ String searchMenuClearRecentSearchesText()
     return String::fromUTF8(_("_Clear recent searches"));
 }
 
-String AXDefinitionListTermText()
+String AXDefinitionText()
+{
+    return String::fromUTF8(_("definition"));
+}
+
+String AXDescriptionListTermText()
 {
     return String::fromUTF8(_("term"));
 }
 
-String AXDefinitionListDefinitionText()
+String AXDescriptionListDetailText()
 {
-    return String::fromUTF8(_("definition"));
+    return String::fromUTF8(_("description"));
 }
 
 String AXFooterRoleDescriptionText()
@@ -618,10 +623,10 @@ String localizedMediaControlElementHelpText(const String& name)
 
 String localizedMediaTimeDescription(float time)
 {
-    if (!isfinite(time))
+    if (!std::isfinite(time))
         return String::fromUTF8(_("indefinite time"));
 
-    int seconds = (int)fabsf(time);
+    int seconds = static_cast<int>(abs(time));
     int days = seconds / (60 * 60 * 24);
     int hours = seconds / (60 * 60);
     int minutes = (seconds / 60) % 60;
@@ -768,5 +773,15 @@ String textTrackNoLabelText()
     return String::fromUTF8(C_("No label", "Menu item label for a closed captions track that has no other name"));
 }
 #endif
+
+String snapshottedPlugInLabelTitle()
+{
+    return String::fromUTF8(C_("Snapshotted Plug-In", "Title of the label to show on a snapshotted plug-in"));
+}
+
+String snapshottedPlugInLabelSubtitle()
+{
+    return String::fromUTF8(C_("Click to restart", "Subtitle of the label to show on a snapshotted plug-in"));
+}
 
 }

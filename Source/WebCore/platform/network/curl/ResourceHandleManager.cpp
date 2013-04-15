@@ -84,6 +84,15 @@ static CString certificatePath()
     return CString();
 }
 
+static char* cookieJarPath()
+{
+    char* cookieJarPath = getenv("CURL_COOKIE_JAR_PATH");
+    if (cookieJarPath)
+        return fastStrDup(cookieJarPath);
+
+    return fastStrDup("cookies.dat");
+}
+
 static Mutex* sharedResourceMutex(curl_lock_data data) {
     DEFINE_STATIC_LOCAL(Mutex, cookieMutex, ());
     DEFINE_STATIC_LOCAL(Mutex, dnsMutex, ());
@@ -119,10 +128,9 @@ static void curl_unlock_callback(CURL* handle, curl_lock_data data, void* userPt
 
 ResourceHandleManager::ResourceHandleManager()
     : m_downloadTimer(this, &ResourceHandleManager::downloadTimerCallback)
-    , m_cookieJarFileName(0)
+    , m_cookieJarFileName(cookieJarPath())
     , m_certificatePath (certificatePath())
     , m_runningJobs(0)
-
 {
     curl_global_init(CURL_GLOBAL_ALL);
     m_curlMultiHandle = curl_multi_init();
@@ -131,6 +139,8 @@ ResourceHandleManager::ResourceHandleManager()
     curl_share_setopt(m_curlShareHandle, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
     curl_share_setopt(m_curlShareHandle, CURLSHOPT_LOCKFUNC, curl_lock_callback);
     curl_share_setopt(m_curlShareHandle, CURLSHOPT_UNLOCKFUNC, curl_unlock_callback);
+
+    initCookieSession();
 }
 
 ResourceHandleManager::~ResourceHandleManager()
@@ -142,9 +152,19 @@ ResourceHandleManager::~ResourceHandleManager()
     curl_global_cleanup();
 }
 
+CURLSH* ResourceHandleManager::getCurlShareHandle() const
+{
+    return m_curlShareHandle;
+}
+
 void ResourceHandleManager::setCookieJarFileName(const char* cookieJarFileName)
 {
     m_cookieJarFileName = fastStrDup(cookieJarFileName);
+}
+
+const char* ResourceHandleManager::getCookieJarFileName() const
+{
+    return m_cookieJarFileName;
 }
 
 ResourceHandleManager* ResourceHandleManager::sharedInstance()
@@ -737,6 +757,26 @@ void ResourceHandleManager::initializeHandle(ResourceHandle* job)
         curl_easy_setopt(d->m_handle, CURLOPT_PROXY, m_proxy.utf8().data());
         curl_easy_setopt(d->m_handle, CURLOPT_PROXYTYPE, m_proxyType);
     }
+}
+
+void ResourceHandleManager::initCookieSession()
+{
+    // Curl saves both persistent cookies, and session cookies to the cookie file.
+    // The session cookies should be deleted before starting a new session.
+
+    CURL* curl = curl_easy_init();
+
+    if (!curl)
+        return;
+
+    if (m_cookieJarFileName) {
+        curl_easy_setopt(curl, CURLOPT_COOKIEFILE, m_cookieJarFileName);
+        curl_easy_setopt(curl, CURLOPT_COOKIEJAR, m_cookieJarFileName);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_COOKIESESSION, 1);
+
+    curl_easy_cleanup(curl);
 }
 
 void ResourceHandleManager::cancel(ResourceHandle* job)

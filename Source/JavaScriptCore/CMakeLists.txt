@@ -58,8 +58,9 @@ set(JavaScriptCore_SOURCES
     bytecode/MethodOfGettingAValueProfile.cpp
     bytecode/Opcode.cpp
     bytecode/PolymorphicPutByIdList.cpp
-    bytecode/SpeculatedType.cpp
+    bytecode/PreciseJumpTargets.cpp
     bytecode/PutByIdStatus.cpp
+    bytecode/SpeculatedType.cpp
     bytecode/ReduceWhitespace.cpp
     bytecode/ResolveGlobalStatus.cpp
     bytecode/SamplingTool.cpp
@@ -78,17 +79,22 @@ set(JavaScriptCore_SOURCES
     dfg/DFGAssemblyHelpers.cpp
     dfg/DFGByteCodeParser.cpp
     dfg/DFGCapabilities.cpp
+    dfg/DFGCommon.cpp
     dfg/DFGCFAPhase.cpp
     dfg/DFGCFGSimplificationPhase.cpp
+    dfg/DFGCPSRethreadingPhase.cpp
     dfg/DFGConstantFoldingPhase.cpp
     dfg/DFGCSEPhase.cpp
     dfg/DFGDisassembler.cpp
     dfg/DFGDominators.cpp
     dfg/DFGDriver.cpp
+    dfg/DFGEdge.cpp
     dfg/DFGFixupPhase.cpp
     dfg/DFGGraph.cpp
     dfg/DFGJITCompiler.cpp
+    dfg/DFGLongLivedState.cpp
     dfg/DFGMinifiedNode.cpp
+    dfg/DFGNode.cpp
     dfg/DFGNodeFlags.cpp
     dfg/DFGOSREntry.cpp
     dfg/DFGOSRExit.cpp
@@ -99,12 +105,15 @@ set(JavaScriptCore_SOURCES
     dfg/DFGOperations.cpp
     dfg/DFGPhase.cpp
     dfg/DFGPredictionPropagationPhase.cpp
+    dfg/DFGPredictionInjectionPhase.cpp
     dfg/DFGRepatch.cpp
     dfg/DFGSpeculativeJIT.cpp
     dfg/DFGSpeculativeJIT32_64.cpp
     dfg/DFGSpeculativeJIT64.cpp
     dfg/DFGStructureCheckHoistingPhase.cpp
     dfg/DFGThunks.cpp
+    dfg/DFGUnificationPhase.cpp
+    dfg/DFGUseKind.cpp
     dfg/DFGValueSource.cpp
     dfg/DFGVariableAccessDataDump.cpp
     dfg/DFGVariableEvent.cpp
@@ -174,6 +183,7 @@ set(JavaScriptCore_SOURCES
     parser/Nodes.cpp
     parser/Parser.cpp
     parser/ParserArena.cpp
+    parser/SourceProvider.cpp
     parser/SourceProviderCache.cpp
 
     profiler/ProfilerBytecode.cpp
@@ -217,6 +227,7 @@ set(JavaScriptCore_SOURCES
     runtime/ExceptionHelpers.cpp
     runtime/Executable.cpp
     runtime/FunctionConstructor.cpp
+    runtime/FunctionExecutableDump.cpp
     runtime/FunctionPrototype.cpp
     runtime/GCActivityCallback.cpp
     runtime/GetterSetter.cpp
@@ -247,7 +258,7 @@ set(JavaScriptCore_SOURCES
     runtime/JSString.cpp
     runtime/JSStringJoiner.cpp
     runtime/JSSymbolTableObject.cpp
-    runtime/JSValue.cpp
+    runtime/JSCJSValue.cpp
     runtime/JSVariableObject.cpp
     runtime/JSWrapperObject.cpp
     runtime/LiteralParser.cpp
@@ -269,6 +280,7 @@ set(JavaScriptCore_SOURCES
     runtime/PropertyDescriptor.cpp
     runtime/PropertyNameArray.cpp
     runtime/PropertySlot.cpp
+    runtime/PrototypeMap.cpp
     runtime/RegExp.cpp
     runtime/RegExpCache.cpp
     runtime/RegExpConstructor.cpp
@@ -284,6 +296,7 @@ set(JavaScriptCore_SOURCES
     runtime/StringPrototype.cpp
     runtime/StringRecursionChecker.cpp
     runtime/Structure.cpp
+    runtime/StructureRareData.cpp
     runtime/StructureChain.cpp
     runtime/SymbolTable.cpp
     runtime/TimeoutChecker.cpp

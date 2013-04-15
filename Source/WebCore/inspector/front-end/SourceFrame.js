@@ -44,8 +44,11 @@ WebInspector.SourceFrame = function(contentProvider)
     var textEditorDelegate = new WebInspector.TextEditorDelegateForSourceFrame(this);
 
     if (WebInspector.experimentsSettings.codemirror.isEnabled()) {
-        importScript("CodeMirrorTextEditor.js");
+        loadScript("CodeMirrorTextEditor.js");
         this._textEditor = new WebInspector.CodeMirrorTextEditor(this._url, textEditorDelegate);
+    } else if (WebInspector.experimentsSettings.aceTextEditor.isEnabled()) {
+        loadScript("AceTextEditor.js");
+        this._textEditor = new WebInspector.AceTextEditor(this._url, textEditorDelegate);
     } else
         this._textEditor = new WebInspector.DefaultTextEditor(this._url, textEditorDelegate);
 
@@ -61,6 +64,9 @@ WebInspector.SourceFrame = function(contentProvider)
     this._shortcuts = {};
     this._shortcuts[WebInspector.KeyboardShortcut.makeKey("s", WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta)] = this._commitEditing.bind(this);
     this.element.addEventListener("keydown", this._handleKeyDown.bind(this), false);
+
+    this._sourcePositionElement = document.createElement("div");
+    this._sourcePositionElement.className = "source-frame-cursor-position";
 }
 
 /**
@@ -106,6 +112,14 @@ WebInspector.SourceFrame.prototype = {
 
         this._clearLineHighlight();
         this._clearLineToReveal();
+    },
+
+    /**
+     * @return {?Element}
+     */
+    statusBarText: function()
+    {
+        return this._sourcePositionElement;
     },
 
     /**
@@ -294,8 +308,11 @@ WebInspector.SourceFrame.prototype = {
     {
         this._textEditor.mimeType = mimeType;
 
-        this._loaded = true;
-        this._textEditor.setText(content || "");
+        if (!this._loaded) {
+            this._loaded = true;
+            this._textEditor.setText(content || "");
+        } else
+            this._textEditor.editRange(this._textEditor.range(), content || "");
 
         this._textEditor.beginUpdates();
 
@@ -621,7 +638,29 @@ WebInspector.SourceFrame.prototype = {
      */
     selectionChanged: function(textRange)
     {
+        this._updateSourcePosition(textRange);
         this.dispatchEventToListeners(WebInspector.SourceFrame.Events.SelectionChanged, textRange);
+    },
+
+    /**
+     * @param {WebInspector.TextRange} textRange
+     */
+    _updateSourcePosition: function(textRange)
+    {
+        if (!textRange)
+            return;
+
+        if (textRange.isEmpty()) {
+            this._sourcePositionElement.textContent = WebInspector.UIString("Line %d, Column %d", textRange.endLine + 1, textRange.endColumn + 1);
+            return;
+        }
+        textRange = textRange.normalize();
+
+        var selectedText = this._textEditor.copyRange(textRange);
+        if (textRange.startLine === textRange.endLine)
+            this._sourcePositionElement.textContent = WebInspector.UIString("%d characters selected", selectedText.length);
+        else
+            this._sourcePositionElement.textContent = WebInspector.UIString("%d lines, %d characters selected", textRange.endLine - textRange.startLine + 1, selectedText.length);
     },
 
     /**

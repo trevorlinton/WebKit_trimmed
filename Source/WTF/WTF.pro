@@ -61,6 +61,7 @@ HEADERS += \
     ExportMacros.h \
     FastAllocBase.h \
     FastMalloc.h \
+    FeatureDefines.h \
     FilePrintStream.h \
     FixedArray.h \
     Float32Array.h \
@@ -178,7 +179,6 @@ HEADERS += \
     unicode/CharacterNames.h \
     unicode/Collator.h \
     unicode/icu/UnicodeIcu.h \
-    unicode/qt4/UnicodeQt4.h \
     unicode/ScriptCodesFromICU.h \
     unicode/Unicode.h \
     unicode/UnicodeMacrosFromICU.h \
@@ -188,7 +188,8 @@ HEADERS += \
     Vector.h \
     VectorTraits.h \
     VMTags.h \
-    WTFThreadData.h
+    WTFThreadData.h \
+    WeakPtr.h
 
 unix: HEADERS += ThreadIdentifierDataPthreads.h
 
@@ -196,6 +197,7 @@ SOURCES += \
     ArrayBuffer.cpp \
     ArrayBufferView.cpp \
     Assertions.cpp \
+    Atomics.cpp \
     BitVector.cpp \
     CryptographicallyRandomNumber.cpp \
     CurrentTime.cpp \

@@ -50,6 +50,7 @@
 #include <cstring>
 #include <getopt.h>
 #include <gtk/gtk.h>
+#include <locale.h>
 #include <webkit/webkit.h>
 #include <wtf/Assertions.h>
 #include <wtf/gobject/GOwnPtr.h>
@@ -173,6 +174,7 @@ static void initializeGtkFontSettings(const char* testURL)
                  "gtk-xft-antialias", 1,
                  "gtk-xft-hinting", 0,
                  "gtk-font-name", "Liberation Sans 12",
+                 "gtk-icon-theme-name", "gnome",
                  NULL);
     gdk_screen_set_resolution(gdk_screen_get_default(), 96.0);
 
@@ -445,7 +447,6 @@ static void resetDefaultsToConsistentValues()
                  "html5-local-storage-database-path", localStoragePath.get(),
                  "enable-xss-auditor", FALSE,
                  "enable-spatial-navigation", FALSE,
-                 "enable-frame-flattening", FALSE,
                  "javascript-can-access-clipboard", TRUE,
                  "javascript-can-open-windows-automatically", TRUE,
                  "enable-offline-web-application-cache", TRUE,
@@ -482,7 +483,6 @@ static void resetDefaultsToConsistentValues()
     g_object_set(G_OBJECT(inspector), "javascript-profiling-enabled", FALSE, NULL);
 
     webkit_web_view_set_zoom_level(webView, 1.0);
-    DumpRenderTreeSupportGtk::setMinimumTimerInterval(webView, DumpRenderTreeSupportGtk::defaultMinimumTimerInterval());
 
     DumpRenderTreeSupportGtk::resetOriginAccessWhiteLists();
 
@@ -518,6 +518,7 @@ static void resetDefaultsToConsistentValues()
     DumpRenderTreeSupportGtk::setCSSRegionsEnabled(webView, true);
     DumpRenderTreeSupportGtk::setCSSCustomFilterEnabled(webView, false);
     DumpRenderTreeSupportGtk::setExperimentalContentSecurityPolicyFeaturesEnabled(true);
+    DumpRenderTreeSupportGtk::setSeamlessIFramesEnabled(true);
     DumpRenderTreeSupportGtk::setShadowDOMEnabled(true);
     DumpRenderTreeSupportGtk::setStyleScopedEnabled(true);
 
@@ -526,6 +527,8 @@ static void resetDefaultsToConsistentValues()
         gTestRunner->setAuthenticationUsername("");
         gTestRunner->setHandlesAuthenticationChallenges(false);
     }
+
+    gtk_widget_set_direction(GTK_WIDGET(webView), GTK_TEXT_DIR_NONE);
 }
 
 static bool useLongRunningServerMode(int argc, char *argv[])
@@ -649,6 +652,15 @@ void dump()
     gtk_main_quit();
 }
 
+static CString temporaryDatabaseDirectory()
+{
+    const char* directoryFromEnvironment = g_getenv("DUMPRENDERTREE_TEMP");
+    if (directoryFromEnvironment)
+        return directoryFromEnvironment;
+    GOwnPtr<char> fallback(g_build_filename(g_get_user_data_dir(), "gtkwebkitdrt", "databases", NULL));
+    return fallback.get();
+}
+
 static void setDefaultsToConsistentStateValuesForTesting()
 {
     resetDefaultsToConsistentValues();
@@ -657,9 +669,7 @@ static void setDefaultsToConsistentStateValuesForTesting()
     webkit_web_settings_add_extra_plugin_directory(webView, TEST_PLUGIN_DIR);
 #endif
 
-    gchar* databaseDirectory = g_build_filename(g_get_user_data_dir(), "gtkwebkitdrt", "databases", NULL);
-    webkit_set_web_database_directory_path(databaseDirectory);
-    g_free(databaseDirectory);
+    webkit_set_web_database_directory_path(temporaryDatabaseDirectory().data());
 
 #if defined(GTK_API_VERSION_2)
     gtk_rc_parse_string("style \"nix_scrollbar_spacing\"                    "

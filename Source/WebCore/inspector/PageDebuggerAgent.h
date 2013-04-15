@@ -49,10 +49,12 @@ public:
     static PassOwnPtr<PageDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
     virtual ~PageDebuggerAgent();
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-
     void didClearMainFrameWindowObject();
+
+protected:
+    virtual void enable();
+    virtual void disable();
+
     virtual PageScriptDebugServer& scriptDebugServer();
 
 private:

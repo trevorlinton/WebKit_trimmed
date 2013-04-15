@@ -27,6 +27,7 @@
 #define WebLoaderClient_h
 
 #include "APIClient.h"
+#include "PluginModuleInfo.h"
 #include "SameDocumentNavigationType.h"
 #include "WKPage.h"
 #include <WebCore/LayoutMilestones.h>
@@ -48,14 +49,6 @@ class WebFrameProxy;
 class WebPageProxy;
 class WebProtectionSpace;
 
-#if ENABLE(WEB_INTENTS)
-class WebIntentData;
-#endif
-
-#if ENABLE(WEB_INTENTS_TAG)
-class WebIntentServiceInfo;
-#endif
-
 class WebLoaderClient : public APIClient<WKPageLoaderClient, kWKPageLoaderClientCurrentVersion> {
 public:
     void didStartProvisionalLoadForFrame(WebPageProxy*, WebFrameProxy*, APIObject*);
@@ -73,13 +66,6 @@ public:
     void didDisplayInsecureContentForFrame(WebPageProxy*, WebFrameProxy*, APIObject*);
     void didRunInsecureContentForFrame(WebPageProxy*, WebFrameProxy*, APIObject*);
     void didDetectXSSForFrame(WebPageProxy*, WebFrameProxy*, APIObject*);
-#if ENABLE(WEB_INTENTS)
-    void didReceiveIntentForFrame(WebPageProxy*, WebFrameProxy*, WebIntentData*, APIObject*);
-#endif
-
-#if ENABLE(WEB_INTENTS_TAG)
-    void registerIntentServiceForFrame(WebPageProxy*, WebFrameProxy*, WebIntentServiceInfo*, APIObject*);
-#endif
 
     // FIXME: didNewFirstVisuallyNonEmptyLayout should be removed. We should consider removing didFirstVisuallyNonEmptyLayoutForFrame
     // as well. They are both being replaced by didLayout.
@@ -103,8 +89,10 @@ public:
     bool shouldGoToBackForwardListItem(WebPageProxy*, WebBackForwardListItem*);
     void willGoToBackForwardListItem(WebPageProxy*, WebBackForwardListItem*, APIObject*);
 
-    void didFailToInitializePlugin(WebPageProxy*, const String& mimeType);
-    void didBlockInsecurePluginVersion(WebPageProxy*, const String& mimeType, const String& pluginIdentifier, const String& pluginVersion);
+    PluginModuleLoadPolicy pluginLoadPolicy(WebPageProxy*, const String& pluginBundleIdentifier, const String& pluginBundleVersion, const String& displayName, const String& frameURLString, const String& pageURLString, PluginModuleLoadPolicy currentPluginLoadPolicy);
+    void didFailToInitializePlugin(WebPageProxy*, const String& mimeType, const String& frameURLString, const String& pageURLString);
+    void didBlockInsecurePluginVersion(WebPageProxy*, const String& mimeType, const String& pluginBundleIdentifier, const String& pluginBundleVersion, const String& frameURLString, const String& pageURLString);
+
 };
 
 } // namespace WebKit

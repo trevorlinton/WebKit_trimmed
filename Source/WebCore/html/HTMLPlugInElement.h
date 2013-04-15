@@ -25,7 +25,7 @@
 
 #include "HTMLFrameOwnerElement.h"
 #include "Image.h"
-#include "ImageLoaderClient.h"
+
 #include "ScriptInstance.h"
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
@@ -55,7 +55,7 @@ public:
         Playing
     };
     DisplayState displayState() const { return m_displayState; }
-    void setDisplayState(DisplayState state) { m_displayState = state; }
+    virtual void setDisplayState(DisplayState state) { m_displayState = state; }
     virtual void updateSnapshot(PassRefPtr<Image>) { }
     virtual void dispatchPendingMouseClick() { }
 
@@ -74,13 +74,14 @@ public:
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
+    virtual bool isPlugInImageElement() const { return false; }
+
 protected:
     HTMLPlugInElement(const QualifiedName& tagName, Document*);
 
     virtual void detach();
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     // Subclasses should use guardedDispatchBeforeLoadEvent instead of calling dispatchBeforeLoadEvent directly.
     bool guardedDispatchBeforeLoadEvent(const String& sourceURL);
@@ -92,6 +93,8 @@ protected:
 private:
     bool dispatchBeforeLoadEvent(const String& sourceURL); // Not implemented, generates a compile error if subclasses call this by mistake.
 
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+
     virtual void defaultEventHandler(Event*);
 
     virtual RenderWidget* renderWidgetForJSBindings() const = 0;
@@ -99,7 +102,6 @@ private:
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isPluginElement() const;
 
-private:
     mutable ScriptInstance m_instance;
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* m_NPObject;

@@ -388,13 +388,19 @@ String AXCheckedCheckBoxActionVerb()
     return String();
 }
 
-String AXDefinitionListDefinitionText()
+String AXDefinitionText()
 {
     notImplemented();
     return String();
 }
 
-String AXDefinitionListTermText()
+String AXDescriptionListDetailText()
+{
+    notImplemented();
+    return String();
+}
+
+String AXDescriptionListTermText()
 {
     notImplemented();
     return String();
@@ -609,6 +615,18 @@ String defaultDetailsSummaryText()
 String fileButtonNoFilesSelectedLabel()
 {
     return String::fromUTF8(s_resource.getString(BlackBerry::Platform::FILE_BUTTON_NO_FILE_SELECTED_LABEL));
+}
+
+String snapshottedPlugInLabelTitle()
+{
+    notImplemented();
+    return String();
+}
+
+String snapshottedPlugInLabelSubtitle()
+{
+    notImplemented();
+    return String();
 }
 
 } // namespace WebCore

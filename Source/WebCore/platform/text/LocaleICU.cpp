@@ -320,7 +320,7 @@ String LocaleICU::dateFormat()
     if (!m_dateFormat.isNull())
         return m_dateFormat;
     if (!initializeShortDateFormat())
-        return ASCIILiteral("dd/MM/yyyy");
+        return ASCIILiteral("yyyy-MM-dd");
     m_dateFormat = getDateFormatPattern(m_shortDateFormat);
     return m_dateFormat;
 }
@@ -353,6 +353,14 @@ String LocaleICU::monthFormat()
     // "MMMM" in some locales.
     m_monthFormat = getFormatForSkeleton(m_locale.data(), ASCIILiteral("yyyyMMMM"));
     return m_monthFormat;
+}
+
+String LocaleICU::shortMonthFormat()
+{
+    if (!m_shortMonthFormat.isNull())
+        return m_shortMonthFormat;
+    m_shortMonthFormat = getFormatForSkeleton(m_locale.data(), ASCIILiteral("yyyyMMM"));
+    return m_shortMonthFormat;
 }
 
 String LocaleICU::timeFormat()

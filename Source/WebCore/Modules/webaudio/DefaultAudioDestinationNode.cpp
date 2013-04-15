@@ -29,12 +29,20 @@
 #include "DefaultAudioDestinationNode.h"
 
 #include "Logging.h"
+#include <wtf/MainThread.h>
+
+const unsigned EnabledInputChannels = 2;
 
 namespace WebCore {
     
 DefaultAudioDestinationNode::DefaultAudioDestinationNode(AudioContext* context)
     : AudioDestinationNode(context, AudioDestination::hardwareSampleRate())
+    , m_numberOfInputChannels(0)
 {
+    // Node-specific default mixing rules.
+    m_channelCount = 2;
+    m_channelCountMode = Explicit;
+    m_channelInterpretation = AudioBus::Speakers;
 }
 
 DefaultAudioDestinationNode::~DefaultAudioDestinationNode()
@@ -44,25 +52,47 @@ DefaultAudioDestinationNode::~DefaultAudioDestinationNode()
 
 void DefaultAudioDestinationNode::initialize()
 {
+    ASSERT(isMainThread()); 
     if (isInitialized())
         return;
 
-    float hardwareSampleRate = AudioDestination::hardwareSampleRate();
-    LOG(WebAudio, ">>>> hardwareSampleRate = %f\n", hardwareSampleRate);
-    
-    m_destination = AudioDestination::create(*this, hardwareSampleRate);
-    
+    createDestination(String());
     AudioNode::initialize();
 }
 
 void DefaultAudioDestinationNode::uninitialize()
 {
+    ASSERT(isMainThread()); 
     if (!isInitialized())
         return;
 
     m_destination->stop();
+    m_numberOfInputChannels = 0;
 
     AudioNode::uninitialize();
+}
+
+void DefaultAudioDestinationNode::createDestination(const String& inputDeviceId)
+{
+    float hardwareSampleRate = AudioDestination::hardwareSampleRate();
+    LOG(WebAudio, ">>>> hardwareSampleRate = %f\n", hardwareSampleRate);
+    
+    m_destination = AudioDestination::create(*this, inputDeviceId, m_numberOfInputChannels, numberOfChannels(), hardwareSampleRate);
+}
+
+void DefaultAudioDestinationNode::enableInput(const String& inputDeviceId)
+{
+    ASSERT(isMainThread());
+    if (m_numberOfInputChannels != EnabledInputChannels) {
+        m_numberOfInputChannels = EnabledInputChannels;
+
+        if (isInitialized()) {
+            // Re-create destination.
+            m_destination->stop();
+            createDestination(inputDeviceId);
+            m_destination->start();
+        }
+    }
 }
 
 void DefaultAudioDestinationNode::startRendering()

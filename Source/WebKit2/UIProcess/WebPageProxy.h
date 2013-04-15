@@ -32,12 +32,6 @@
 #include "DrawingAreaProxy.h"
 #include "EditorState.h"
 #include "GeolocationPermissionRequestManagerProxy.h"
-#if ENABLE(TOUCH_EVENTS)
-#include "NativeWebTouchEvent.h"
-#endif
-#if PLATFORM(QT)
-#include "QtNetworkRequestData.h"
-#endif
 #include "LayerTreeContext.h"
 #include "NotificationPermissionRequestManagerProxy.h"
 #include "PlatformProcessIdentifier.h"
@@ -57,7 +51,6 @@
 #include "WebPageContextMenuClient.h"
 #include "WebPolicyClient.h"
 #include "WebPopupMenuProxy.h"
-#include "WebResourceLoadClient.h"
 #include "WebUIClient.h"
 #include <WebCore/AlternativeTextClient.h>
 #include <WebCore/Color.h>
@@ -82,14 +75,23 @@
 #include <WebCore/DragSession.h>
 #endif
 
+#if ENABLE(TOUCH_EVENTS)
+#include "NativeWebTouchEvent.h"
+#endif
+
 #if PLATFORM(EFL)
+#include "WKPageEfl.h"
+#include "WebUIPopupMenuClient.h"
 #include <Evas.h>
+#endif
+
+#if PLATFORM(QT)
+#include "QtNetworkRequestData.h"
 #endif
 
 namespace CoreIPC {
     class ArgumentDecoder;
     class Connection;
-    class MessageID;
 }
 
 namespace WebCore {
@@ -125,10 +127,6 @@ typedef GtkWidget* PlatformWidget;
 typedef Evas_Object* PlatformWidget;
 #endif
 
-#if ENABLE(WEB_INTENTS)
-class WebIntentData;
-#endif
-
 namespace WebKit {
 
 class NativeWebKeyboardEvent;
@@ -160,24 +158,12 @@ struct PrintInfo;
 struct WebPageCreationParameters;
 struct WebPopupItem;
 
-#if PLATFORM(WIN)
-struct WindowGeometry;
-#endif
-
 #if ENABLE(GESTURE_EVENTS)
 class WebGestureEvent;
 #endif
 
 #if ENABLE(VIBRATION)
 class WebVibrationProxy;
-#endif
-
-#if ENABLE(WEB_INTENTS)
-struct IntentData;
-#endif
-
-#if ENABLE(WEB_INTENTS_TAG)
-struct IntentServiceInfo;
 #endif
 
 typedef GenericCallback<WKStringRef, StringImpl*> StringCallback;
@@ -248,7 +234,8 @@ class WebPageProxy
 #if ENABLE(INPUT_TYPE_COLOR)
     , public WebColorChooserProxy::Client
 #endif
-    , public WebPopupMenuProxy::Client {
+    , public WebPopupMenuProxy::Client
+    , public CoreIPC::MessageReceiver {
 public:
     static const Type APIType = TypePage;
 
@@ -281,11 +268,14 @@ public:
     void initializeContextMenuClient(const WKPageContextMenuClient*);
 #endif
     void initializeFindClient(const WKPageFindClient*);
+    void initializeFindMatchesClient(const WKPageFindMatchesClient*);
     void initializeFormClient(const WKPageFormClient*);
     void initializeLoaderClient(const WKPageLoaderClient*);
     void initializePolicyClient(const WKPagePolicyClient*);
-    void initializeResourceLoadClient(const WKPageResourceLoadClient*);
     void initializeUIClient(const WKPageUIClient*);
+#if PLATFORM(EFL)
+    void initializeUIPopupMenuClient(const WKPageUIPopupMenuClient*);
+#endif
 
     void initializeWebPage();
 
@@ -328,6 +318,9 @@ public:
     bool drawsTransparentBackground() const { return m_drawsTransparentBackground; }
     void setDrawsTransparentBackground(bool);
 
+    WebCore::Color underlayColor() const { return m_underlayColor; }
+    void setUnderlayColor(const WebCore::Color&);
+
     void viewWillStartLiveResize();
     void viewWillEndLiveResize();
 
@@ -338,6 +331,7 @@ public:
 
     void setViewNeedsDisplay(const WebCore::IntRect&);
     void displayView();
+    bool canScrollView();
     void scrollView(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset);
 
     enum {
@@ -391,6 +385,8 @@ public:
 #if PLATFORM(MAC)
     void updateWindowIsVisible(bool windowIsVisible);
     void windowAndViewFramesChanged(const WebCore::IntRect& windowFrameInScreenCoordinates, const WebCore::IntRect& viewFrameInWindowCoordinates, const WebCore::IntPoint& accessibilityViewCoordinates);
+    void viewExposedRectChanged(const WebCore::FloatRect& exposedRect);
+    void setMainFrameIsScrollable(bool);
 
     void setComposition(const String& text, Vector<WebCore::CompositionUnderline> underlines, uint64_t selectionStart, uint64_t selectionEnd, uint64_t replacementRangeStart, uint64_t replacementRangeEnd);
     void confirmComposition();
@@ -416,32 +412,16 @@ public:
     void intrinsicContentSizeDidChange(const WebCore::IntSize& intrinsicContentSize);
 #endif
 #endif
-#if PLATFORM(WIN)
-    void didChangeCompositionSelection(bool);
-    void confirmComposition(const String&);
-    void setComposition(const String&, Vector<WebCore::CompositionUnderline>&, int);
-    WebCore::IntRect firstRectForCharacterInSelectedRange(int);
-    String getSelectedText();
-
-    bool gestureWillBegin(const WebCore::IntPoint&);
-    void gestureDidScroll(const WebCore::IntSize&);
-    void gestureDidEnd();
-
-    void setGestureReachedScrollingLimit(bool);
-
-    HWND nativeWindow() const;
-#endif
 #if PLATFORM(EFL)
     void handleInputMethodKeydown(bool& handled);
     void confirmComposition(const String&);
     void setComposition(const String&, Vector<WebCore::CompositionUnderline>&, int);
     void cancelComposition();
 #endif
-#if USE(CAIRO) && !PLATFORM(WIN_CAIRO)
+#if USE(CAIRO)
     PlatformWidget viewWidget();
 #endif
 #if USE(TILED_BACKING_STORE)
-    void setViewportSize(const WebCore::IntSize&);
     void commitPageTransitionViewport();
 #endif
 
@@ -511,6 +491,8 @@ public:
 
     void listenForLayoutMilestones(WebCore::LayoutMilestones);
 
+    void setVisibilityState(WebCore::PageVisibilityState, bool isInitialState);
+
     bool hasHorizontalScrollbar() const { return m_mainFrameHasHorizontalScrollbar; }
     bool hasVerticalScrollbar() const { return m_mainFrameHasVerticalScrollbar; }
 
@@ -521,6 +503,11 @@ public:
     bool isPinnedToRightSide() const { return m_mainFrameIsPinnedToRightSide; }
     bool isPinnedToTopSide() const { return m_mainFrameIsPinnedToTopSide; }
     bool isPinnedToBottomSide() const { return m_mainFrameIsPinnedToBottomSide; }
+
+    bool rubberBandsAtBottom() const { return m_rubberBandsAtBottom; }
+    void setRubberBandsAtBottom(bool);
+    bool rubberBandsAtTop() const { return m_rubberBandsAtTop; }
+    void setRubberBandsAtTop(bool);
 
     void setPaginationMode(WebCore::Pagination::Mode);
     WebCore::Pagination::Mode paginationMode() const { return m_paginationMode; }
@@ -546,20 +533,23 @@ public:
 #endif
 
     void pageScaleFactorDidChange(double);
+    void pageZoomFactorDidChange(double);
 
     void setMemoryCacheClientCallsEnabled(bool);
 
     // Find.
     void findString(const String&, FindOptions, unsigned maxMatchCount);
+    void findStringMatches(const String&, FindOptions, unsigned maxMatchCount);
+    void getImageForFindMatch(int32_t matchIndex);
+    void selectFindMatch(int32_t matchIndex);
+    void didGetImageForFindMatch(const ShareableBitmap::Handle& contentImageHandle, uint32_t matchIndex);
     void hideFindUI();
     void countStringMatches(const String&, FindOptions, unsigned maxMatchCount);
     void didCountStringMatches(const String&, uint32_t matchCount);
     void setFindIndicator(const WebCore::FloatRect& selectionRectInWindowCoordinates, const Vector<WebCore::FloatRect>& textRectsInSelectionRectCoordinates, float contentImageScaleFactor, const ShareableBitmap::Handle& contentImageHandle, bool fadeOut, bool animate);
     void didFindString(const String&, uint32_t matchCount);
     void didFailToFindString(const String&);
-#if PLATFORM(WIN)
-    void didInstallOrUninstallPageOverlay(bool);
-#endif
+    void didFindStringMatches(const String&, Vector<Vector<WebCore::IntRect> > matchRects, int32_t firstIndexAfterSelection);
 
     void getContentsAsString(PassRefPtr<StringCallback>);
 #if ENABLE(MHTML)
@@ -574,10 +564,6 @@ public:
     void getWebArchiveOfFrame(WebFrameProxy*, PassRefPtr<DataCallback>);
     void runJavaScriptInMainFrame(const String&, PassRefPtr<ScriptValueCallback>);
     void forceRepaint(PassRefPtr<VoidCallback>);
-
-#if ENABLE(WEB_INTENTS)
-    void deliverIntentToFrame(WebFrameProxy*, WebIntentData*);
-#endif
 
     float headerHeight(WebFrameProxy*);
     float footerHeight(WebFrameProxy*);
@@ -607,16 +593,10 @@ public:
     void setPromisedData(const String& pasteboardName, const SharedMemory::Handle& imageHandle, uint64_t imageSize, const String& filename, const String& extension,
                          const String& title, const String& url, const String& visibleURL, const SharedMemory::Handle& archiveHandle, uint64_t archiveSize);
 #endif
-#if PLATFORM(WIN)
-    void startDragDrop(const WebCore::IntPoint& imagePoint, const WebCore::IntPoint& dragPoint, uint64_t okEffect, const HashMap<UINT, Vector<String> >& dataMap, uint64_t fileSize, const String& pathname, const SharedMemory::Handle& fileContentHandle, const WebCore::IntSize& dragImageSize, const SharedMemory::Handle& dragImageHandle, bool isLinkDrag);
-#endif
 #if PLATFORM(QT) || PLATFORM(GTK)
     void startDrag(const WebCore::DragData&, const ShareableBitmap::Handle& dragImage);
 #endif
 #endif
-
-    void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
-    void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
 
     void processDidBecomeUnresponsive();
     void interactionOccurredWhileProcessUnresponsive();
@@ -704,7 +684,7 @@ public:
     void beginPrinting(WebFrameProxy*, const PrintInfo&);
     void endPrinting();
     void computePagesForPrinting(WebFrameProxy*, const PrintInfo&, PassRefPtr<ComputedPagesCallback>);
-#if PLATFORM(MAC) || PLATFORM(WIN)
+#if PLATFORM(MAC)
     void drawRectToImage(WebFrameProxy*, const PrintInfo&, const WebCore::IntRect&, const WebCore::IntSize&, PassRefPtr<ImageCallback>);
     void drawPagesToPDF(WebFrameProxy*, const PrintInfo&, uint32_t first, uint32_t count, PassRefPtr<DataCallback>);
 #elif PLATFORM(GTK)
@@ -771,12 +751,36 @@ public:
     double minimumLayoutWidth() const { return m_minimumLayoutWidth; }
     void setMinimumLayoutWidth(double);
 
+    bool mainFrameInViewSourceMode() const { return m_mainFrameInViewSourceMode; }
     void setMainFrameInViewSourceMode(bool);
+
+    void didReceiveAuthenticationChallengeProxy(uint64_t frameID, PassRefPtr<AuthenticationChallengeProxy>);
+
+    int64_t spellDocumentTag();
+    void didFinishCheckingText(uint64_t requestID, const Vector<WebCore::TextCheckingResult>&) const;
+    void didCancelCheckingText(uint64_t requestID) const;
+
+    void connectionWillOpen(CoreIPC::Connection*);
+    void connectionWillClose(CoreIPC::Connection*);
+
+    static String pluginInformationBundleIdentifierKey();
+    static String pluginInformationBundleVersionKey();
+    static String pluginInformationDisplayNameKey();
+    static String pluginInformationFrameURLKey();
+    static String pluginInformationMIMETypeKey();
+    static String pluginInformationPageURLKey();
+    static String pluginInformationPluginspageAttributeURLKey();
+    static String pluginInformationPluginURLKey();
+    static PassRefPtr<ImmutableDictionary> pluginInformationDictionary(const String& bundleIdentifier, const String& bundleVersion, const String& displayName, const String& frameURLString, const String& mimeType, const String& pageURLString, const String& pluginspageAttributeURLString, const String& pluginURLString);
 
 private:
     WebPageProxy(PageClient*, PassRefPtr<WebProcessProxy>, WebPageGroup*, uint64_t pageID);
 
     virtual Type type() const { return APIType; }
+
+    // CoreIPC::MessageReceiver
+    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    virtual void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&) OVERRIDE;
 
     // WebPopupMenuProxy::Client
     virtual void valueChangedForPopupMenu(WebPopupMenuProxy*, int32_t newSelectedIndex);
@@ -790,18 +794,16 @@ private:
 #endif
 
     // Implemented in generated WebPageProxyMessageReceiver.cpp
-    void didReceiveWebPageProxyMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
-    void didReceiveSyncWebPageProxyMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
+    void didReceiveWebPageProxyMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
+    void didReceiveSyncWebPageProxyMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
 
     void didCreateMainFrame(uint64_t frameID);
-    void didCreateSubframe(uint64_t frameID, uint64_t parentFrameID);
-    void didSaveFrameToPageCache(uint64_t frameID);
-    void didRestoreFrameFromPageCache(uint64_t frameID, uint64_t parentFrameID);
+    void didCreateSubframe(uint64_t frameID);
 
     void didStartProvisionalLoadForFrame(uint64_t frameID, const String& url, const String& unreachableURL, CoreIPC::MessageDecoder&);
     void didReceiveServerRedirectForProvisionalLoadForFrame(uint64_t frameID, const String&, CoreIPC::MessageDecoder&);
     void didFailProvisionalLoadForFrame(uint64_t frameID, const WebCore::ResourceError&, CoreIPC::MessageDecoder&);
-    void didCommitLoadForFrame(uint64_t frameID, const String& mimeType, bool frameHasCustomRepresentation, const PlatformCertificateInfo&, CoreIPC::MessageDecoder&);
+    void didCommitLoadForFrame(uint64_t frameID, const String& mimeType, bool frameHasCustomRepresentation, uint32_t frameLoadType, const PlatformCertificateInfo&, CoreIPC::MessageDecoder&);
     void didFinishDocumentLoadForFrame(uint64_t frameID, CoreIPC::MessageDecoder&);
     void didFinishLoadForFrame(uint64_t frameID, CoreIPC::MessageDecoder&);
     void didFailLoadForFrame(uint64_t frameID, const WebCore::ResourceError&, CoreIPC::MessageDecoder&);
@@ -820,27 +822,12 @@ private:
     void didChangeProgress(double);
     void didFinishProgress();
 
-#if ENABLE(WEB_INTENTS)
-    void didReceiveIntentForFrame(uint64_t frameID, const IntentData&, CoreIPC::MessageDecoder&);
-#endif
-#if ENABLE(WEB_INTENTS_TAG)
-    void registerIntentServiceForFrame(uint64_t frameID, const IntentServiceInfo&, CoreIPC::MessageDecoder&);
-#endif
-    
     void decidePolicyForNavigationAction(uint64_t frameID, uint32_t navigationType, uint32_t modifiers, int32_t mouseButton, const WebCore::ResourceRequest&, uint64_t listenerID, CoreIPC::MessageDecoder&, bool& receivedPolicyAction, uint64_t& policyAction, uint64_t& downloadID);
     void decidePolicyForNewWindowAction(uint64_t frameID, uint32_t navigationType, uint32_t modifiers, int32_t mouseButton, const WebCore::ResourceRequest&, const String& frameName, uint64_t listenerID, CoreIPC::MessageDecoder&);
     void decidePolicyForResponse(uint64_t frameID, const WebCore::ResourceResponse&, const WebCore::ResourceRequest&, uint64_t listenerID, CoreIPC::MessageDecoder&, bool& receivedPolicyAction, uint64_t& policyAction, uint64_t& downloadID);
     void unableToImplementPolicy(uint64_t frameID, const WebCore::ResourceError&, CoreIPC::MessageDecoder&);
 
-    void willSubmitForm(uint64_t frameID, uint64_t sourceFrameID, const StringPairVector& textFieldValues, uint64_t listenerID, CoreIPC::MessageDecoder&);
-
-    // Resource load client
-    void didInitiateLoadForResource(uint64_t frameID, uint64_t resourceIdentifier, const WebCore::ResourceRequest&, bool pageIsProvisionallyLoading);
-    void didSendRequestForResource(uint64_t frameID, uint64_t resourceIdentifier, const WebCore::ResourceRequest&, const WebCore::ResourceResponse& redirectResponse);
-    void didReceiveResponseForResource(uint64_t frameID, uint64_t resourceIdentifier, const WebCore::ResourceResponse&);
-    void didReceiveContentLengthForResource(uint64_t frameID, uint64_t resourceIdentifier, uint64_t contentLength);
-    void didFinishLoadForResource(uint64_t frameID, uint64_t resourceIdentifier);
-    void didFailLoadForResource(uint64_t frameID, uint64_t resourceIdentifier, const WebCore::ResourceError&);
+    void willSubmitForm(uint64_t frameID, uint64_t sourceFrameID, const Vector<std::pair<String, String> >& textFieldValues, uint64_t listenerID, CoreIPC::MessageDecoder&);
 
     // UI client
     void createNewPage(const WebCore::ResourceRequest&, const WebCore::WindowFeatures&, uint32_t modifiers, int32_t mouseButton, uint64_t& newPageID, WebPageCreationParameters&);
@@ -852,7 +839,7 @@ private:
     void shouldInterruptJavaScript(bool& result);
     void setStatusText(const String&);
     void mouseDidMoveOverElement(const WebHitTestResult::Data& hitTestResultData, uint32_t modifiers, CoreIPC::MessageDecoder&);
-    void unavailablePluginButtonClicked(uint32_t opaquePluginUnavailabilityReason, const String& mimeType, const String& url, const String& pluginsPageURL);
+    void unavailablePluginButtonClicked(uint32_t opaquePluginUnavailabilityReason, const String& mimeType, const String& pluginURLString, const String& pluginsPageURLString, const String& frameURLString, const String& pageURLString);
     void setToolbarsAreVisible(bool toolbarsAreVisible);
     void getToolbarsAreVisible(bool& toolbarsAreVisible);
     void setMenuBarIsVisible(bool menuBarIsVisible);
@@ -878,8 +865,8 @@ private:
     void didChangeScrollbarsForMainFrame(bool hasHorizontalScrollbar, bool hasVerticalScrollbar);
     void didChangeScrollOffsetPinningForMainFrame(bool pinnedToLeftSide, bool pinnedToRightSide, bool pinnedToTopSide, bool pinnedToBottomSide);
     void didChangePageCount(unsigned);
-    void didFailToInitializePlugin(const String& mimeType);
-    void didBlockInsecurePluginVersion(const String& mimeType, const String& urlString);
+    void didFailToInitializePlugin(const String& mimeType, const String& frameURLString, const String& pageURLString);
+    void didBlockInsecurePluginVersion(const String& mimeType, const String& pluginURLString, const String& frameURLString, const String& pageURLString);
     void setCanShortCircuitHorizontalWheelEvents(bool canShortCircuitHorizontalWheelEvents) { m_canShortCircuitHorizontalWheelEvents = canShortCircuitHorizontalWheelEvents; }
 
     void reattachToWebProcess();
@@ -946,9 +933,6 @@ private:
     // Popup Menu.
     void showPopupMenu(const WebCore::IntRect& rect, uint64_t textDirection, const Vector<WebPopupItem>& items, int32_t selectedIndex, const PlatformPopupMenuData&);
     void hidePopupMenu();
-#if PLATFORM(WIN)
-    void setPopupMenuSelectedIndex(int32_t);
-#endif
 
 #if ENABLE(CONTEXT_MENUS)
     // Context Menu.
@@ -974,7 +958,6 @@ private:
 #endif
 
     // Spelling and grammar.
-    int64_t spellDocumentTag();
 #if USE(UNIFIED_TEXT_CHECKING)
     void checkTextOfParagraph(const String& text, uint64_t checkingTypes, Vector<WebCore::TextCheckingResult>& results);
 #endif
@@ -986,6 +969,7 @@ private:
     void getGuessesForWord(const String& word, const String& context, Vector<String>& guesses);
     void learnWord(const String& word);
     void ignoreWord(const String& word);
+    void requestCheckingOfString(uint64_t requestID, const WebCore::TextCheckingRequestData&);
 
     void setFocus(bool focused);
     void takeFocus(uint32_t direction);
@@ -1050,10 +1034,6 @@ private:
 
     void updateBackingStoreDiscardableState();
 
-#if PLATFORM(WIN)
-    void scheduleChildWindowGeometryUpdate(const WindowGeometry&);
-#endif
-
     void setRenderTreeSize(uint64_t treeSize) { m_renderTreeSize = treeSize; }
 
 #if PLUGIN_ARCHITECTURE(X11)
@@ -1064,13 +1044,20 @@ private:
     void processNextQueuedWheelEvent();
     void sendWheelEvent(const WebWheelEvent&);
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
+    void getPluginPath(const String& mimeType, const String& urlString, const String& frameURLString, const String& pageURLString, String& pluginPath, uint32_t& pluginLoadPolicy);
+#endif
+
     PageClient* m_pageClient;
     WebLoaderClient m_loaderClient;
     WebPolicyClient m_policyClient;
     WebFormClient m_formClient;
-    WebResourceLoadClient m_resourceLoadClient;
     WebUIClient m_uiClient;
+#if PLATFORM(EFL)
+    WebUIPopupMenuClient m_uiPopupMenuClient;
+#endif
     WebFindClient m_findClient;
+    WebFindMatchesClient m_findMatchesClient;
 #if ENABLE(CONTEXT_MENUS)
     WebPageContextMenuClient m_contextMenuClient;
 #endif
@@ -1155,6 +1142,8 @@ private:
 
     bool m_drawsBackground;
     bool m_drawsTransparentBackground;
+
+    WebCore::Color m_underlayColor;
 
     bool m_areMemoryCacheClientCallsEnabled;
 
@@ -1245,6 +1234,11 @@ private:
     bool m_mainFrameIsPinnedToRightSide;
     bool m_mainFrameIsPinnedToTopSide;
     bool m_mainFrameIsPinnedToBottomSide;
+
+    bool m_rubberBandsAtBottom;
+    bool m_rubberBandsAtTop;
+
+    bool m_mainFrameInViewSourceMode;
 
     unsigned m_pageCount;
 

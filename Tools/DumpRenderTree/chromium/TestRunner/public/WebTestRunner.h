@@ -31,13 +31,35 @@
 #ifndef WebTestRunner_h
 #define WebTestRunner_h
 
+namespace WebKit {
+class WebArrayBufferView;
+class WebPermissionClient;
+}
+
 namespace WebTestRunner {
 
-// FIXME: Once the TestRunner class is complete, this class should take a
-// TestRunner* as ctor argument, and not have default implementations.
 class WebTestRunner {
 public:
-    virtual bool shouldDumpEditingCallbacks() const { return false; }
+    // Returns a mock WebPermissionClient that is used for layout tests. An
+    // embedder should use this for all WebViews it creates.
+    virtual WebKit::WebPermissionClient* webPermissions() const = 0;
+
+    // After WebTestDelegate::testFinished was invoked, the following methods
+    // can be used to determine what kind of dump the main WebTestProxy can
+    // provide.
+
+    // If true, WebTestDelegate::audioData returns an audio dump and no text
+    // or pixel results are available.
+    virtual bool shouldDumpAsAudio() const = 0;
+    virtual const WebKit::WebArrayBufferView* audioData() const = 0;
+
+    // Returns true if the call to WebTestProxy::captureTree will invoke
+    // WebTestDelegate::captureHistoryForWindow.
+    virtual bool shouldDumpBackForwardList() const = 0;
+
+    // Returns true if WebTestProxy::capturePixels should be invoked after
+    // capturing text results.
+    virtual bool shouldGeneratePixelResults() = 0;
 };
 
 }

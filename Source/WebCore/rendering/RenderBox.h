@@ -44,12 +44,12 @@ enum ShouldComputePreferred { ComputeActual, ComputePreferred };
 
 class RenderBox : public RenderBoxModelObject {
 public:
-    RenderBox(Node*);
+    explicit RenderBox(ContainerNode*);
     virtual ~RenderBox();
 
     // hasAutoZIndex only returns true if the element is positioned or a flex-item since
     // position:static elements that are not flex-items get their z-index coerced to auto.
-    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns() || !style()->hasAutoZIndex(); }
+    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns() || !style()->hasAutoZIndex() || (style()->shapeOutside() && isFloating()); }
 
     // Use this with caution! No type checking is done!
     RenderBox* firstChildBox() const;
@@ -162,7 +162,7 @@ public:
 
     // Bounds of the outline box in absolute coords. Respects transforms
     virtual LayoutRect outlineBoundsForRepaint(const RenderLayerModelObject* /*repaintContainer*/, const RenderGeometryMap*) const OVERRIDE;
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     // Use this with caution! No type checking is done!
     RenderBox* previousSiblingBox() const;
@@ -205,9 +205,8 @@ public:
     virtual LayoutUnit offsetWidth() const { return width(); }
     virtual LayoutUnit offsetHeight() const { return height(); }
 
-    // FIXME: The implementation for these functions will change once we move to subpixel layout. See bug 60318.
-    virtual int pixelSnappedOffsetWidth() const { return pixelSnappedWidth(); }
-    virtual int pixelSnappedOffsetHeight() const { return pixelSnappedHeight(); }
+    virtual int pixelSnappedOffsetWidth() const OVERRIDE;
+    virtual int pixelSnappedOffsetHeight() const OVERRIDE;
 
     // More IE extensions.  clientWidth and clientHeight represent the interior of an object
     // excluding border and scrollbar.  clientLeft/Top are just the borderLeftWidth and borderTopWidth.
@@ -295,6 +294,9 @@ public:
     virtual void paint(PaintInfo&, const LayoutPoint&);
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
+    LayoutUnit minIntrinsicLogicalWidth() const;
+    LayoutUnit maxIntrinsicLogicalWidth() const;
+
     virtual LayoutUnit minPreferredLogicalWidth() const;
     virtual LayoutUnit maxPreferredLogicalWidth() const;
 
@@ -319,6 +321,7 @@ public:
     void setOverrideContainingBlockContentLogicalWidth(LayoutUnit);
     void setOverrideContainingBlockContentLogicalHeight(LayoutUnit);
     void clearContainingBlockOverrideSize();
+    void clearOverrideContainingBlockContentLogicalHeight();
 
     virtual LayoutSize offsetFromContainer(RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const;
     
@@ -398,7 +401,7 @@ public:
 
     bool stretchesToViewport() const
     {
-        return document()->inQuirksMode() && style()->logicalHeight().isAuto() && !isFloatingOrOutOfFlowPositioned() && (isRoot() || isBody()) && !document()->shouldDisplaySeamlesslyWithParent();
+        return document()->inQuirksMode() && style()->logicalHeight().isAuto() && !isFloatingOrOutOfFlowPositioned() && (isRoot() || isBody()) && !document()->shouldDisplaySeamlesslyWithParent() && !isInline();
     }
 
     virtual LayoutSize intrinsicSize() const { return LayoutSize(); }
@@ -408,7 +411,6 @@ public:
     // Whether or not the element shrinks to its intrinsic width (rather than filling the width
     // of a containing block).  HTML4 buttons, <select>s, <input>s, legends, and floating/compact elements do this.
     bool sizesLogicalWidthToFitContent(SizeType) const;
-    virtual bool stretchesToMinIntrinsicLogicalWidth() const { return false; }
 
     LayoutUnit shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStart, LayoutUnit childMarginEnd, const RenderBlock* cb, RenderRegion*, LayoutUnit offsetFromLogicalTopOfFirstPage) const;
 
@@ -439,13 +441,15 @@ public:
 
     virtual int verticalScrollbarWidth() const;
     int horizontalScrollbarHeight() const;
+    int instrinsicScrollbarLogicalWidth() const;
     int scrollbarLogicalHeight() const { return style()->isHorizontalWritingMode() ? horizontalScrollbarHeight() : verticalScrollbarWidth(); }
     virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
     virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
     bool canBeScrolledAndHasScrollableArea() const;
     virtual bool canBeProgramaticallyScrolled() const;
-    virtual void autoscroll();
+    virtual void autoscroll(const IntPoint&);
     bool canAutoscroll() const;
+    IntSize calculateAutoscrollDirection(const IntPoint& windowPoint) const;
     static RenderBox* findAutoscrollable(RenderObject*);
     virtual void stopAutoscroll() { }
     virtual void panScroll(const IntPoint&);
@@ -543,6 +547,7 @@ public:
 
     virtual bool hasRelativeDimensions() const;
     virtual bool hasRelativeLogicalHeight() const;
+    virtual bool hasViewportPercentageLogicalHeight() const;
 
     bool hasHorizontalLayoutOverflow() const
     {
@@ -580,7 +585,7 @@ public:
 #if ENABLE(CSS_EXCLUSIONS)
     ExclusionShapeOutsideInfo* exclusionShapeOutsideInfo() const
     {
-        return style()->shapeOutside() && ExclusionShapeOutsideInfo::isInfoEnabledForRenderBox(this) ? ExclusionShapeOutsideInfo::infoForRenderBox(this) : 0;
+        return style()->shapeOutside() && ExclusionShapeOutsideInfo::isEnabledFor(this) ? ExclusionShapeOutsideInfo::info(this) : 0;
     }
 #endif
 
@@ -591,6 +596,7 @@ protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
     virtual void updateFromStyle() OVERRIDE;
 
+    virtual bool backgroundIsOpaqueInRect(const LayoutRect&) const OVERRIDE;
     virtual bool backgroundIsObscured() const { return false; }
     void paintBackground(const PaintInfo&, const LayoutRect&, BackgroundBleedAvoidance = BackgroundBleedNone);
     
@@ -637,6 +643,8 @@ private:
         LayoutUnit offsetFromLogicalTopOfFirstPage = 0, bool checkForPerpendicularWritingMode = true) const;
     LayoutUnit containingBlockLogicalHeightForPositioned(const RenderBoxModelObject* containingBlock, bool checkForPerpendicularWritingMode = true) const;
 
+    LayoutUnit viewLogicalHeightForPercentages() const;
+
     void computePositionedLogicalHeight(LogicalExtentComputedValues&) const;
     void computePositionedLogicalWidthUsing(SizeType, Length logicalWidth, const RenderBoxModelObject* containerBlock, TextDirection containerDirection,
                                             LayoutUnit containerLogicalWidth, LayoutUnit bordersPlusPadding,
@@ -649,6 +657,10 @@ private:
 
     void computePositionedLogicalHeightReplaced(LogicalExtentComputedValues&) const;
     void computePositionedLogicalWidthReplaced(LogicalExtentComputedValues&) const;
+
+    LayoutUnit computeIntrinsicLogicalWidthUsing(Length logicalWidthLength, LayoutUnit availableLogicalWidth) const;
+
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
 
     // This function calculates the minimum and maximum preferred widths for an object.
     // These values are used in shrink-to-fit layout systems.
@@ -683,13 +695,13 @@ private:
 
 inline RenderBox* toRenderBox(RenderObject* object)
 { 
-    ASSERT(!object || object->isBox());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBox());
     return static_cast<RenderBox*>(object);
 }
 
 inline const RenderBox* toRenderBox(const RenderObject* object)
 { 
-    ASSERT(!object || object->isBox());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBox());
     return static_cast<const RenderBox*>(object);
 }
 

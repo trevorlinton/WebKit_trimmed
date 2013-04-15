@@ -30,6 +30,7 @@
 #include "Attribute.h"
 #include "CachedResourceLoader.h"
 #include "CachedResourceRequest.h"
+#include "CachedSVGDocument.h"
 #include "Document.h"
 #include "ElementShadow.h"
 #include "Event.h"
@@ -93,7 +94,7 @@ inline SVGUseElement::SVGUseElement(const QualifiedName& tagName, Document* docu
     , m_needsShadowTreeRecreation(false)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
-    ASSERT(hasCustomCallbacks());
+    ASSERT(hasCustomStyleCallbacks());
     ASSERT(hasTagName(SVGNames::useTag));
     registerAnimatedPropertiesForSVGUseElement();
 }
@@ -102,7 +103,7 @@ PassRefPtr<SVGUseElement> SVGUseElement::create(const QualifiedName& tagName, Do
 {
     // Always build a #shadow-root for SVGUseElement.
     RefPtr<SVGUseElement> use = adoptRef(new SVGUseElement(tagName, document, wasInsertedByParser));
-    use->createShadowSubtree();
+    use->ensureUserAgentShadowRoot();
     return use.release();
 }
 
@@ -111,12 +112,6 @@ SVGUseElement::~SVGUseElement()
     setCachedDocument(0);
 
     clearResourceReferences();
-}
-
-void SVGUseElement::createShadowSubtree()
-{
-    ASSERT(!shadow());
-    ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot);
 }
 
 SVGElementInstance* SVGUseElement::instanceRoot()
@@ -400,7 +395,7 @@ void SVGUseElement::clearResourceReferences()
 {
     // FIXME: We should try to optimize this, to at least allow partial reclones.
     if (ShadowRoot* shadowTreeRootElement =  shadow()->oldestShadowRoot())
-        shadowTreeRootElement->removeAllChildren();
+        shadowTreeRootElement->removeChildren();
 
     if (m_targetElementInstance) {
         m_targetElementInstance->detach();
@@ -415,10 +410,10 @@ void SVGUseElement::clearResourceReferences()
 
 void SVGUseElement::buildPendingResource()
 {
-    if (!referencedDocument())
+    if (!referencedDocument() || isInShadowTree())
         return;
     clearResourceReferences();
-    if (!inDocument() || isInShadowTree())
+    if (!inDocument())
         return;
 
     String id;
@@ -436,8 +431,11 @@ void SVGUseElement::buildPendingResource()
         return;
     }
 
-    if (target->isSVGElement())
+    if (target->isSVGElement()) {
         buildShadowAndInstanceTree(static_cast<SVGElement*>(target));
+        invalidateDependentShadowTrees();
+    }
+
     ASSERT(!m_needsShadowTreeRecreation);
 }
 
@@ -522,10 +520,6 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
 
     // Update relative length information.
     updateRelativeLengthsInformation();
-
-    // Rebuild all dependent use elements.
-    ASSERT(document());
-    document()->accessSVGExtensions()->rebuildAllElementReferencesForTarget(this);
 
     // Eventually dump instance tree
 #ifdef DUMP_INSTANCE_TREE
@@ -912,6 +906,20 @@ void SVGUseElement::invalidateShadowTree()
         return;
     m_needsShadowTreeRecreation = true;
     setNeedsStyleRecalc();
+    invalidateDependentShadowTrees();
+}
+
+void SVGUseElement::invalidateDependentShadowTrees()
+{
+    // Recursively invalidate dependent <use> shadow trees
+    const HashSet<SVGElementInstance*>& instances = instancesForElement();
+    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
+    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
+        if (SVGUseElement* element = (*it)->correspondingUseElement()) {
+            ASSERT(element->inDocument());
+            element->invalidateShadowTree();
+        }
+    }
 }
 
 void SVGUseElement::transferUseAttributesToReplacedElement(SVGElement* from, SVGElement* to) const

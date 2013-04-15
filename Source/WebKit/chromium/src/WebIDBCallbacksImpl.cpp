@@ -34,14 +34,12 @@
 #include "IDBDatabaseBackendProxy.h"
 #include "IDBDatabaseError.h"
 #include "IDBKey.h"
-#include "IDBTransactionBackendProxy.h"
 #include "WebDOMStringList.h"
 #include "WebIDBCallbacks.h"
 #include "WebIDBDatabase.h"
 #include "WebIDBDatabaseError.h"
 #include "WebIDBKey.h"
-#include "WebIDBTransaction.h"
-#include "platform/WebSerializedScriptValue.h"
+#include <public/WebData.h>
 
 using namespace WebCore;
 
@@ -66,18 +64,19 @@ void WebIDBCallbacksImpl::onSuccess(const WebDOMStringList& domStringList)
     m_callbacks->onSuccess(domStringList);
 }
 
-void WebIDBCallbacksImpl::onSuccess(WebIDBCursor* cursor, const WebIDBKey& key, const WebIDBKey& primaryKey, const WebSerializedScriptValue& value)
+void WebIDBCallbacksImpl::onSuccess(WebIDBCursor* cursor, const WebIDBKey& key, const WebIDBKey& primaryKey, const WebData& value)
 {
     m_callbacks->onSuccess(IDBCursorBackendProxy::create(adoptPtr(cursor)), key, primaryKey, value);
 }
 
-void WebIDBCallbacksImpl::onSuccess(WebIDBDatabase* webKitInstance)
+void WebIDBCallbacksImpl::onSuccess(WebIDBDatabase* webKitInstance, const WebIDBMetadata& metadata)
 {
     if (m_databaseProxy) {
-        m_callbacks->onSuccess(m_databaseProxy.release());
+        m_callbacks->onSuccess(m_databaseProxy.release(), metadata);
         return;
     }
-    m_callbacks->onSuccess(IDBDatabaseBackendProxy::create(adoptPtr(webKitInstance)));
+    RefPtr<IDBDatabaseBackendInterface> localDatabaseProxy = IDBDatabaseBackendProxy::create(adoptPtr(webKitInstance));
+    m_callbacks->onSuccess(localDatabaseProxy.release(), metadata);
 }
 
 void WebIDBCallbacksImpl::onSuccess(const WebIDBKey& key)
@@ -85,14 +84,14 @@ void WebIDBCallbacksImpl::onSuccess(const WebIDBKey& key)
     m_callbacks->onSuccess(key);
 }
 
-void WebIDBCallbacksImpl::onSuccess(const WebSerializedScriptValue& serializedScriptValue)
+void WebIDBCallbacksImpl::onSuccess(const WebData& value)
 {
-    m_callbacks->onSuccess(serializedScriptValue);
+    m_callbacks->onSuccess(value);
 }
 
-void WebIDBCallbacksImpl::onSuccess(const WebSerializedScriptValue& serializedScriptValue, const WebIDBKey& key, const WebIDBKeyPath& keyPath)
+void WebIDBCallbacksImpl::onSuccess(const WebData& value, const WebIDBKey& key, const WebIDBKeyPath& keyPath)
 {
-    m_callbacks->onSuccess(serializedScriptValue, key, keyPath);
+    m_callbacks->onSuccess(value, key, keyPath);
 }
 
 void WebIDBCallbacksImpl::onSuccess(long long value)
@@ -105,14 +104,9 @@ void WebIDBCallbacksImpl::onSuccess()
     m_callbacks->onSuccess();
 }
 
-void WebIDBCallbacksImpl::onSuccess(const WebIDBKey& key, const WebIDBKey& primaryKey, const WebSerializedScriptValue& value)
+void WebIDBCallbacksImpl::onSuccess(const WebIDBKey& key, const WebIDBKey& primaryKey, const WebData& value)
 {
     m_callbacks->onSuccess(key, primaryKey, value);
-}
-
-void WebIDBCallbacksImpl::onBlocked()
-{
-    m_callbacks->onBlocked();
 }
 
 void WebIDBCallbacksImpl::onBlocked(long long oldVersion)
@@ -120,10 +114,10 @@ void WebIDBCallbacksImpl::onBlocked(long long oldVersion)
     m_callbacks->onBlocked(oldVersion);
 }
 
-void WebIDBCallbacksImpl::onUpgradeNeeded(long long oldVersion, WebIDBTransaction* transaction, WebIDBDatabase* database)
+void WebIDBCallbacksImpl::onUpgradeNeeded(long long oldVersion, WebIDBDatabase* database, const WebIDBMetadata& metadata)
 {
     m_databaseProxy = IDBDatabaseBackendProxy::create(adoptPtr(database));
-    m_callbacks->onUpgradeNeeded(oldVersion, IDBTransactionBackendProxy::create(adoptPtr(transaction)), m_databaseProxy);
+    m_callbacks->onUpgradeNeeded(oldVersion, m_databaseProxy, metadata);
 }
 
 } // namespace WebKit

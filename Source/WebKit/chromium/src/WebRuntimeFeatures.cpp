@@ -42,6 +42,20 @@ using namespace WebCore;
 
 namespace WebKit {
 
+// FIXME: Remove native validation message things when we finish implementations
+// of all platforms.
+static bool nativeValidationMessageEnabled = false;
+
+void WebRuntimeFeatures::enableNativeValidationMessage(bool enable)
+{
+    nativeValidationMessageEnabled = enable;
+}
+
+bool WebRuntimeFeatures::isNativeValidationMessageEnabled()
+{
+    return nativeValidationMessageEnabled;
+}
+
 void WebRuntimeFeatures::enableDatabase(bool enable)
 {
 #if ENABLE(SQL_DATABASE)
@@ -467,6 +481,25 @@ bool WebRuntimeFeatures::isShadowDOMEnabled()
 #endif
 }
 
+void WebRuntimeFeatures::enableCustomDOMElements(bool enable)
+{
+#if ENABLE(CUSTOM_ELEMENTS)
+    RuntimeEnabledFeatures::setCustomDOMElements(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isCustomDOMElementsEnabled()
+{
+#if ENABLE(CUSTOM_ELEMENTS)
+    return RuntimeEnabledFeatures::customDOMElementsEnabled();
+#else
+    return false;
+#endif
+}
+
+
 void WebRuntimeFeatures::enableStyleScoped(bool enable)
 {
 #if ENABLE(STYLE_SCOPED)
@@ -629,6 +662,34 @@ bool WebRuntimeFeatures::isExperimentalContentSecurityPolicyFeaturesEnabled()
 #endif
 }
 
+void WebRuntimeFeatures::enableSeamlessIFrames(bool enable)
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    return RuntimeEnabledFeatures::setSeamlessIFramesEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::areSeamlessIFramesEnabled()
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    return RuntimeEnabledFeatures::seamlessIFramesEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableCanvasPath(bool enable)
+{
+    RuntimeEnabledFeatures::setCanvasPathEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isCanvasPathEnabled()
+{
+    return RuntimeEnabledFeatures::canvasPathEnabled();
+}
+
 void WebRuntimeFeatures::enableCSSExclusions(bool enable)
 {
     RuntimeEnabledFeatures::setCSSExclusionsEnabled(enable);
@@ -662,24 +723,6 @@ bool WebRuntimeFeatures::isRequestAutocompleteEnabled()
 {
 #if ENABLE(REQUEST_AUTOCOMPLETE)
     return RuntimeEnabledFeatures::requestAutocompleteEnabled();
-#else
-    return false;
-#endif
-}
-
-void WebRuntimeFeatures::enableWebIntents(bool enable)
-{
-#if ENABLE(WEB_INTENTS)
-    RuntimeEnabledFeatures::setWebIntentsEnabled(enable);
-#else
-    UNUSED_PARAM(enable);
-#endif
-}
-
-bool WebRuntimeFeatures::isWebIntentsEnabled()
-{
-#if ENABLE(WEB_INTENTS)
-    return RuntimeEnabledFeatures::webkitStartActivityEnabled();
 #else
     return false;
 #endif

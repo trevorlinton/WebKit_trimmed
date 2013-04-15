@@ -22,6 +22,7 @@
 #include "config.h"
 #include "HitTestResult.h"
 
+#include "CachedImage.h"
 #include "DocumentMarkerController.h"
 #include "Frame.h"
 #include "FrameSelection.h"
@@ -199,21 +200,21 @@ HitTestResult::HitTestResult()
 
 HitTestResult::HitTestResult(const LayoutPoint& point)
     : m_hitTestLocation(point)
-    , m_pointInMainFrame(point)
+    , m_pointInInnerNodeFrame(point)
     , m_isOverWidget(false)
 {
 }
 
 HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
     : m_hitTestLocation(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding)
-    , m_pointInMainFrame(centerPoint)
+    , m_pointInInnerNodeFrame(centerPoint)
     , m_isOverWidget(false)
 {
 }
 
 HitTestResult::HitTestResult(const HitTestLocation& other)
     : m_hitTestLocation(other)
-    , m_pointInMainFrame(m_hitTestLocation.point())
+    , m_pointInInnerNodeFrame(m_hitTestLocation.point())
     , m_isOverWidget(false)
 {
 }
@@ -222,7 +223,7 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     : m_hitTestLocation(other.m_hitTestLocation)
     , m_innerNode(other.innerNode())
     , m_innerNonSharedNode(other.innerNonSharedNode())
-    , m_pointInMainFrame(other.m_pointInMainFrame)
+    , m_pointInInnerNodeFrame(other.m_pointInInnerNodeFrame)
     , m_localPoint(other.localPoint())
     , m_innerURLElement(other.URLElement())
     , m_scrollbar(other.scrollbar())
@@ -241,7 +242,7 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     m_hitTestLocation = other.m_hitTestLocation;
     m_innerNode = other.innerNode();
     m_innerNonSharedNode = other.innerNonSharedNode();
-    m_pointInMainFrame = other.m_pointInMainFrame;
+    m_pointInInnerNodeFrame = other.m_pointInInnerNodeFrame;
     m_localPoint = other.localPoint();
     m_innerURLElement = other.URLElement();
     m_scrollbar = other.scrollbar();
@@ -257,25 +258,25 @@ void HitTestResult::setToNonShadowAncestor()
 {
     Node* node = innerNode();
     if (node)
-        node = node->shadowAncestorNode();
+        node = node->deprecatedShadowAncestorNode();
     setInnerNode(node);
     node = innerNonSharedNode();
     if (node)
-        node = node->shadowAncestorNode();
+        node = node->deprecatedShadowAncestorNode();
     setInnerNonSharedNode(node);
 }
 
 void HitTestResult::setInnerNode(Node* n)
 {
     if (n && n->isPseudoElement())
-        n = n->parentOrHostNode();
+        n = n->parentOrShadowHostNode();
     m_innerNode = n;
 }
     
 void HitTestResult::setInnerNonSharedNode(Node* n)
 {
     if (n && n->isPseudoElement())
-        n = n->parentOrHostNode();
+        n = n->parentOrShadowHostNode();
     m_innerNonSharedNode = n;
 }
 
@@ -699,7 +700,7 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestReques
         return true;
 
     if (!request.allowsShadowContent())
-        node = node->shadowAncestorNode();
+        node = node->deprecatedShadowAncestorNode();
 
     mutableRectBasedTestResult().add(node);
 
@@ -719,7 +720,7 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestReques
         return true;
 
     if (!request.allowsShadowContent())
-        node = node->shadowAncestorNode();
+        node = node->deprecatedShadowAncestorNode();
 
     mutableRectBasedTestResult().add(node);
 
@@ -735,7 +736,7 @@ void HitTestResult::append(const HitTestResult& other)
         m_innerNode = other.innerNode();
         m_innerNonSharedNode = other.innerNonSharedNode();
         m_localPoint = other.localPoint();
-        m_pointInMainFrame = other.m_pointInMainFrame;
+        m_pointInInnerNodeFrame = other.m_pointInInnerNodeFrame;
         m_innerURLElement = other.URLElement();
         m_scrollbar = other.scrollbar();
         m_isOverWidget = other.isOverWidget();
@@ -768,7 +769,7 @@ Vector<String> HitTestResult::dictationAlternatives() const
     if (!m_innerNonSharedNode)
         return Vector<String>();
 
-    DocumentMarker* marker = m_innerNonSharedNode->document()->markers()->markerContainingPoint(hitTestLocation().point(), DocumentMarker::DictationAlternatives);
+    DocumentMarker* marker = m_innerNonSharedNode->document()->markers()->markerContainingPoint(pointInInnerNodeFrame(), DocumentMarker::DictationAlternatives);
     if (!marker)
         return Vector<String>();
 
@@ -792,6 +793,16 @@ Node* HitTestResult::targetNode() const
         return element;
 
     return node;
+}
+
+Element* HitTestResult::innerElement() const
+{
+    for (Node* node = m_innerNode.get(); node; node = node->parentNode()) {
+        if (node->isElementNode())
+            return toElement(node);
+    }
+
+    return 0;
 }
 
 } // namespace WebCore

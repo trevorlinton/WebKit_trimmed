@@ -145,7 +145,7 @@ static bool gWebKitIsBeingUnloaded;
 static bool documentIsInApplicationChromeMode(const Document* document)
 {
     Settings* settings = document->settings();
-    return settings && settings->inApplicationChromeMode();
+    return settings && settings->applicationChromeMode();
 }
 
 void RenderThemeWin::setWebKitIsBeingUnloaded()
@@ -1049,12 +1049,7 @@ String RenderThemeWin::extraFullScreenStyleSheet()
 
 bool RenderThemeWin::supportsClosedCaptioning() const
 {
-        // We rely on QuickTime to render captions so only enable the button for a video element.
-#if SAFARI_THEME_VERSION >= 4
     return true;
-#else
-    return false;
-#endif
 }
 
 bool RenderThemeWin::paintMediaFullscreenButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)

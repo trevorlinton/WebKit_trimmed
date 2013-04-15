@@ -31,7 +31,8 @@
  */
 
 [
-    Conditional=INSPECTOR
+    Conditional=INSPECTOR,
+    ImplementationLacksVTable
 ] interface InspectorFrontendHost {
     void loaded();
     void closeWindow();
@@ -58,7 +59,7 @@
 
     [Custom] DOMString platform();
     [Custom] DOMString port();
-    [Custom] void showContextMenu(in MouseEvent event, in DOMObject items);
+    [Custom] void showContextMenu(in MouseEvent event, in any items);
     void sendMessageToBackend(in DOMString message);
 
     [Custom] void recordActionTaken(in unsigned long actionCode);
@@ -66,4 +67,12 @@
     [Custom] void recordSettingChanged(in unsigned long settingChanged);
     
     DOMString loadResourceSynchronously(in DOMString url);
+
+    boolean supportsFileSystems();
+    void requestFileSystems();
+    void addFileSystem();
+    void removeFileSystem(in DOMString fileSystemPath);
+    [Conditional=FILE_SYSTEM] DOMFileSystem isolatedFileSystem(in DOMString fileSystemId, in DOMString registeredName);
+
+    boolean isUnderTest();
 };

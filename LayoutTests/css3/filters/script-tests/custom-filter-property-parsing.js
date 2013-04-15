@@ -1,43 +1,7 @@
 description("Test the parsing of the custom() function of the -webkit-filter property.");
 
-if (window.testRunner) {
-    window.testRunner.overridePreference("WebKitCSSCustomFilterEnabled", "1");
-    window.testRunner.overridePreference("WebKitWebGLEnabled", "1");
-}
-
-function jsWrapperClass(node)
-{
-    if (!node)
-        return "[null]";
-    var string = Object.prototype.toString.apply(node);
-    return string.substr(8, string.length - 9);
-}
-
-// Need to remove the base URL to avoid having local paths in the expected results.
-function removeBaseURL(src) {
-    var urlRegexp = /url\(([^\)]*)\)/g;
-    return src.replace(urlRegexp, function(match, url) {
-        return "url(" + url.substr(url.lastIndexOf("/") + 1) + ")";
-    });
-}
-
-function shouldBeType(expression, className, prototypeName, constructorName)
-{
-    if (!prototypeName)
-        prototypeName = className + "Prototype";
-    if (!constructorName)
-        constructorName = className + "Constructor";
-    shouldBe("jsWrapperClass(" + expression + ")", "'" + className + "'");
-    shouldBe("jsWrapperClass(" + expression + ".__proto__)", "'" + prototypeName + "'");
-    shouldBe("jsWrapperClass(" + expression + ".constructor)", "'" + constructorName + "'");
-}
-
-var styleElement = document.createElement("style");
-document.head.appendChild(styleElement);
-
 // These have to be global for the test helpers to see them.
 var cssRule, declaration, filterRule, subRule;
-var stylesheet = styleElement.sheet;
 
 function testFilterRule(description, rule, expectedValue, expectedTypes, expectedTexts)
 {
@@ -189,32 +153,32 @@ testFilterRule("Multiple array()",
             "custom(none url(fragment.shader), t4 array(1, -2.2, 3.14, 0.4, 5), t5 array(1, 2, 3))",
             "custom(none url(fragment.shader), t4 array(1, -2.2, 3.14, 0.4, 5), t5 array(1, 2, 3))");
 
-// TODO: The following tests are due to be removed along with the mesh box types parsing code.
-// See: https://bugs.webkit.org/show_bug.cgi?id=103778
+// FIXME: The following tests will be removed along with the mesh box types parsing code.
+// https://bugs.webkit.org/show_bug.cgi?id=103778
 testFilterRule("Legacy - Custom with mesh box sizes and content-box",
             "custom(none url(fragment.shader), 1 1 content-box)",
-            "custom(none url(fragment.shader), 1 1 content-box)");
+            "custom(none url(fragment.shader), 1 1)");
 
 testFilterRule("Legacy - Custom with mesh box sizes and border-box",
             "custom(none url(fragment.shader), 1 1 border-box)",
-            "custom(none url(fragment.shader), 1 1 border-box)");
+            "custom(none url(fragment.shader), 1 1)");
 
 testFilterRule("Legacy - Custom with mesh box sizes and padding-box",
             "custom(none url(fragment.shader), 1 1 padding-box)",
-            "custom(none url(fragment.shader), 1 1 padding-box)");
+            "custom(none url(fragment.shader), 1 1)");
 
 testFilterRule("Legacy - Custom with partial mesh box size and padding-box",
             "custom(none url(fragment.shader), 10 padding-box)",
-            "custom(none url(fragment.shader), 10 padding-box)");
+            "custom(none url(fragment.shader), 10)");
 
 testFilterRule("Legacy - Custom with padding-box and detached",
             "custom(none url(fragment.shader), padding-box detached)",
-            "custom(none url(fragment.shader), padding-box detached)");
+            "custom(none url(fragment.shader), detached)");
 
 testFilterRule("Legacy - Custom with both mesh-sizes and padding-box",
             "custom(none url(fragment.shader), 10 20 padding-box)",
-            "custom(none url(fragment.shader), 10 20 padding-box)");
+            "custom(none url(fragment.shader), 10 20)");
 
 testFilterRule("Legacy - Custom with mesh-sizes, padding-box and detached",
             "custom(none url(fragment.shader), 10 20 padding-box detached)",
-            "custom(none url(fragment.shader), 10 20 padding-box detached)");
+            "custom(none url(fragment.shader), 10 20 detached)");

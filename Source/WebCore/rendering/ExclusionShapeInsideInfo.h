@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -32,11 +32,8 @@
 
 #if ENABLE(CSS_EXCLUSIONS)
 
-#include "ExclusionShape.h"
-#include "FloatRect.h"
+#include "ExclusionShapeInfo.h"
 #include "InlineIterator.h"
-#include "LayoutUnit.h"
-#include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 
@@ -55,28 +52,16 @@ struct LineSegmentRange {
 };
 typedef Vector<LineSegmentRange> SegmentRangeList;
 
-class ExclusionShapeInsideInfo {
-    WTF_MAKE_FAST_ALLOCATED;
+class ExclusionShapeInsideInfo : public ExclusionShapeInfo<RenderBlock, &RenderStyle::resolvedShapeInside>, public MappedInfo<RenderBlock, ExclusionShapeInsideInfo> {
 public:
-    ~ExclusionShapeInsideInfo();
+    static PassOwnPtr<ExclusionShapeInsideInfo> createInfo(const RenderBlock* renderer) { return adoptPtr(new ExclusionShapeInsideInfo(renderer)); }
 
-    static PassOwnPtr<ExclusionShapeInsideInfo> create(RenderBlock* block) { return adoptPtr(new ExclusionShapeInsideInfo(block)); }
-    static ExclusionShapeInsideInfo* exclusionShapeInsideInfoForRenderBlock(const RenderBlock*);
-    static ExclusionShapeInsideInfo* ensureExclusionShapeInsideInfoForRenderBlock(RenderBlock*);
-    static void removeExclusionShapeInsideInfoForRenderBlock(const RenderBlock*);
-    static bool isExclusionShapeInsideInfoEnabledForRenderBlock(const RenderBlock*);
-
-    LayoutUnit shapeLogicalTop() const
+    static bool isEnabledFor(const RenderBlock* renderer)
     {
-        ASSERT(m_shape);
-        return floatLogicalTopToLayoutUnit(m_shape->shapeLogicalBoundingBox().y());
+        ExclusionShapeValue* shapeValue = renderer->style()->resolvedShapeInside();
+        return (shapeValue && shapeValue->type() == ExclusionShapeValue::SHAPE) ? shapeValue->shape() : 0;
     }
-    LayoutUnit shapeLogicalBottom() const
-    {
-        ASSERT(m_shape);
-        return floatLogicalBottomToLayoutUnit(m_shape->shapeLogicalBoundingBox().maxY());
-    }
-    bool lineOverlapsShapeBounds() const { return m_lineTop < shapeLogicalBottom() && m_lineTop + m_lineHeight >= shapeLogicalTop(); }
+    bool lineOverlapsShapeBounds() const { return logicalLineTop() < shapeLogicalBottom() && logicalLineBottom() >= shapeLogicalTop(); }
 
     bool hasSegments() const
     {
@@ -98,30 +83,24 @@ public:
     }
     bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight);
     bool adjustLogicalLineTop(float minSegmentWidth);
-    void computeShapeSize(LayoutUnit logicalWidth, LayoutUnit logicalHeight);
-    void dirtyShapeSize() { m_shapeSizeDirty = true; }
+    LayoutUnit logicalLineTop() const { return m_shapeLineTop + logicalTopOffset(); }
+    LayoutUnit logicalLineBottom() const { return m_shapeLineTop + m_lineHeight + logicalTopOffset(); }
 
-    LayoutUnit logicalLineTop() const { return m_lineTop; }
-    RenderBlock* ownerBlock() const { return m_block; }
+    void setNeedsLayout(bool value) { m_needsLayout = value; }
+    bool needsLayout() { return m_needsLayout; }
 
 private:
-    ExclusionShapeInsideInfo(RenderBlock*);
+    ExclusionShapeInsideInfo(const RenderBlock* renderer)
+    : ExclusionShapeInfo<RenderBlock, &RenderStyle::resolvedShapeInside> (renderer)
+    , m_needsLayout(false)
+    { }
 
-    // Use ceil and floor to ensure that the returned LayoutUnit value is within the shape's bounds.
-    LayoutUnit floatLogicalTopToLayoutUnit(float logicalTop) const { return LayoutUnit::fromFloatCeil(logicalTop); }
-    LayoutUnit floatLogicalBottomToLayoutUnit(float logicalBottom) const { return LayoutUnit::fromFloatFloor(logicalBottom); }
-
-    RenderBlock* m_block;
-    OwnPtr<ExclusionShape> m_shape;
-
-    LayoutUnit m_lineTop;
+    LayoutUnit m_shapeLineTop;
     LayoutUnit m_lineHeight;
-    LayoutUnit m_logicalWidth;
-    LayoutUnit m_logicalHeight;
 
     SegmentList m_segments;
     SegmentRangeList m_segmentRanges;
-    bool m_shapeSizeDirty;
+    bool m_needsLayout;
 };
 
 }

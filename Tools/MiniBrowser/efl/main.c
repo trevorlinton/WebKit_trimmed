@@ -21,6 +21,7 @@
 #include "url_utils.h"
 #include <Ecore.h>
 #include <Ecore_Evas.h>
+#include <Ecore_Getopt.h>
 #include <Eina.h>
 #include <Elementary.h>
 #include <Evas.h>
@@ -43,6 +44,7 @@ static char *evas_engine_name = NULL;
 static Eina_Bool encoding_detector_enabled = EINA_FALSE;
 static Eina_Bool frame_flattening_enabled = EINA_FALSE;
 static Eina_Bool local_storage_enabled = EINA_TRUE;
+static Eina_Bool fullscreen_enabled = EINA_FALSE;
 static int window_width = 800;
 static int window_height = 600;
 /* Default value of device_pixel_ratio is '0' so that we don't set custom device
@@ -131,6 +133,8 @@ static const Ecore_Getopt options = {
             ('f', "flattening", "frame flattening.", EINA_FALSE),
         ECORE_GETOPT_STORE_DEF_BOOL
             ('l', "local-storage", "HTML5 local storage support (enabled by default).", EINA_TRUE),
+        ECORE_GETOPT_STORE_DEF_BOOL
+            ('F', "full-screen", "start in full-screen.", EINA_FALSE),
         ECORE_GETOPT_VERSION
             ('V', "version"),
         ECORE_GETOPT_COPYRIGHT
@@ -141,7 +145,7 @@ static const Ecore_Getopt options = {
     }
 };
 
-static Browser_Window *window_create(Evas_Object* opener, const char *url, int width, int height);
+static Browser_Window *window_create(Evas_Object* opener, const char *url, int width, int height, Eina_Bool view_mode);
 
 static Browser_Window *window_find_with_elm_window(Evas_Object *elm_window)
 {
@@ -290,16 +294,23 @@ on_key_down(void *user_data, Evas *e, Evas_Object *ewk_view, void *event_info)
     } else if (!strcmp(ev->key, "F6")) {
         info("Stop (F6) was pressed, stop loading.\n");
         ewk_view_stop(ewk_view);
-    } else if  (!strcmp(ev->key, "F7")) {
+    } else if (!strcmp(ev->key, "F7")) {
         Ewk_Pagination_Mode mode =  ewk_view_pagination_mode_get(ewk_view);
         mode = (++mode) % (EWK_PAGINATION_MODE_BOTTOM_TO_TOP + 1);
         if (ewk_view_pagination_mode_set(ewk_view, mode))
             info("Change Pagination Mode (F7) was pressed, changed to: %d\n", mode);
         else
             info("Change Pagination Mode (F7) was pressed, but NOT changed!");
+    } else if (!strcmp(ev->key, "F8")) {
+        info("Create souce code window (F8) was pressed.\n");
+        Browser_Window *window = window_create(ewk_view, ewk_view_url_get(ewk_view), 0, 0, EINA_TRUE);
+        windows = eina_list_append(windows, window);
+    } else if (!strcmp(ev->key, "F11")) {
+        info("Fullscreen (F11) was pressed, toggling window/fullscreen.\n");
+        elm_win_fullscreen_set(window->elm_window, !elm_win_fullscreen_get(window->elm_window));
     } else if (!strcmp(ev->key, "n") && ctrlPressed) {
         info("Create new window (Ctrl+n) was pressed.\n");
-        Browser_Window *window = window_create(0, DEFAULT_URL, 0, 0);
+        Browser_Window *window = window_create(NULL, DEFAULT_URL, 0, 0, EINA_FALSE);
         // 0 equals default width and height.
         windows = eina_list_append(windows, window);
     } else if (!strcmp(ev->key, "i") && ctrlPressed) {
@@ -528,12 +539,8 @@ on_download_failed(void *user_data, Evas_Object *ewk_view, void *event_info)
 }
 
 static void
-on_favicon_received(const char *page_url, Evas_Object *icon, void *event_info)
+update_view_favicon(Browser_Window *window, Evas_Object *icon)
 {
-    Browser_Window *window = (Browser_Window *)event_info;
-    if (strcmp(page_url, ewk_view_url_get(window->ewk_view)))
-        return;
-
     /* Remove previous icon from URL bar */
     Evas_Object *old_icon = elm_object_part_content_unset(window->url_bar, "icon");
     if (old_icon) {
@@ -554,16 +561,15 @@ on_favicon_received(const char *page_url, Evas_Object *icon, void *event_info)
 }
 
 static void
-on_view_icon_changed(void *user_data, Evas_Object *ewk_view, void *event_info)
+on_view_favicon_changed(void *user_data, Evas_Object *ewk_view, void *event_info)
 {
     Browser_Window *window = (Browser_Window *)user_data;
-    /* Retrieve the view's favicon */
-    Ewk_Context *context = ewk_view_context_get(ewk_view);
-    Ewk_Favicon_Database *icon_database = ewk_context_favicon_database_get(context);
 
-    const char *page_url = ewk_view_url_get(ewk_view);
-    Evas *evas = evas_object_evas_get(ewk_view);
-    ewk_favicon_database_async_icon_get(icon_database, page_url, evas, on_favicon_received, window);
+    Evas_Object* favicon = ewk_view_favicon_get(ewk_view);
+    update_view_favicon(window, favicon);
+
+    if (favicon)
+        evas_object_unref(favicon);
 }
 
 static int
@@ -879,7 +885,7 @@ on_window_create(Ewk_View_Smart_Data *smartData, const char *url, const Ewk_Wind
     if (!height)
         height = window_height;
 
-    Browser_Window *window = window_create(smartData->self, url, width, height);
+    Browser_Window *window = window_create(smartData->self, url, width, height, EINA_FALSE);
     Evas_Object *new_view = window->ewk_view;
 
     windows = eina_list_append(windows, window);
@@ -1074,7 +1080,7 @@ create_toolbar_button(Evas_Object *elm_window, const char *icon_name)
     return button;
 }
 
-static Browser_Window *window_create(Evas_Object *opener, const char *url, int width, int height)
+static Browser_Window *window_create(Evas_Object *opener, const char *url, int width, int height, Eina_Bool view_mode)
 {
     Browser_Window *window = malloc(sizeof(Browser_Window));
     if (!window) {
@@ -1187,6 +1193,7 @@ static Browser_Window *window_create(Evas_Object *opener, const char *url, int w
     ewk_view_theme_set(window->ewk_view, THEME_DIR "/default.edj");
     if (device_pixel_ratio)
         ewk_view_device_pixel_ratio_set(window->ewk_view, (float)device_pixel_ratio);
+    ewk_view_source_mode_set(window->ewk_view, view_mode);
 
     /* Set the zoom level to default */
     window->current_zoom_level = DEFAULT_ZOOM_LEVEL;
@@ -1197,6 +1204,7 @@ static Browser_Window *window_create(Evas_Object *opener, const char *url, int w
     ewk_settings_frame_flattening_enabled_set(settings, frame_flattening_enabled);
     ewk_settings_local_storage_enabled_set(settings, local_storage_enabled);
     info("HTML5 local storage is %s for this view.\n", local_storage_enabled ? "enabled" : "disabled");
+    elm_win_fullscreen_set(window->elm_window, fullscreen_enabled);
     ewk_settings_developer_extras_enabled_set(settings, EINA_TRUE);
     ewk_settings_preferred_minimum_contents_width_set(settings, 0);
 
@@ -1205,7 +1213,7 @@ static Browser_Window *window_create(Evas_Object *opener, const char *url, int w
     evas_object_smart_callback_add(window->ewk_view, "download,finished", on_download_finished, window);
     evas_object_smart_callback_add(window->ewk_view, "download,request", on_download_request, window);
     evas_object_smart_callback_add(window->ewk_view, "file,chooser,request", on_file_chooser_request, window);
-    evas_object_smart_callback_add(window->ewk_view, "icon,changed", on_view_icon_changed, window);
+    evas_object_smart_callback_add(window->ewk_view, "favicon,changed", on_view_favicon_changed, window);
     evas_object_smart_callback_add(window->ewk_view, "load,error", on_error, window);
     evas_object_smart_callback_add(window->ewk_view, "load,progress", on_progress, window);
     evas_object_smart_callback_add(window->ewk_view, "title,changed", on_title_changed, window);
@@ -1222,7 +1230,7 @@ static Browser_Window *window_create(Evas_Object *opener, const char *url, int w
     elm_box_pack_end(vertical_layout, window->ewk_view);
     evas_object_show(window->ewk_view);
 
-    if (url)
+    if (url && strcmp(url, "about:blank")) // Do not reset 'about:blank' as it would erase all previous document modifications.
         ewk_view_url_set(window->ewk_view, url);
 
     evas_object_resize(window->elm_window, width ? width : window_width, height ? height : window_height);
@@ -1279,6 +1287,7 @@ elm_main(int argc, char *argv[])
         ECORE_GETOPT_VALUE_BOOL(encoding_detector_enabled),
         ECORE_GETOPT_VALUE_BOOL(frame_flattening_enabled),
         ECORE_GETOPT_VALUE_BOOL(local_storage_enabled),
+        ECORE_GETOPT_VALUE_BOOL(fullscreen_enabled),
         ECORE_GETOPT_VALUE_BOOL(quitOption),
         ECORE_GETOPT_VALUE_BOOL(quitOption),
         ECORE_GETOPT_VALUE_BOOL(quitOption),
@@ -1317,10 +1326,10 @@ elm_main(int argc, char *argv[])
 
     if (args < argc) {
         char *url = url_from_user_input(argv[args]);
-        window = window_create(0, url, 0, 0);
+        window = window_create(NULL, url, 0, 0, EINA_FALSE);
         free(url);
     } else
-        window = window_create(0, DEFAULT_URL, 0, 0);
+        window = window_create(NULL, DEFAULT_URL, 0, 0, EINA_FALSE);
 
     if (!window)
         return quit(EINA_FALSE, "ERROR: could not create browser window.\n");
@@ -1332,3 +1341,4 @@ elm_main(int argc, char *argv[])
     return quit(EINA_TRUE, NULL);
 }
 ELM_MAIN()
+

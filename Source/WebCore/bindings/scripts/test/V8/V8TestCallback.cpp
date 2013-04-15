@@ -19,9 +19,8 @@
 */
 
 #include "config.h"
-#include "V8TestCallback.h"
-
 #if ENABLE(SQL_DATABASE)
+#include "V8TestCallback.h"
 
 #include "ScriptExecutionContext.h"
 #include "V8Binding.h"
@@ -85,7 +84,7 @@ bool V8TestCallback::callbackWithClass1Param(Class1* class1Param)
 
     v8::Context::Scope scope(v8Context);
 
-    v8::Handle<v8::Value> class1ParamHandle = toV8(class1Param);
+    v8::Handle<v8::Value> class1ParamHandle = toV8(class1Param, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (class1ParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -113,13 +112,13 @@ bool V8TestCallback::callbackWithClass2Param(Class2* class2Param, const String& 
 
     v8::Context::Scope scope(v8Context);
 
-    v8::Handle<v8::Value> class2ParamHandle = toV8(class2Param);
+    v8::Handle<v8::Value> class2ParamHandle = toV8(class2Param, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (class2ParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
         return true;
     }
-    v8::Handle<v8::Value> strArgHandle = deprecatedV8String(strArg);
+    v8::Handle<v8::Value> strArgHandle = v8String(strArg, v8Context->GetIsolate());
     if (strArgHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -148,7 +147,7 @@ bool V8TestCallback::callbackWithStringList(RefPtr<DOMStringList> listParam)
 
     v8::Context::Scope scope(v8Context);
 
-    v8::Handle<v8::Value> listParamHandle = toV8(listParam);
+    v8::Handle<v8::Value> listParamHandle = toV8(listParam, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (listParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -176,7 +175,7 @@ bool V8TestCallback::callbackWithBoolean(bool boolParam)
 
     v8::Context::Scope scope(v8Context);
 
-    v8::Handle<v8::Value> boolParamHandle = v8Boolean(boolParam);
+    v8::Handle<v8::Value> boolParamHandle = v8Boolean(boolParam, v8Context->GetIsolate());
     if (boolParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -206,13 +205,13 @@ bool V8TestCallback::callbackRequiresThisToPass(Class8* class8Param, ThisClass* 
 
     v8::Context::Scope scope(v8Context);
 
-    v8::Handle<v8::Value> class8ParamHandle = toV8(class8Param);
+    v8::Handle<v8::Value> class8ParamHandle = toV8(class8Param, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (class8ParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
         return true;
     }
-    v8::Handle<v8::Value> thisClassParamHandle = toV8(thisClassParam);
+    v8::Handle<v8::Value> thisClassParamHandle = toV8(thisClassParam, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (thisClassParamHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();

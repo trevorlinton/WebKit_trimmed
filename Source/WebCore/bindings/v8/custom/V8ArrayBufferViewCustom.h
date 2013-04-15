@@ -55,8 +55,7 @@ v8::Handle<v8::Value> wrapArrayBufferView(const v8::Arguments& args, WrapperType
     if (hasIndexer)
         args.Holder()->SetIndexedPropertiesToExternalArrayData(array.get()->baseAddress(), arrayType, array.get()->length());
     v8::Handle<v8::Object> wrapper = args.Holder();
-    v8::Persistent<v8::Object> wrapperHandle = V8DOMWrapper::associateObjectWithWrapper(array.release(), type, wrapper);
-    wrapperHandle.MarkIndependent();
+    V8DOMWrapper::associateObjectWithWrapper(array.release(), type, wrapper, args.GetIsolate(), WrapperConfiguration::Independent);
     return wrapper;
 }
 
@@ -139,12 +138,12 @@ v8::Handle<v8::Value> constructWebGLArray(const v8::Arguments& args, WrapperType
     }
 
     // See whether the first argument is a ArrayBuffer.
-    if (V8ArrayBuffer::HasInstance(args[0]))
+    if (V8ArrayBuffer::HasInstance(args[0], args.GetIsolate()))
       return constructWebGLArrayWithArrayBufferArgument<ArrayClass, ElementType>(args, type, arrayType, true);
 
     // See whether the first argument is the same type as impl. In that case,
     // we can simply memcpy data from source to impl.
-    if (JavaScriptWrapperArrayType::HasInstance(args[0])) {
+    if (JavaScriptWrapperArrayType::HasInstance(args[0], args.GetIsolate())) {
         ArrayClass* source = JavaScriptWrapperArrayType::toNative(args[0]->ToObject());
         uint32_t length = source->length();
 
@@ -171,7 +170,12 @@ v8::Handle<v8::Value> constructWebGLArray(const v8::Arguments& args, WrapperType
         srcArray = args[0]->ToObject();
         if (srcArray.IsEmpty())
             return throwTypeError("Could not convert argument 0 to an array", args.GetIsolate());
-        len = toUInt32(srcArray->Get(v8::String::NewSymbol("length")));
+        v8::Local<v8::Value> val = srcArray->Get(v8::String::NewSymbol("length"));
+        if (val.IsEmpty()) {
+            // Exception thrown during fetch of length property.
+            return v8Undefined();
+        }
+        len = toUInt32(val);
         doInstantiation = true;
     } else {
         bool ok = false;
@@ -208,14 +212,19 @@ v8::Handle<v8::Value> constructWebGLArray(const v8::Arguments& args, WrapperType
     if (!srcArray.IsEmpty()) {
         bool copied = copyElements(args.Holder(), srcArray, len, 0, args.GetIsolate());
         if (!copied) {
-            for (unsigned i = 0; i < len; i++)
-                array->set(i, srcArray->Get(i)->NumberValue());
+            for (unsigned i = 0; i < len; i++) {
+                v8::Local<v8::Value> val = srcArray->Get(i);
+                if (val.IsEmpty()) {
+                    // Exception thrown during fetch.
+                    return v8Undefined();
+                }
+                array->set(i, val->NumberValue());
+            }
         }
     }
 
     v8::Handle<v8::Object> wrapper = args.Holder();
-    v8::Persistent<v8::Object> wrapperHandle = V8DOMWrapper::associateObjectWithWrapper(array.release(), type, wrapper);
-    wrapperHandle.MarkIndependent();
+    V8DOMWrapper::associateObjectWithWrapper(array.release(), type, wrapper, args.GetIsolate(), WrapperConfiguration::Independent);
     return wrapper;
 }
 
@@ -227,7 +236,7 @@ v8::Handle<v8::Value> setWebGLArrayHelper(const v8::Arguments& args)
 
     CPlusPlusArrayType* impl = JavaScriptWrapperArrayType::toNative(args.Holder());
 
-    if (JavaScriptWrapperArrayType::HasInstance(args[0])) {
+    if (JavaScriptWrapperArrayType::HasInstance(args[0], args.GetIsolate())) {
         // void set(in WebGL<T>Array array, [Optional] in unsigned long offset);
         CPlusPlusArrayType* src = JavaScriptWrapperArrayType::toNative(args[0]->ToObject());
         uint32_t offset = 0;

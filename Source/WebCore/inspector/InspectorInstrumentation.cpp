@@ -56,6 +56,7 @@
 #include "InspectorDOMAgent.h"
 #include "InspectorDOMStorageAgent.h"
 #include "InspectorDebuggerAgent.h"
+#include "InspectorHeapProfilerAgent.h"
 #include "InspectorLayerTreeAgent.h"
 #include "InspectorPageAgent.h"
 #include "InspectorProfilerAgent.h"
@@ -77,6 +78,10 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/CString.h>
 
+#if PLATFORM(CHROMIUM)
+#include "platform/chromium/TraceEvent.h"
+#endif
+
 namespace WebCore {
 
 static const char* const requestAnimationFrameEventName = "requestAnimationFrame";
@@ -92,7 +97,7 @@ static HashSet<InstrumentingAgents*>* instrumentingAgentsSet = 0;
 
 int InspectorInstrumentation::s_frontendCounter = 0;
 
-static bool eventHasListeners(const AtomicString& eventType, DOMWindow* window, Node* node, const Vector<EventContext>& ancestors)
+static bool eventHasListeners(const AtomicString& eventType, DOMWindow* window, Node* node, const EventPath& eventPath)
 {
     if (window && window->hasEventListeners(eventType))
         return true;
@@ -100,9 +105,8 @@ static bool eventHasListeners(const AtomicString& eventType, DOMWindow* window, 
     if (node->hasEventListeners(eventType))
         return true;
 
-    for (size_t i = 0; i < ancestors.size(); i++) {
-        Node* ancestor = ancestors[i].node();
-        if (ancestor->hasEventListeners(eventType))
+    for (size_t i = 0; i < eventPath.size(); i++) {
+        if (eventPath[i]->node()->hasEventListeners(eventType))
             return true;
     }
 
@@ -115,6 +119,37 @@ static Frame* frameForScriptExecutionContext(ScriptExecutionContext* context)
     if (context->isDocument())
         frame = static_cast<Document*>(context)->frame();
     return frame;
+}
+
+InspectorInstrumentationCookie::InspectorInstrumentationCookie()
+    : m_instrumentingAgents(0)
+    , m_timelineAgentId(0)
+{
+}
+
+InspectorInstrumentationCookie::InspectorInstrumentationCookie(InstrumentingAgents* agents, int timelineAgentId)
+    : m_instrumentingAgents(agents)
+    , m_timelineAgentId(timelineAgentId)
+{
+}
+
+InspectorInstrumentationCookie::InspectorInstrumentationCookie(const InspectorInstrumentationCookie& other)
+    : m_instrumentingAgents(other.m_instrumentingAgents)
+    , m_timelineAgentId(other.m_timelineAgentId)
+{
+}
+
+InspectorInstrumentationCookie& InspectorInstrumentationCookie::operator=(const InspectorInstrumentationCookie& other)
+{
+    if (this != &other) {
+        m_instrumentingAgents = other.m_instrumentingAgents;
+        m_timelineAgentId = other.m_timelineAgentId;
+    }
+    return *this;
+}
+
+InspectorInstrumentationCookie::~InspectorInstrumentationCookie()
+{
 }
 
 void InspectorInstrumentation::didClearWindowObjectInWorldImpl(InstrumentingAgents* instrumentingAgents, Frame* frame, DOMWrapperWorld* world)
@@ -357,11 +392,11 @@ void InspectorInstrumentation::didDispatchXHRReadyStateChangeEventImpl(const Ins
         timelineAgent->didDispatchXHRReadyStateChangeEvent();
 }
 
-InspectorInstrumentationCookie InspectorInstrumentation::willDispatchEventImpl(InstrumentingAgents* instrumentingAgents, const Event& event, DOMWindow* window, Node* node, const Vector<EventContext>& ancestors, Document* document)
+InspectorInstrumentationCookie InspectorInstrumentation::willDispatchEventImpl(InstrumentingAgents* instrumentingAgents, const Event& event, DOMWindow* window, Node* node, const EventPath& eventPath, Document* document)
 {
     int timelineAgentId = 0;
     InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent();
-    if (timelineAgent && eventHasListeners(event.type(), window, node, ancestors)) {
+    if (timelineAgent && eventHasListeners(event.type(), window, node, eventPath)) {
         timelineAgent->willDispatchEvent(event, document->frame());
         timelineAgentId = timelineAgent->id();
     }
@@ -376,7 +411,7 @@ InspectorInstrumentationCookie InspectorInstrumentation::willHandleEventImpl(Ins
 
 void InspectorInstrumentation::didHandleEventImpl(const InspectorInstrumentationCookie& cookie)
 {
-    cancelPauseOnNativeEvent(cookie.first);
+    cancelPauseOnNativeEvent(cookie.instrumentingAgents());
 }
 
 void InspectorInstrumentation::didDispatchEventImpl(const InspectorInstrumentationCookie& cookie)
@@ -418,6 +453,12 @@ void InspectorInstrumentation::didEvaluateScriptImpl(const InspectorInstrumentat
         timelineAgent->didEvaluateScript();
 }
 
+void InspectorInstrumentation::scriptsEnabledImpl(InstrumentingAgents* instrumentingAgents, bool isEnabled)
+{
+    if (InspectorPageAgent* pageAgent = instrumentingAgents->inspectorPageAgent())
+        pageAgent->scriptsEnabled(isEnabled);
+}
+
 void InspectorInstrumentation::didCreateIsolatedContextImpl(InstrumentingAgents* instrumentingAgents, Frame* frame, ScriptState* scriptState, SecurityOrigin* origin)
 {
     if (PageRuntimeAgent* runtimeAgent = instrumentingAgents->pageRuntimeAgent())
@@ -438,22 +479,10 @@ InspectorInstrumentationCookie InspectorInstrumentation::willFireTimerImpl(Instr
 
 void InspectorInstrumentation::didFireTimerImpl(const InspectorInstrumentationCookie& cookie)
 {
-    cancelPauseOnNativeEvent(cookie.first);
+    cancelPauseOnNativeEvent(cookie.instrumentingAgents());
 
     if (InspectorTimelineAgent* timelineAgent = retrieveTimelineAgent(cookie))
         timelineAgent->didFireTimer();
-}
-
-void InspectorInstrumentation::didBeginFrameImpl(InstrumentingAgents* instrumentingAgents)
-{
-    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didBeginFrame();
-}
-
-void InspectorInstrumentation::didCancelFrameImpl(InstrumentingAgents* instrumentingAgents)
-{
-    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didCancelFrame();
 }
 
 void InspectorInstrumentation::didInvalidateLayoutImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
@@ -474,13 +503,10 @@ InspectorInstrumentationCookie InspectorInstrumentation::willLayoutImpl(Instrume
 
 void InspectorInstrumentation::didLayoutImpl(const InspectorInstrumentationCookie& cookie, RenderObject* root)
 {
-    if (!cookie.first)
-        return;
-
     if (InspectorTimelineAgent* timelineAgent = retrieveTimelineAgent(cookie))
         timelineAgent->didLayout(root);
 
-    if (InspectorPageAgent* pageAgent = cookie.first->inspectorPageAgent())
+    if (InspectorPageAgent* pageAgent = cookie.instrumentingAgents()->inspectorPageAgent())
         pageAgent->didLayout();
 }
 
@@ -503,6 +529,10 @@ void InspectorInstrumentation::didDispatchXHRLoadEventImpl(const InspectorInstru
 
 InspectorInstrumentationCookie InspectorInstrumentation::willPaintImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
 {
+#if PLATFORM(CHROMIUM)
+    TRACE_EVENT_INSTANT1("instrumentation", InstrumentationEvents::Paint, InstrumentationEventArguments::PageId, frame ? reinterpret_cast<unsigned long long>(frame->page()) : 0);
+#endif
+
     int timelineAgentId = 0;
     if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent()) {
         timelineAgent->willPaint(frame);
@@ -515,7 +545,7 @@ void InspectorInstrumentation::didPaintImpl(const InspectorInstrumentationCookie
 {
     if (InspectorTimelineAgent* timelineAgent = retrieveTimelineAgent(cookie))
         timelineAgent->didPaint(rect);
-    if (InspectorPageAgent* pageAgent = cookie.first ? cookie.first->inspectorPageAgent() : 0)
+    if (InspectorPageAgent* pageAgent = cookie.instrumentingAgents()->inspectorPageAgent())
         pageAgent->didPaint(context, rect);
 }
 
@@ -529,18 +559,6 @@ void InspectorInstrumentation::didScrollLayerImpl(InstrumentingAgents* instrumen
 {
     if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
         timelineAgent->didScroll();
-}
-
-void InspectorInstrumentation::willCompositeImpl(InstrumentingAgents* instrumentingAgents)
-{
-    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->willComposite();
-}
-
-void InspectorInstrumentation::didCompositeImpl(InstrumentingAgents* instrumentingAgents)
-{
-    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didComposite();
 }
 
 InspectorInstrumentationCookie InspectorInstrumentation::willRecalculateStyleImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
@@ -559,9 +577,7 @@ void InspectorInstrumentation::didRecalculateStyleImpl(const InspectorInstrument
 {
     if (InspectorTimelineAgent* timelineAgent = retrieveTimelineAgent(cookie))
         timelineAgent->didRecalculateStyle();
-    InstrumentingAgents* instrumentingAgents = cookie.first;
-    if (!instrumentingAgents)
-        return;
+    InstrumentingAgents* instrumentingAgents = cookie.instrumentingAgents();
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->didRecalculateStyle();
     if (InspectorPageAgent* pageAgent = instrumentingAgents->inspectorPageAgent())
@@ -589,7 +605,7 @@ InspectorInstrumentationCookie InspectorInstrumentation::willMatchRuleImpl(Instr
 
 void InspectorInstrumentation::didMatchRuleImpl(const InspectorInstrumentationCookie& cookie, bool matched)
 {
-    InspectorCSSAgent* cssAgent = cookie.first->inspectorCSSAgent();
+    InspectorCSSAgent* cssAgent = cookie.instrumentingAgents()->inspectorCSSAgent();
     if (cssAgent)
         cssAgent->didMatchRule(matched);
 }
@@ -607,7 +623,7 @@ InspectorInstrumentationCookie InspectorInstrumentation::willProcessRuleImpl(Ins
 
 void InspectorInstrumentation::didProcessRuleImpl(const InspectorInstrumentationCookie& cookie)
 {
-    InspectorCSSAgent* cssAgent = cookie.first->inspectorCSSAgent();
+    InspectorCSSAgent* cssAgent = cookie.instrumentingAgents()->inspectorCSSAgent();
     if (cssAgent)
         cssAgent->didProcessRule();
 }
@@ -717,9 +733,7 @@ void InspectorInstrumentation::didReceiveResourceResponseImpl(const InspectorIns
         timelineAgent->didReceiveResourceResponse();
     if (!loader)
         return;
-    InstrumentingAgents* instrumentingAgents = cookie.first;
-    if (!instrumentingAgents)
-        return;
+    InstrumentingAgents* instrumentingAgents = cookie.instrumentingAgents();
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->didReceiveResponse(identifier, loader, response, resourceLoader);
     if (InspectorConsoleAgent* consoleAgent = instrumentingAgents->inspectorConsoleAgent())
@@ -880,6 +894,8 @@ void InspectorInstrumentation::loadEventFiredImpl(InstrumentingAgents* instrumen
 
 void InspectorInstrumentation::frameDetachedFromParentImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
 {
+    if (InspectorCanvasAgent* canvasAgent = instrumentingAgents->inspectorCanvasAgent())
+        canvasAgent->frameDetached(frame);
     if (InspectorPageAgent* pageAgent = instrumentingAgents->inspectorPageAgent())
         pageAgent->frameDetached(frame);
 }
@@ -900,6 +916,8 @@ void InspectorInstrumentation::didCommitLoadImpl(InstrumentingAgents* instrument
 #if ENABLE(JAVASCRIPT_DEBUGGER) && USE(JSC)
         if (InspectorProfilerAgent* profilerAgent = instrumentingAgents->inspectorProfilerAgent())
             profilerAgent->resetState();
+        if (InspectorHeapProfilerAgent* heapProfilerAgent = instrumentingAgents->inspectorHeapProfilerAgent())
+            heapProfilerAgent->resetState();
 #endif
         if (InspectorCSSAgent* cssAgent = instrumentingAgents->inspectorCSSAgent())
             cssAgent->reset();
@@ -907,18 +925,16 @@ void InspectorInstrumentation::didCommitLoadImpl(InstrumentingAgents* instrument
         if (InspectorDatabaseAgent* databaseAgent = instrumentingAgents->inspectorDatabaseAgent())
             databaseAgent->clearResources();
 #endif
-        if (InspectorDOMStorageAgent* domStorageAgent = instrumentingAgents->inspectorDOMStorageAgent())
-            domStorageAgent->clearResources();
         if (InspectorDOMAgent* domAgent = instrumentingAgents->inspectorDOMAgent())
             domAgent->setDocument(mainFrame->document());
 #if USE(ACCELERATED_COMPOSITING)
         if (InspectorLayerTreeAgent* layerTreeAgent = instrumentingAgents->inspectorLayerTreeAgent())
             layerTreeAgent->reset();
 #endif
-        if (InspectorCanvasAgent* canvasAgent = instrumentingAgents->inspectorCanvasAgent())
-            canvasAgent->reset();
         inspectorAgent->didCommitLoad();
     }
+    if (InspectorCanvasAgent* canvasAgent = instrumentingAgents->inspectorCanvasAgent())
+        canvasAgent->frameNavigated(loader->frame());
     if (InspectorPageAgent* pageAgent = instrumentingAgents->inspectorPageAgent())
         pageAgent->frameNavigated(loader);
 }
@@ -927,6 +943,43 @@ void InspectorInstrumentation::loaderDetachedFromFrameImpl(InstrumentingAgents* 
 {
     if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
         inspectorPageAgent->loaderDetachedFromFrame(loader);
+}
+
+void InspectorInstrumentation::frameStartedLoadingImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
+{
+    if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
+        inspectorPageAgent->frameStartedLoading(frame);
+}
+
+void InspectorInstrumentation::frameStoppedLoadingImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
+{
+    if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
+        inspectorPageAgent->frameStoppedLoading(frame);
+}
+
+void InspectorInstrumentation::frameScheduledNavigationImpl(InstrumentingAgents* instrumentingAgents, Frame* frame, double delay)
+{
+    if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
+        inspectorPageAgent->frameScheduledNavigation(frame, delay);
+}
+
+void InspectorInstrumentation::frameClearedScheduledNavigationImpl(InstrumentingAgents* instrumentingAgents, Frame* frame)
+{
+    if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
+        inspectorPageAgent->frameClearedScheduledNavigation(frame);
+}
+
+InspectorInstrumentationCookie InspectorInstrumentation::willRunJavaScriptDialogImpl(InstrumentingAgents* instrumentingAgents, const String& message)
+{
+    if (InspectorPageAgent* inspectorPageAgent = instrumentingAgents->inspectorPageAgent())
+        inspectorPageAgent->willRunJavaScriptDialog(message);
+    return InspectorInstrumentationCookie(instrumentingAgents, 0);
+}
+
+void InspectorInstrumentation::didRunJavaScriptDialogImpl(const InspectorInstrumentationCookie& cookie)
+{
+    if (InspectorPageAgent* inspectorPageAgent = cookie.instrumentingAgents()->inspectorPageAgent())
+        inspectorPageAgent->didRunJavaScriptDialog();
 }
 
 void InspectorInstrumentation::willDestroyCachedResourceImpl(CachedResource* cachedResource)
@@ -1056,15 +1109,6 @@ void InspectorInstrumentation::didOpenDatabaseImpl(InstrumentingAgents* instrume
 }
 #endif
 
-void InspectorInstrumentation::didUseDOMStorageImpl(InstrumentingAgents* instrumentingAgents, StorageArea* storageArea, bool isLocalStorage, Frame* frame)
-{
-    InspectorAgent* inspectorAgent = instrumentingAgents->inspectorAgent();
-    if (!inspectorAgent || !inspectorAgent->developerExtrasEnabled())
-        return;
-    if (InspectorDOMStorageAgent* domStorageAgent = instrumentingAgents->inspectorDOMStorageAgent())
-        domStorageAgent->didUseDOMStorage(storageArea, isLocalStorage, frame);
-}
-
 void InspectorInstrumentation::didDispatchDOMStorageEventImpl(InstrumentingAgents* instrumentingAgents, const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin, Page* page)
 {
     if (InspectorDOMStorageAgent* domStorageAgent = instrumentingAgents->inspectorDOMStorageAgent())
@@ -1106,32 +1150,41 @@ void InspectorInstrumentation::workerContextTerminatedImpl(InstrumentingAgents* 
 #endif
 
 #if ENABLE(WEB_SOCKETS)
-void InspectorInstrumentation::didCreateWebSocketImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const KURL& requestURL, const KURL&)
+void InspectorInstrumentation::didCreateWebSocketImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const KURL& requestURL, const KURL&, const String& protocol, Document* document)
 {
     InspectorAgent* inspectorAgent = instrumentingAgents->inspectorAgent();
     if (!inspectorAgent || !inspectorAgent->developerExtrasEnabled())
         return;
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->didCreateWebSocket(identifier, requestURL);
+    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
+        timelineAgent->didCreateWebSocket(identifier, requestURL, protocol, document->frame());
 }
 
-void InspectorInstrumentation::willSendWebSocketHandshakeRequestImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const WebSocketHandshakeRequest& request)
+void InspectorInstrumentation::willSendWebSocketHandshakeRequestImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const WebSocketHandshakeRequest& request, Document* document)
 {
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->willSendWebSocketHandshakeRequest(identifier, request);
+    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
+        timelineAgent->willSendWebSocketHandshakeRequest(identifier, document->frame());
 }
 
-void InspectorInstrumentation::didReceiveWebSocketHandshakeResponseImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const WebSocketHandshakeResponse& response)
+void InspectorInstrumentation::didReceiveWebSocketHandshakeResponseImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const WebSocketHandshakeResponse& response, Document* document)
 {
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->didReceiveWebSocketHandshakeResponse(identifier, response);
+    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
+        timelineAgent->didReceiveWebSocketHandshakeResponse(identifier, document->frame());
 }
 
-void InspectorInstrumentation::didCloseWebSocketImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier)
+void InspectorInstrumentation::didCloseWebSocketImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, Document* document)
 {
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
         resourceAgent->didCloseWebSocket(identifier);
+    if (InspectorTimelineAgent* timelineAgent = instrumentingAgents->inspectorTimelineAgent())
+        timelineAgent->didDestroyWebSocket(identifier, document->frame());
 }
+
 void InspectorInstrumentation::didReceiveWebSocketFrameImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, const WebSocketFrame& frame)
 {
     if (InspectorResourceAgent* resourceAgent = instrumentingAgents->inspectorResourceAgent())
@@ -1257,10 +1310,10 @@ void InspectorInstrumentation::unregisterInstrumentingAgents(InstrumentingAgents
 
 InspectorTimelineAgent* InspectorInstrumentation::retrieveTimelineAgent(const InspectorInstrumentationCookie& cookie)
 {
-    if (!cookie.first)
+    if (!cookie.instrumentingAgents())
         return 0;
-    InspectorTimelineAgent* timelineAgent = cookie.first->inspectorTimelineAgent();
-    if (timelineAgent && timelineAgent->id() == cookie.second)
+    InspectorTimelineAgent* timelineAgent = cookie.instrumentingAgents()->inspectorTimelineAgent();
+    if (timelineAgent && cookie.hasMatchingTimelineAgentId(timelineAgent->id()))
         return timelineAgent;
     return 0;
 }
@@ -1317,6 +1370,19 @@ void InspectorInstrumentation::renderLayerDestroyedImpl(InstrumentingAgents* ins
         layerTreeAgent->renderLayerDestroyed(renderLayer);
 }
 #endif
+
+namespace InstrumentationEvents {
+const char PaintLayer[] = "PaintLayer";
+const char RasterTask[] = "RasterTask";
+const char Paint[] = "Paint";
+const char Layer[] = "Layer";
+const char BeginFrame[] = "BeginFrame";
+};
+
+namespace InstrumentationEventArguments {
+const char LayerId[] = "layerId";
+const char PageId[] = "pageId";
+};
 
 } // namespace WebCore
 

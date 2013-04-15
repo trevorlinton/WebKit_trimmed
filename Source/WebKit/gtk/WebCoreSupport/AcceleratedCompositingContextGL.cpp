@@ -26,6 +26,7 @@
 #include "ChromeClientGtk.h"
 #include "Frame.h"
 #include "FrameView.h"
+#include "GraphicsLayerTextureMapper.h"
 #include "PlatformContextCairo.h"
 #include "Settings.h"
 #include "TextureMapperGL.h"
@@ -188,6 +189,7 @@ void AcceleratedCompositingContext::compositeLayersToContext(CompositePurpose pu
 
     m_textureMapper->beginPainting();
     toTextureMapperLayer(m_rootLayer.get())->paint();
+    m_fpsCounter.updateFPSAndDisplay(m_textureMapper.get());
     m_textureMapper->endPainting();
 
     context->swapBuffers();

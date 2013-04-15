@@ -116,7 +116,6 @@
 #import <WebCore/BackForwardListImpl.h>
 #import <WebCore/MemoryCache.h>
 #import <WebCore/ColorMac.h>
-#import <WebCore/CSSComputedStyleDeclaration.h>
 #import <WebCore/Cursor.h>
 #import <WebCore/DatabaseManager.h>
 #import <WebCore/Document.h>
@@ -170,6 +169,7 @@
 #import <WebCore/SecurityOrigin.h>
 #import <WebCore/SecurityPolicy.h>
 #import <WebCore/Settings.h>
+#import <WebCore/StylePropertySet.h>
 #import <WebCore/SystemVersionMac.h>
 #import <WebCore/TextResourceDecoder.h>
 #import <WebCore/ThreadCheck.h>
@@ -188,7 +188,7 @@
 #import <runtime/DateInstance.h>
 #import <runtime/InitializeThreading.h>
 #import <runtime/JSLock.h>
-#import <runtime/JSValue.h>
+#import <runtime/JSCJSValue.h>
 #import <wtf/Assertions.h>
 #import <wtf/HashTraits.h>
 #import <wtf/MainThread.h>
@@ -200,7 +200,7 @@
 #import <WebKit/WebDashboardRegion.h>
 #endif
 
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
 #import <glib.h>
 #endif
 
@@ -409,6 +409,23 @@ WebLayoutMilestones kitLayoutMilestones(LayoutMilestones milestones)
         | (milestones & DidHitRelevantRepaintedObjectsAreaThreshold ? WebDidHitRelevantRepaintedObjectsAreaThreshold : 0);
 }
 
+static PageVisibilityState core(WebPageVisibilityState visibilityState)
+{
+    switch (visibilityState) {
+    case WebPageVisibilityStateVisible:
+        return PageVisibilityStateVisible;
+    case WebPageVisibilityStateHidden:
+        return PageVisibilityStateHidden;
+    case WebPageVisibilityStatePrerender:
+        return PageVisibilityStatePrerender;
+    case WebPageVisibilityStatePreview:
+        return PageVisibilityStatePreview;
+    }
+
+    ASSERT_NOT_REACHED();
+    return PageVisibilityStateVisible;
+}
+
 @interface WebView (WebFileInternal)
 - (float)_deviceScaleFactor;
 - (BOOL)_isLoading;
@@ -417,7 +434,7 @@ WebLayoutMilestones kitLayoutMilestones(LayoutMilestones milestones)
 + (void)_preflightSpellChecker;
 - (BOOL)_continuousCheckingAllowed;
 - (NSResponder *)_responderForResponderOperations;
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
 - (void)_clearGlibLoopObserver;
 #endif
 @end
@@ -793,6 +810,8 @@ static bool shouldRespectPriorityInCSSAttributeSetters()
 
     [self _registerDraggedTypes];
 
+    [self _setVisibilityState:([self _isViewVisible] ? WebPageVisibilityStateVisible : WebPageVisibilityStateHidden) isInitialState:YES];
+
     WebPreferences *prefs = [self preferences];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_preferencesChangedNotification:)
                                                  name:WebPreferencesChangedInternalNotification object:prefs];
@@ -814,7 +833,7 @@ static bool shouldRespectPriorityInCSSAttributeSetters()
     if (!WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITHOUT_CONTENT_SNIFFING_FOR_FILE_URLS))
         ResourceHandle::forceContentSniffing();
 
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
     [self _scheduleGlibContextIterations];
 #endif
 
@@ -1129,7 +1148,7 @@ static bool fastDocumentTeardownEnabled()
     }
 #endif
     
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
     [self _clearGlibLoopObserver];
 #endif
 
@@ -1515,6 +1534,9 @@ static bool needsSelfRetainWhileLoadingQuirk()
     settings->setCSSCustomFilterEnabled([preferences cssCustomFilterEnabled]);
 #endif
     RuntimeEnabledFeatures::setCSSRegionsEnabled([preferences cssRegionsEnabled]);
+#if ENABLE(IFRAME_SEAMLESS)
+    RuntimeEnabledFeatures::setSeamlessIFramesEnabled([preferences seamlessIFramesEnabled]);
+#endif
     settings->setCSSGridLayoutEnabled([preferences cssGridLayoutEnabled]);
 #if ENABLE(FULLSCREEN_API)
     settings->setFullScreenEnabled([preferences fullScreenEnabled]);
@@ -1535,6 +1557,9 @@ static bool needsSelfRetainWhileLoadingQuirk()
 #else
     settings->setAVFoundationEnabled(false);
 #endif
+#endif
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+    settings->setQTKitEnabled([preferences isQTKitEnabled]);
 #endif
     settings->setMediaPlaybackRequiresUserGesture([preferences mediaPlaybackRequiresUserGesture]);
     settings->setMediaPlaybackAllowsInline([preferences mediaPlaybackAllowsInline]);
@@ -1634,6 +1659,9 @@ static inline IMP getMethod(id o, SEL s)
     cache->didPushStateWithinPageForFrameFunc = getMethod(delegate, @selector(webView:didPushStateWithinPageForFrame:));
     cache->didReplaceStateWithinPageForFrameFunc = getMethod(delegate, @selector(webView:didReplaceStateWithinPageForFrame:));
     cache->didPopStateWithinPageForFrameFunc = getMethod(delegate, @selector(webView:didPopStateWithinPageForFrame:));
+#if JSC_OBJC_API_ENABLED
+    cache->didCreateJavaScriptContextForFrameFunc = getMethod(delegate, @selector(webView:didCreateJavaScriptContext:forFrame:));
+#endif
     cache->didClearWindowObjectForFrameFunc = getMethod(delegate, @selector(webView:didClearWindowObject:forFrame:));
     cache->didClearWindowObjectForFrameInScriptWorldFunc = getMethod(delegate, @selector(webView:didClearWindowObjectForFrame:inScriptWorld:));
     cache->didClearInspectorWindowObjectForFrameFunc = getMethod(delegate, @selector(webView:didClearInspectorWindowObject:forFrame:));
@@ -1656,6 +1684,7 @@ static inline IMP getMethod(id o, SEL s)
     cache->didDisplayInsecureContentFunc = getMethod(delegate, @selector(webViewDidDisplayInsecureContent:));
     cache->didRunInsecureContentFunc = getMethod(delegate, @selector(webView:didRunInsecureContent:));
     cache->didDetectXSSFunc = getMethod(delegate, @selector(webView:didDetectXSS:));
+    cache->didRemoveFrameFromHierarchyFunc = getMethod(delegate, @selector(webView:didRemoveFrameFromHierarchy:));
 
     // It would be nice to get rid of this code and transition all clients to using didLayout instead of
     // didFirstLayoutInFrame and didFirstVisuallyNonEmptyLayoutInFrame. In the meantime, this is required
@@ -2599,9 +2628,29 @@ static inline IMP getMethod(id o, SEL s)
     SecurityPolicy::removeOriginAccessWhitelistEntry(*SecurityOrigin::createFromString(sourceOrigin), destinationProtocol, destinationHost, allowDestinationSubdomains);
 }
 
-+(void)_resetOriginAccessWhitelists
++ (void)_resetOriginAccessWhitelists
 {
     SecurityPolicy::resetOriginAccessWhitelists();
+}
+
+- (BOOL)_isViewVisible
+{
+    if (![self window])
+        return false;
+
+    if (![[self window] isVisible])
+        return false;
+
+    if ([self isHiddenOrHasHiddenAncestor])
+        return false;
+
+    return true;
+}
+
+- (void)_updateVisibilityState
+{
+    if (_private && _private->page)
+        [self _setVisibilityState:([self _isViewVisible] ? WebPageVisibilityStateVisible : WebPageVisibilityStateHidden) isInitialState:NO];
 }
 
 - (void)_updateActiveState
@@ -2912,6 +2961,14 @@ static Vector<String> toStringVector(NSArray* patterns)
     return kitLayoutMilestones(page->layoutMilestones());
 }
 
+- (void)_setVisibilityState:(WebPageVisibilityState)visibilityState isInitialState:(BOOL)isInitialState
+{
+#if ENABLE(PAGE_VISIBILITY_API) || ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
+    if (_private->page)
+        _private->page->setVisibilityState(core(visibilityState), isInitialState);
+#endif
+}
+
 - (void)_setPaginationBehavesLikeColumns:(BOOL)behavesLikeColumns
 {
     Page* page = core(self);
@@ -3019,17 +3076,6 @@ static Vector<String> toStringVector(NSArray* patterns)
     resourceLoadScheduler()->setSerialLoadingEnabled(serialize);
 }
 
-+ (double)_defaultMinimumTimerInterval
-{
-    return Settings::defaultMinDOMTimerInterval();
-}
-
-- (void)_setMinimumTimerInterval:(double)intervalInSeconds
-{
-    if (_private->page)
-        _private->page->settings()->setMinDOMTimerInterval(intervalInSeconds);
-}
-
 + (BOOL)_HTTPPipeliningEnabled
 {
     return ResourceRequest::httpPipeliningEnabled();
@@ -3040,13 +3086,17 @@ static Vector<String> toStringVector(NSArray* patterns)
     ResourceRequest::setHTTPPipeliningEnabled(enabled);
 }
 
-- (void)_setVisibilityState:(int)visibilityState isInitialState:(BOOL)isInitialState
+- (void)_setSourceApplicationAuditData:(NSData *)sourceApplicationAuditData
 {
-#if ENABLE(PAGE_VISIBILITY_API) || ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
-    if (_private->page) {
-        _private->page->setVisibilityState(static_cast<PageVisibilityState>(visibilityState), isInitialState);
-    }
-#endif
+    if (_private->sourceApplicationAuditData == sourceApplicationAuditData)
+        return;
+
+    _private->sourceApplicationAuditData = adoptNS([sourceApplicationAuditData copy]);
+}
+
+- (NSData *)_sourceApplicationAuditData
+{
+    return _private->sourceApplicationAuditData.get();
 }
 
 @end
@@ -3520,6 +3570,14 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
             name:windowDidChangeBackingPropertiesNotification object:window];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_windowDidChangeScreen:)
             name:NSWindowDidChangeScreenNotification object:window];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_windowVisibilityChanged:) 
+            name:NSWindowDidMiniaturizeNotification object:window];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_windowVisibilityChanged:)
+            name:NSWindowDidDeminiaturizeNotification object:window];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_windowVisibilityChanged:) 
+            name:@"NSWindowDidOrderOffScreenNotification" object:window];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_windowVisibilityChanged:) 
+            name:@"_NSWindowDidBecomeVisible" object:window];
     }
 }
 
@@ -3535,6 +3593,14 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
             name:windowDidChangeBackingPropertiesNotification object:window];
         [[NSNotificationCenter defaultCenter] removeObserver:self
             name:NSWindowDidChangeScreenNotification object:window];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+            name:NSWindowDidMiniaturizeNotification object:window];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+            name:NSWindowDidDeminiaturizeNotification object:window];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+            name:@"NSWindowDidOrderOffScreenNotification" object:window];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+            name:@"_NSWindowDidBecomeVisible" object:window];
     }
 }
 
@@ -3560,6 +3626,7 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
     } else {
         _private->page->setCanStartMedia(false);
         _private->page->willMoveOffscreen();
+        _private->page->setIsInWindow(false);
     }
         
     if (window != [self window]) {
@@ -3580,11 +3647,13 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
     if ([self window]) {
         _private->page->setCanStartMedia(true);
         _private->page->didMoveOnscreen();
+        _private->page->setIsInWindow(true);
     }
     
     _private->page->setDeviceScaleFactor([self _deviceScaleFactor]);
 
     [self _updateActiveState];
+    [self _updateVisibilityState];
 }
 
 - (void)doWindowDidChangeScreen
@@ -3623,6 +3692,11 @@ static NSString * const backingPropertyOldScaleFactorKey = @"NSBackingPropertyOl
         _private->page->suspendScriptedAnimations();
         _private->page->focusController()->setContainingWindowIsVisible(false);
     }
+}
+
+- (void)_windowVisibilityChanged:(NSNotification *)notification
+{
+    [self _updateVisibilityState];
 }
 
 - (void)_windowWillClose:(NSNotification *)notification
@@ -4858,7 +4932,7 @@ static BOOL findString(NSView <WebDocumentSearching> *searchView, NSString *stri
     return coreFrame->loader()->shouldClose();
 }
 
-static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSValue jsValue)
+static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSC::JSValue jsValue)
 {
     NSAppleEventDescriptor* aeDesc = 0;
     if (jsValue.isBoolean())
@@ -4877,7 +4951,7 @@ static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSValue jsValu
         if (object->inherits(&DateInstance::s_info)) {
             DateInstance* date = static_cast<DateInstance*>(object);
             double ms = date->internalNumber();
-            if (!isnan(ms)) {
+            if (!std::isnan(ms)) {
                 CFAbsoluteTime utcSeconds = ms / 1000 - kCFAbsoluteTimeIntervalSince1970;
                 LongDateTime ldt;
                 if (noErr == UCConvertCFAbsoluteTimeToLongDateTime(utcSeconds, &ldt))
@@ -4899,7 +4973,7 @@ static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSValue jsValu
                 return aeDesc;
             }
         }
-        JSValue primitive = object->toPrimitive(exec);
+        JSC::JSValue primitive = object->toPrimitive(exec);
         if (exec->hadException()) {
             exec->clearException();
             return [NSAppleEventDescriptor nullDescriptor];
@@ -4919,7 +4993,7 @@ static NSAppleEventDescriptor* aeDescFromJSValue(ExecState* exec, JSValue jsValu
         return nil;
     if (!coreFrame->document())
         return nil;
-    JSValue result = coreFrame->script()->executeScript(script, true).jsValue();
+    JSC::JSValue result = coreFrame->script()->executeScript(script, true).jsValue();
     if (!result) // FIXME: pass errors
         return 0;
     JSLockHolder lock(coreFrame->script()->globalObject(mainThreadNormalWorld())->globalExec());
@@ -6138,7 +6212,7 @@ static inline uint64_t roundUpToPowerOf2(uint64_t num)
 #endif
 }
 
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
 - (void)_clearGlibLoopObserver
 {
     if (!_private->glibRunLoopObserver)
@@ -6456,7 +6530,7 @@ bool LayerFlushController::flushLayers()
 }
 #endif
 
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
 
 static void glibContextIterationCallback(CFRunLoopObserverRef, CFRunLoopActivity, void*)
 {
@@ -6633,21 +6707,15 @@ static void glibContextIterationCallback(CFRunLoopObserverRef, CFRunLoopActivity
 }
 @end
 
-@implementation WebView (WebViewPrivateStyleInfo)
+@implementation WebView (WebViewFullScreen)
 
-- (JSValueRef)_computedStyleIncludingVisitedInfo:(JSContextRef)context forElement:(JSValueRef)value
+- (NSView*)fullScreenPlaceholderView
 {
-    ExecState* exec = toJS(context);
-    JSLockHolder lock(exec);
-    if (!value)
-        return JSValueMakeUndefined(context);
-    JSValue jsValue = toJS(exec, value);
-    if (!jsValue.inherits(&JSElement::s_info))
-        return JSValueMakeUndefined(context);
-    JSElement* jsElement = static_cast<JSElement*>(asObject(jsValue));
-    Element* element = jsElement->impl();
-    RefPtr<CSSComputedStyleDeclaration> style = CSSComputedStyleDeclaration::create(element, true);
-    return toRef(exec, toJS(exec, jsElement->globalObject(), style.get()));
+#if ENABLE(FULLSCREEN_API)
+    if (_private->newFullscreenController && [_private->newFullscreenController isFullScreen])
+        return [_private->newFullscreenController webViewPlaceholder];
+#endif
+    return nil;
 }
 
 @end

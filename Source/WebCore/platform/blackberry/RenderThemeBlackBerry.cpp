@@ -441,7 +441,7 @@ IntRect RenderThemeBlackBerry::convertToPaintingRect(RenderObject* inputRenderer
 
 bool RenderThemeBlackBerry::paintSearchFieldCancelButton(RenderObject* cancelButtonObject, const PaintInfo& paintInfo, const IntRect& r)
 {
-    Node* input = cancelButtonObject->node()->shadowAncestorNode();
+    Node* input = cancelButtonObject->node()->deprecatedShadowAncestorNode();
     if (!input->renderer()->isBox())
         return false;
 
@@ -1265,6 +1265,12 @@ Color RenderThemeBlackBerry::platformActiveTextSearchHighlightColor() const
 Color RenderThemeBlackBerry::platformInactiveTextSearchHighlightColor() const
 {
     return Color(255, 255, 0); // Yellow.
+}
+
+bool RenderThemeBlackBerry::supportsDataListUI(const AtomicString& type) const
+{
+    // TODO: support other input types in the future.
+    return type == InputTypeNames::text();
 }
 
 } // namespace WebCore

@@ -28,6 +28,7 @@
 
 #include "Document.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "NetworkingContext.h"
 #include "PlatformCookieJar.h"
 
@@ -56,7 +57,7 @@ static NetworkingContext* networkingContext(const Document* document)
     return loader->networkingContext();
 }
 
-#if PLATFORM(MAC) || USE(CFNETWORK)
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(SOUP)
 inline NetworkStorageSession& storageSession(const Document* document)
 {
     NetworkingContext* context = networkingContext(document);

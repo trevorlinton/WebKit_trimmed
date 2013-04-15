@@ -37,6 +37,7 @@
 #include "DocumentFragment.h"
 #include "Element.h"
 #include "EventNames.h"
+#include "ExceptionCodePlaceholder.h"
 #include "Frame.h"
 #include "FrameSelection.h"
 #include "HTMLElement.h"
@@ -156,7 +157,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
     if (!editableRoot)
         return;
     
-    Node* shadowAncestorNode = editableRoot->shadowAncestorNode();
+    Node* shadowAncestorNode = editableRoot->deprecatedShadowAncestorNode();
     
     if (!editableRoot->getAttributeEventListener(eventNames().webkitBeforeTextInsertedEvent) &&
         // FIXME: Remove these checks once textareas and textfields actually register an event handler.
@@ -181,9 +182,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
 
     // Give the root a chance to change the text.
     RefPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
-    ExceptionCode ec = 0;
-    editableRoot->dispatchEvent(evt, ec);
-    ASSERT(ec == 0);
+    editableRoot->dispatchEvent(evt, ASSERT_NO_EXCEPTION);
     if (text != evt->text() || !editableRoot->rendererIsRichlyEditable()) {
         restoreAndRemoveTestRenderingNodesToFragment(holder.get());
 
@@ -234,9 +233,7 @@ void ReplacementFragment::removeNode(PassRefPtr<Node> node)
     if (!parent)
         return;
     
-    ExceptionCode ec = 0;
-    parent->removeChild(node.get(), ec);
-    ASSERT(ec == 0);
+    parent->removeChild(node.get(), ASSERT_NO_EXCEPTION);
 }
 
 void ReplacementFragment::insertNodeBefore(PassRefPtr<Node> node, Node* refNode)
@@ -248,23 +245,15 @@ void ReplacementFragment::insertNodeBefore(PassRefPtr<Node> node, Node* refNode)
     if (!parent)
         return;
         
-    ExceptionCode ec = 0;
-    parent->insertBefore(node, refNode, ec);
-    ASSERT(ec == 0);
+    parent->insertBefore(node, refNode, ASSERT_NO_EXCEPTION);
 }
 
 PassRefPtr<StyledElement> ReplacementFragment::insertFragmentForTestRendering(Node* rootEditableElement)
 {
     RefPtr<StyledElement> holder = createDefaultParagraphElement(m_document.get());
-    
-    ExceptionCode ec = 0;
 
-    holder->appendChild(m_fragment, ec);
-    ASSERT(ec == 0);
-
-    rootEditableElement->appendChild(holder.get(), ec);
-    ASSERT(ec == 0);
-
+    holder->appendChild(m_fragment, ASSERT_NO_EXCEPTION);
+    rootEditableElement->appendChild(holder.get(), ASSERT_NO_EXCEPTION);
     m_document->updateLayoutIgnorePendingStylesheets();
 
     return holder.release();
@@ -275,12 +264,9 @@ void ReplacementFragment::restoreAndRemoveTestRenderingNodesToFragment(StyledEle
     if (!holder)
         return;
     
-    ExceptionCode ec = 0;
     while (RefPtr<Node> node = holder->firstChild()) {
-        holder->removeChild(node.get(), ec);
-        ASSERT(ec == 0);
-        m_fragment->appendChild(node.get(), ec);
-        ASSERT(ec == 0);
+        holder->removeChild(node.get(), ASSERT_NO_EXCEPTION);
+        m_fragment->appendChild(node.get(), ASSERT_NO_EXCEPTION);
     }
 
     removeNode(holder);
@@ -368,6 +354,14 @@ inline void ReplaceSelectionCommand::InsertedNodes::willRemoveNode(Node* node)
         m_firstNodeInserted = NodeTraversal::nextSkippingChildren(m_firstNodeInserted.get());
     else if (m_lastNodeInserted == node)
         m_lastNodeInserted = NodeTraversal::previousSkippingChildren(m_lastNodeInserted.get());
+}
+
+inline void ReplaceSelectionCommand::InsertedNodes::didReplaceNode(Node* node, Node* newNode)
+{
+    if (m_firstNodeInserted == node)
+        m_firstNodeInserted = newNode;
+    if (m_lastNodeInserted == node)
+        m_lastNodeInserted = newNode;
 }
 
 ReplaceSelectionCommand::ReplaceSelectionCommand(Document* document, PassRefPtr<DocumentFragment> fragment, CommandOptions options, EditAction editAction)
@@ -490,6 +484,23 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
         const StylePropertySet* inlineStyle = element->inlineStyle();
         RefPtr<EditingStyle> newInlineStyle = EditingStyle::create(inlineStyle);
         if (inlineStyle) {
+            if (element->isHTMLElement()) {
+                Vector<QualifiedName> attributes;
+                HTMLElement* htmlElement = static_cast<HTMLElement*>(element);
+
+                if (newInlineStyle->conflictsWithImplicitStyleOfElement(htmlElement)) {
+                    // e.g. <b style="font-weight: normal;"> is converted to <span style="font-weight: normal;">
+                    node = replaceElementWithSpanPreservingChildrenAndAttributes(htmlElement);
+                    element = static_cast<StyledElement*>(node.get());
+                    insertedNodes.didReplaceNode(htmlElement, node.get());
+                } else if (newInlineStyle->extractConflictingImplicitStyleOfAttributes(htmlElement, EditingStyle::PreserveWritingDirection, 0, attributes,
+                    EditingStyle::DoNotExtractMatchingStyle)) {
+                    // e.g. <font size="3" style="font-size: 20px;"> is converted to <font style="font-size: 20px;">
+                    for (size_t i = 0; i < attributes.size(); i++)
+                        removeNodeAttribute(element, attributes[i]);
+                }
+            }
+
             ContainerNode* context = element->parentNode();
 
             // If Mail wraps the fragment with a Paste as Quotation blockquote, or if you're pasting into a quoted region,
@@ -502,12 +513,12 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
         }
 
         if (!inlineStyle || newInlineStyle->isEmpty()) {
-            if (isStyleSpanOrSpanWithOnlyStyleAttribute(element)) {
+            if (isStyleSpanOrSpanWithOnlyStyleAttribute(element) || isEmptyFontTag(element, AllowNonEmptyStyleAttribute)) {
                 insertedNodes.willRemoveNodePreservingChildren(element);
                 removeNodePreservingChildren(element);
                 continue;
-            } else
-                removeNodeAttribute(element, styleAttr);
+            }
+            removeNodeAttribute(element, styleAttr);
         } else if (newInlineStyle->style()->propertyCount() != inlineStyle->propertyCount())
             setNodeAttribute(element, styleAttr, newInlineStyle->style()->asText());
 
@@ -537,13 +548,12 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
             // FIXME: Hyatt is concerned that selectively using display:inline will give inconsistent
             // results. We already know one issue because td elements ignore their display property
             // in quirks mode (which Mail.app is always in). We should look for an alternative.
-            
+
             // Mutate using the CSSOM wrapper so we get the same event behavior as a script.
-            ExceptionCode ec;
             if (isBlock(element))
-                element->style()->setPropertyInternal(CSSPropertyDisplay, "inline", false, ec);
+                element->style()->setPropertyInternal(CSSPropertyDisplay, "inline", false, IGNORE_EXCEPTION);
             if (element->renderer() && element->renderer()->style()->isFloating())
-                element->style()->setPropertyInternal(CSSPropertyFloat, "none", false, ec);
+                element->style()->setPropertyInternal(CSSPropertyFloat, "none", false, IGNORE_EXCEPTION);
         }
     }
 }
@@ -658,7 +668,7 @@ void ReplaceSelectionCommand::handleStyleSpans(InsertedNodes& insertedNodes)
     if (!wrappingStyleSpan)
         return;
 
-    RefPtr<EditingStyle> style = EditingStyle::create(wrappingStyleSpan->ensureMutableInlineStyle());
+    RefPtr<EditingStyle> style = EditingStyle::create(wrappingStyleSpan->inlineStyle());
     ContainerNode* context = wrappingStyleSpan->parentNode();
 
     // If Mail wraps the fragment with a Paste as Quotation blockquote, or if you're pasting into a quoted region,
@@ -1318,9 +1328,7 @@ Node* ReplaceSelectionCommand::insertAsListItems(PassRefPtr<HTMLElement> prpList
     }
 
     while (RefPtr<Node> listItem = listElement->firstChild()) {
-        ExceptionCode ec = 0;
-        listElement->removeChild(listItem.get(), ec);
-        ASSERT(!ec);
+        listElement->removeChild(listItem.get(), ASSERT_NO_EXCEPTION);
         if (isStart || isMiddle) {
             insertNodeBefore(listItem, lastNode);
             insertedNodes.respondToNodeInsertion(listItem.get());

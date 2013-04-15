@@ -32,12 +32,13 @@
 #include "PlatformWebView.h"
 #include "StringFunctions.h"
 #include "TestController.h"
-#include <WebCore/PageVisibilityState.h>
+#include <WebKit2/WKBundle.h>
 #include <WebKit2/WKBundleBackForwardList.h>
 #include <WebKit2/WKBundleFrame.h>
 #include <WebKit2/WKBundleFramePrivate.h>
 #include <WebKit2/WKBundleInspector.h>
 #include <WebKit2/WKBundleNodeHandlePrivate.h>
+#include <WebKit2/WKBundlePage.h>
 #include <WebKit2/WKBundlePagePrivate.h>
 #include <WebKit2/WKBundlePrivate.h>
 #include <WebKit2/WKBundleScriptWorld.h>
@@ -51,11 +52,6 @@
 #include <wtf/PassOwnArrayPtr.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
-
-#if ENABLE(WEB_INTENTS)
-#include <WebKit2/WKBundleIntent.h>
-#include <WebKit2/WKBundleIntentRequest.h>
-#endif
 
 namespace WTR {
 
@@ -165,34 +161,9 @@ void TestRunner::notifyDone()
     m_waitToDump = false;
 }
 
-unsigned TestRunner::numberOfActiveAnimations() const
+void TestRunner::setCustomTimeout(int timeout)
 {
-    // FIXME: Is it OK this works only for the main frame?
-    // FIXME: If this is needed only for the main frame, then why is the function on WKBundleFrame instead of WKBundlePage?
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    return WKBundleFrameGetNumberOfActiveAnimations(mainFrame);
-}
-
-bool TestRunner::pauseAnimationAtTimeOnElementWithId(JSStringRef animationName, double time, JSStringRef elementId)
-{
-    // FIXME: Is it OK this works only for the main frame?
-    // FIXME: If this is needed only for the main frame, then why is the function on WKBundleFrame instead of WKBundlePage?
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    return WKBundleFramePauseAnimationOnElementWithId(mainFrame, toWK(animationName).get(), toWK(elementId).get(), time);
-}
-
-bool TestRunner::pauseTransitionAtTimeOnElementWithId(JSStringRef propertyName, double time, JSStringRef elementId)
-{
-    // FIXME: Is it OK this works only for the main frame?
-    // FIXME: If this is needed only for the main frame, then why is the function on WKBundleFrame instead of WKBundlePage?
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    return WKBundleFramePauseTransitionOnElementWithId(mainFrame, toWK(propertyName).get(), toWK(elementId).get(), time);
-}
-
-void TestRunner::suspendAnimations()
-{
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    WKBundleFrameSuspendAnimations(mainFrame);
+    m_timeout = timeout;
 }
 
 void TestRunner::addUserScript(JSStringRef source, bool runAtStart, bool allFrames)
@@ -217,31 +188,6 @@ void TestRunner::addUserStyleSheet(JSStringRef source, bool allFrames)
 void TestRunner::keepWebHistory()
 {
     WKBundleSetShouldTrackVisitedLinks(InjectedBundle::shared().bundle(), true);
-}
-
-JSValueRef TestRunner::computedStyleIncludingVisitedInfo(JSValueRef element)
-{
-    // FIXME: Is it OK this works only for the main frame?
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    JSContextRef context = WKBundleFrameGetJavaScriptContext(mainFrame);
-    if (!JSValueIsObject(context, element))
-        return JSValueMakeUndefined(context);
-    JSValueRef value = WKBundleFrameGetComputedStyleIncludingVisitedInfo(mainFrame, const_cast<JSObjectRef>(element));
-    if (!value)
-        return JSValueMakeUndefined(context);
-    return value;
-}
-
-JSRetainPtr<JSStringRef> TestRunner::markerTextForListItem(JSValueRef element)
-{
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    JSContextRef context = WKBundleFrameGetJavaScriptContext(mainFrame);
-    if (!element || !JSValueIsObject(context, element))
-        return 0;
-    WKRetainPtr<WKStringRef> text(AdoptWK, WKBundleFrameCopyMarkerText(mainFrame, const_cast<JSObjectRef>(element)));
-    if (WKStringIsEmpty(text.get()))
-        return 0;
-    return toJS(text);
 }
 
 void TestRunner::execCommand(JSStringRef name, JSStringRef argument)
@@ -377,11 +323,6 @@ void TestRunner::setAllowUniversalAccessFromFileURLs(bool enabled)
 void TestRunner::setAllowFileAccessFromFileURLs(bool enabled)
 {
     WKBundleSetAllowFileAccessFromFileURLs(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), enabled);
-}
-
-void TestRunner::setFrameFlatteningEnabled(bool enabled)
-{
-    WKBundleSetFrameFlatteningEnabled(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), enabled);
 }
 
 void TestRunner::setPluginsEnabled(bool enabled)
@@ -545,21 +486,21 @@ void TestRunner::setDefersLoading(bool shouldDeferLoading)
 
 void TestRunner::setPageVisibility(JSStringRef state)
 {
-    WebCore::PageVisibilityState visibilityState = WebCore::PageVisibilityStateVisible;
+    WKPageVisibilityState visibilityState = kWKPageVisibilityStateVisible;
 
     if (JSStringIsEqualToUTF8CString(state, "hidden"))
-        visibilityState = WebCore::PageVisibilityStateHidden;
+        visibilityState = kWKPageVisibilityStateHidden;
     else if (JSStringIsEqualToUTF8CString(state, "prerender"))
-        visibilityState = WebCore::PageVisibilityStatePrerender;
+        visibilityState = kWKPageVisibilityStatePrerender;
     else if (JSStringIsEqualToUTF8CString(state, "preview"))
-        visibilityState = WebCore::PageVisibilityStatePreview;
+        visibilityState = kWKPageVisibilityStatePreview;
 
-    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().page()->page(), visibilityState, /* isInitialState */ false);
+    InjectedBundle::shared().setVisibilityState(visibilityState, false);
 }
 
 void TestRunner::resetPageVisibility()
 {
-    WKBundleSetPageVisibilityState(InjectedBundle::shared().bundle(), InjectedBundle::shared().page()->page(), WebCore::PageVisibilityStateVisible, /* isInitialState */ true);
+    InjectedBundle::shared().setVisibilityState(kWKPageVisibilityStateVisible, true);
 }
 
 typedef WTF::HashMap<unsigned, JSValueRef> CallbackMap;
@@ -596,11 +537,6 @@ static void callTestRunnerCallback(unsigned index)
     JSObjectRef callback = JSValueToObject(context, callbackMap().take(index), 0);
     JSObjectCallAsFunction(context, callback, JSContextGetGlobalObject(context), 0, 0, 0);
     JSValueUnprotect(context, callback);
-}
-
-unsigned TestRunner::workerThreadCount()
-{
-    return WKBundleGetWorkerThreadCount(InjectedBundle::shared().bundle());
 }
 
 void TestRunner::addChromeInputField(JSValueRef callback)
@@ -663,52 +599,6 @@ void TestRunner::overridePreference(JSStringRef preference, JSStringRef value)
     WKBundleOverrideBoolPreferenceForTestRunner(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), toWK(preference).get(), toBool(value));
 }
 
-void TestRunner::sendWebIntentResponse(JSStringRef reply)
-{
-#if ENABLE(WEB_INTENTS)
-    WKRetainPtr<WKBundleIntentRequestRef> currentRequest = InjectedBundle::shared().page()->currentIntentRequest();
-    if (!currentRequest)
-        return;
-
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    JSContextRef context = WKBundleFrameGetJavaScriptContext(mainFrame);
-
-    if (reply) {
-        WKRetainPtr<WKSerializedScriptValueRef> serializedData(AdoptWK, WKSerializedScriptValueCreate(context, JSValueMakeString(context, reply), 0));
-        WKBundleIntentRequestPostResult(currentRequest.get(), serializedData.get());
-    } else {
-        JSRetainPtr<JSStringRef> errorReply(JSStringCreateWithUTF8CString("ERROR"));
-        WKRetainPtr<WKSerializedScriptValueRef> serializedData(AdoptWK, WKSerializedScriptValueCreate(context, JSValueMakeString(context, errorReply.get()), 0));
-        WKBundleIntentRequestPostFailure(currentRequest.get(), serializedData.get());
-    }
-#endif
-}
-
-void TestRunner::deliverWebIntent(JSStringRef action, JSStringRef type, JSStringRef data)
-{
-#if ENABLE(WEB_INTENTS)
-    WKBundleFrameRef mainFrame = WKBundlePageGetMainFrame(InjectedBundle::shared().page()->page());
-    JSContextRef context = WKBundleFrameGetJavaScriptContext(mainFrame);
-
-    WKRetainPtr<WKStringRef> actionWK = toWK(action);
-    WKRetainPtr<WKStringRef> typeWK = toWK(type);
-    WKRetainPtr<WKSerializedScriptValueRef> dataWK(AdoptWK, WKSerializedScriptValueCreate(context, JSValueMakeString(context, data), 0));
-
-    WKRetainPtr<WKMutableDictionaryRef> intentInitDict(AdoptWK, WKMutableDictionaryCreate());
-    WKRetainPtr<WKStringRef> actionKey(AdoptWK, WKStringCreateWithUTF8CString("action"));
-    WKDictionaryAddItem(intentInitDict.get(), actionKey.get(), actionWK.get());
-
-    WKRetainPtr<WKStringRef> typeKey(AdoptWK, WKStringCreateWithUTF8CString("type"));
-    WKDictionaryAddItem(intentInitDict.get(), typeKey.get(), typeWK.get());
-
-    WKRetainPtr<WKStringRef> dataKey(AdoptWK, WKStringCreateWithUTF8CString("data"));
-    WKDictionaryAddItem(intentInitDict.get(), dataKey.get(), dataWK.get());
-
-    WKRetainPtr<WKBundleIntentRef> wkIntent(AdoptWK, WKBundleIntentCreate(intentInitDict.get()));
-    WKBundlePageDeliverIntentToFrame(InjectedBundle::shared().page()->page(), mainFrame, wkIntent.get());
-#endif
-}
-
 void TestRunner::setAlwaysAcceptCookies(bool accept)
 {
     WKBundleSetAlwaysAcceptCookies(InjectedBundle::shared().bundle(), accept);
@@ -734,11 +624,6 @@ void TestRunner::setUserStyleSheetLocation(JSStringRef location)
 
     if (m_userStyleSheetEnabled)
         setUserStyleSheetEnabled(true);
-}
-
-void TestRunner::setMinimumTimerInterval(double seconds)
-{
-    WKBundleSetMinimumTimerInterval(InjectedBundle::shared().bundle(), InjectedBundle::shared().pageGroup(), seconds);
 }
 
 void TestRunner::setSpatialNavigationEnabled(bool enabled)
@@ -894,6 +779,27 @@ void TestRunner::setViewModeMediaFeature(JSStringRef mode)
 {
     WKRetainPtr<WKStringRef> modeWK = toWK(mode);
     WKBundlePageSetViewMode(InjectedBundle::shared().page()->page(), modeWK.get());
+}
+
+void TestRunner::setHandlesAuthenticationChallenges(bool handlesAuthenticationChallenges)
+{
+    WKRetainPtr<WKStringRef> messageName(AdoptWK, WKStringCreateWithUTF8CString("SetHandlesAuthenticationChallenge"));
+    WKRetainPtr<WKBooleanRef> messageBody(AdoptWK, WKBooleanCreate(handlesAuthenticationChallenges));
+    WKBundlePostMessage(InjectedBundle::shared().bundle(), messageName.get(), messageBody.get());
+}
+
+void TestRunner::setAuthenticationUsername(JSStringRef username)
+{
+    WKRetainPtr<WKStringRef> messageName(AdoptWK, WKStringCreateWithUTF8CString("SetAuthenticationUsername"));
+    WKRetainPtr<WKStringRef> messageBody(AdoptWK, WKStringCreateWithJSString(username));
+    WKBundlePostMessage(InjectedBundle::shared().bundle(), messageName.get(), messageBody.get());
+}
+
+void TestRunner::setAuthenticationPassword(JSStringRef password)
+{
+    WKRetainPtr<WKStringRef> messageName(AdoptWK, WKStringCreateWithUTF8CString("SetAuthenticationPassword"));
+    WKRetainPtr<WKStringRef> messageBody(AdoptWK, WKStringCreateWithJSString(password));
+    WKBundlePostMessage(InjectedBundle::shared().bundle(), messageName.get(), messageBody.get());
 }
 
 } // namespace WTR

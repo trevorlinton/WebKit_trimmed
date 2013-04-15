@@ -94,6 +94,12 @@ var FAILURE_EXPECTATIONS_ = {
     'Z': 1
 };
 
+// Map of parameter to other parameter it invalidates.
+var CROSS_DB_INVALIDATING_PARAMETERS = {
+    'testType': 'group'
+};
+var DB_SPECIFIC_INVALIDATING_PARAMETERS;
+
 // Keys in the JSON files.
 var WONTFIX_COUNTS_KEY = 'wontfixCounts';
 var FIXABLE_COUNTS_KEY = 'fixableCounts';
@@ -146,6 +152,10 @@ var TEST_TYPES = [
     'unit_tests',
     'views_unittests',
     'webkit_unit_tests',
+    'androidwebview_instrumentation_tests',
+    'chromiumtestshell_instrumentation_tests',
+    'contentshell_instrumentation_tests',
+    'cc_unittests'
 ];
 
 var RELOAD_REQUIRING_PARAMETERS = ['showAllRuns', 'group', 'testType'];
@@ -181,14 +191,9 @@ function handleValidHashParameterWrapper(key, value)
             function() {
               return value in LAYOUT_TESTS_BUILDER_GROUPS ||
                   value in CHROMIUM_GPU_TESTS_BUILDER_GROUPS ||
+                  value in CHROMIUM_INSTRUMENTATION_TESTS_BUILDER_GROUPS ||
                   value in CHROMIUM_GTESTS_BUILDER_GROUPS;
             });
-        return true;
-
-    // FIXME: This should probably be stored on g_crossDashboardState like everything else in this function.
-    case 'builder':
-        validateParameter(g_currentState, key, value,
-            function() { return value in currentBuilders(); });
         return true;
 
     case 'useTestData':
@@ -202,7 +207,7 @@ function handleValidHashParameterWrapper(key, value)
 }
 
 var g_defaultCrossDashboardStateValues = {
-    group: '@ToT - chromium.org',
+    group: null,
     showAllRuns: false,
     testType: 'layout-tests',
     useTestData: false,
@@ -303,8 +308,6 @@ function parseCrossDashboardParameters()
         parseParameter(parameters, parameterName);
 
     fillMissingValues(g_crossDashboardState, g_defaultCrossDashboardStateValues);
-    if (currentBuilderGroup() === undefined)
-        g_crossDashboardState.group = g_defaultCrossDashboardStateValues.group;
 }
 
 function parseDashboardSpecificParameters()
@@ -315,22 +318,28 @@ function parseDashboardSpecificParameters()
         parseParameter(parameters, parameterName);
 }
 
+// @return {boolean} Whether to generate the page.
 function parseParameters()
 {
     var oldCrossDashboardState = g_crossDashboardState;
     var oldDashboardSpecificState = g_currentState;
 
     parseCrossDashboardParameters();
-    parseDashboardSpecificParameters();
-    parseParameter(queryHashAsMap(), 'builder');
+    
+    // Some parameters require loading different JSON files when the value changes. Do a reload.
+    if (Object.keys(oldCrossDashboardState).length) {
+        for (var key in g_crossDashboardState) {
+            if (oldCrossDashboardState[key] != g_crossDashboardState[key] && RELOAD_REQUIRING_PARAMETERS.indexOf(key) != -1) {
+                window.location.reload();
+                return false;
+            }
+        }
+    }
 
-    var crossDashboardDiffState = diffStates(oldCrossDashboardState, g_crossDashboardState);
+    parseDashboardSpecificParameters();
     var dashboardSpecificDiffState = diffStates(oldDashboardSpecificState, g_currentState);
 
     fillMissingValues(g_currentState, g_defaultDashboardSpecificStateValues);
-
-    if (!g_crossDashboardState.useTestData)
-        fillMissingValues(g_currentState, {'builder': currentBuilderGroup().defaultBuilder()});
 
     // FIXME: dashboard_base shouldn't know anything about specific dashboard specific keys.
     if (dashboardSpecificDiffState.builder)
@@ -338,15 +347,10 @@ function parseParameters()
     if (g_currentState.tests)
         delete g_currentState.builder;
 
-    // Some parameters require loading different JSON files when the value changes. Do a reload.
-    if (Object.keys(oldCrossDashboardState).length) {
-        for (var key in g_crossDashboardState) {
-            if (oldCrossDashboardState[key] != g_crossDashboardState[key] && RELOAD_REQUIRING_PARAMETERS.indexOf(key) != -1)
-                window.location.reload();
-        }
-    }
-
-    return dashboardSpecificDiffState;
+    var shouldGeneratePage = true;
+    if (Object.keys(dashboardSpecificDiffState).length)
+        shouldGeneratePage = handleQueryParameterChange(dashboardSpecificDiffState);
+    return shouldGeneratePage;
 }
 
 function diffStates(oldState, newState)
@@ -407,14 +411,25 @@ function currentBuilderGroupCategory()
     case 'test_shell_tests':
     case 'webkit_unit_tests':
         return TEST_SHELL_TESTS_BUILDER_GROUPS;
+    case 'androidwebview_instrumentation_tests':
+    case 'chromiumtestshell_instrumentation_tests':
+    case 'contentshell_instrumentation_tests':
+        return CHROMIUM_INSTRUMENTATION_TESTS_BUILDER_GROUPS;
+    case 'cc_unittests':
+        return CC_UNITTEST_BUILDER_GROUPS;
     default:
         return CHROMIUM_GTESTS_BUILDER_GROUPS;
     }
 }
 
+function currentBuilderGroupName()
+{
+    return g_crossDashboardState.group || Object.keys(currentBuilderGroupCategory())[0];
+}
+
 function currentBuilderGroup()
 {
-    return currentBuilderGroupCategory()[g_crossDashboardState.group]
+    return currentBuilderGroupCategory()[currentBuilderGroupName()];
 }
 
 function currentBuilders()
@@ -429,8 +444,6 @@ function isTipOfTreeWebKitBuilder()
 
 var g_resultsByBuilder = {};
 var g_expectationsByPlatform = {};
-var g_staleBuilders = [];
-var g_buildersThatFailedToLoad = [];
 
 // TODO(aboxhall): figure out whether this is a performance bottleneck and
 // change calling code to understand the trie structure instead if necessary.
@@ -462,7 +475,6 @@ function isFlakinessDashboard()
     return endsWith(window.location.pathname, 'flakiness_dashboard.html');
 }
 
-var g_hasDoneInitialPageGeneration = false;
 // String of error messages to display to the user.
 var g_errorMessages = '';
 
@@ -473,11 +485,6 @@ function addError(errorMsg)
     g_errorMessages += errorMsg + '<br>';
 }
 
-// Clear out error and warning messages.
-function clearErrors()
-{
-    g_errorMessages = '';
-}
 
 // If there are errors, show big and red UI for errors so as to be noticed.
 function showErrors()
@@ -500,46 +507,20 @@ function showErrors()
     errors.innerHTML = g_errorMessages;
 }
 
-function addBuilderLoadErrors()
+function resourceLoadingComplete(errorMsgs)
 {
-    if (g_hasDoneInitialPageGeneration)
-        return;
+    if (errorMsgs)
+        addError(errorMsgs)
 
-    if (g_buildersThatFailedToLoad.length)
-        addError('ERROR: Failed to get data from ' + g_buildersThatFailedToLoad.toString() + '.');
-
-    if (g_staleBuilders.length)
-        addError('ERROR: Data from ' + g_staleBuilders.toString() + ' is more than 1 day stale.');
-}
-
-function resourceLoadingComplete()
-{
-    g_resourceLoader = null;
     handleLocationChange();
 }
 
 function handleLocationChange()
 {
-    if (g_resourceLoader)
+    if (!g_resourceLoader.isLoadingComplete())
         return;
 
-    addBuilderLoadErrors();
-    g_hasDoneInitialPageGeneration = true;
-
-    var params = parseParameters();
-    var shouldGeneratePage = true;
-    if (Object.keys(params).length)
-        shouldGeneratePage = handleQueryParameterChange(params);
-
-    var newHash = permaLinkURLHash();
-    var winHash = window.location.hash || "#";
-    // Make sure the location is the same as the state we are using internally.
-    // These get out of sync if processQueryParamChange changed state.
-    if (newHash != winHash) {
-        // This will cause another hashchange, and when we loop
-        // back through here next time, we'll go through generatePage.
-        window.location.hash = newHash;
-    } else if (shouldGeneratePage)
+    if (parseParameters())
         generatePage();
 }
 
@@ -553,19 +534,36 @@ function combinedDashboardState()
     return combinedState;    
 }
 
+function invalidateQueryParameters(queryParamsAsState) {
+    for (var key in queryParamsAsState) {
+        if (key in CROSS_DB_INVALIDATING_PARAMETERS)
+            delete g_crossDashboardState[CROSS_DB_INVALIDATING_PARAMETERS[key]];
+        if (key in DB_SPECIFIC_INVALIDATING_PARAMETERS)
+            delete g_currentState[DB_SPECIFIC_INVALIDATING_PARAMETERS[key]];
+    }
+}
+
 // Sets the page state. Takes varargs of key, value pairs.
 function setQueryParameter(var_args)
 {
-    var state = combinedDashboardState();
+    var queryParamsAsState = {};
     for (var i = 0; i < arguments.length; i += 2) {
         var key = arguments[i];
-        state[key] = arguments[i + 1];
+        queryParamsAsState[key] = arguments[i + 1];
     }
+
+    invalidateQueryParameters(queryParamsAsState);
+
+    var newState = combinedDashboardState();
+    for (var key in queryParamsAsState) {
+        newState[key] = queryParamsAsState[key];
+    }
+
     // Note: We use window.location.hash rather that window.location.replace
     // because of bugs in Chrome where extra entries were getting created
     // when back button was pressed and full page navigation was occuring.
     // FIXME: file those bugs.
-    window.location.hash = permaLinkURLHash(state);
+    window.location.hash = permaLinkURLHash(newState);
 }
 
 function permaLinkURLHash(opt_state)
@@ -709,11 +707,6 @@ function htmlForTestTypeSwitcher(opt_noBuilderMenu, opt_extraHtml, opt_includeNo
     if (opt_extraHtml)
         html += opt_extraHtml;
     return html + '</div>';
-}
-
-function selectBuilder(builder)
-{
-    setQueryParameter('builder', builder);
 }
 
 function loadDashboard(fileName)

@@ -91,7 +91,6 @@ struct OSRExit {
     MethodOfGettingAValueProfile m_valueProfile;
 
     unsigned m_patchableCodeOffset;
-    NodeIndex m_nodeIndex;
     CodeOrigin m_codeOrigin;
     CodeOrigin m_codeOriginForExitProfile;
     
@@ -122,12 +121,9 @@ private:
     bool considerAddingAsFrequentExitSiteSlow(CodeBlock* dfgCodeBlock, CodeBlock* profiledCodeBlock);
 };
 
-#if DFG_ENABLE(VERBOSE_SPECULATION_FAILURE)
 struct SpeculationFailureDebugInfo {
     CodeBlock* codeBlock;
-    NodeIndex nodeIndex;
 };
-#endif
 
 } } // namespace JSC::DFG
 

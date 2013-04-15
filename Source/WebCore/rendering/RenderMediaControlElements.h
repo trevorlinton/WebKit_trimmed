@@ -32,13 +32,13 @@
 
 #include "MediaControlElements.h"
 #include "RenderBlock.h"
-#include "RenderDeprecatedFlexibleBox.h"
+#include "RenderFlexibleBox.h"
 
 namespace WebCore {
 
 class RenderMediaVolumeSliderContainer : public RenderBlock {
 public:
-    RenderMediaVolumeSliderContainer(Node*);
+    RenderMediaVolumeSliderContainer(Element*);
 
 private:
     virtual void layout();
@@ -46,9 +46,9 @@ private:
 
 // ----------------------------
 
-class RenderMediaControlTimeDisplay : public RenderDeprecatedFlexibleBox {
+class RenderMediaControlTimeDisplay : public RenderFlexibleBox {
 public:
-    RenderMediaControlTimeDisplay(Node*);
+    RenderMediaControlTimeDisplay(Element*);
 
 private:
     virtual void layout();
@@ -60,7 +60,7 @@ private:
 
 class RenderTextTrackContainerElement : public RenderBlock {
 public:
-    RenderTextTrackContainerElement(Node*);
+    RenderTextTrackContainerElement(Element*);
 
 private:
     virtual void layout();

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -49,7 +50,6 @@ public:
         explicit Backup(Settings*);
         void restoreTo(Settings*);
 
-        bool m_originalFixedElementsLayoutRelativeToFrame;
         bool m_originalCSSExclusionsEnabled;
         bool m_originalCSSVariablesEnabled;
 #if ENABLE(SHADOW_DOM)
@@ -61,11 +61,6 @@ public:
 #endif
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalUnifiedSpellCheckerEnabled;
-        bool m_originalFixedPositionCreatesStackingContext;
-        bool m_originalSyncXHRInDocumentsEnabled;
-        bool m_originalWindowFocusRestricted;
-        bool m_originalDeviceSupportsTouch;
-        bool m_originalDeviceSupportsMouse;
 #if ENABLE(TEXT_AUTOSIZING)
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
@@ -81,6 +76,7 @@ public:
         bool m_originalUsesOverlayScrollbars;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
+        double m_minimumTimerInterval;
 #if ENABLE(VIDEO_TRACK)
         bool m_shouldDisplaySubtitles;
         bool m_shouldDisplayCaptions;
@@ -100,12 +96,7 @@ public:
 
     void setMockScrollbarsEnabled(bool enabled, ExceptionCode&);
     void setUsesOverlayScrollbars(bool enabled, ExceptionCode&);
-    void setFixedElementsLayoutRelativeToFrame(bool, ExceptionCode&);
-    void setUnifiedTextCheckingEnabled(bool, ExceptionCode&);
-    bool unifiedTextCheckingEnabled(ExceptionCode&);
     void setTouchEventEmulationEnabled(bool enabled, ExceptionCode&);
-    void setDeviceSupportsTouch(bool enabled, ExceptionCode&);
-    void setDeviceSupportsMouse(bool enabled, ExceptionCode&);
     void setShadowDOMEnabled(bool enabled, ExceptionCode&);
     void setAuthorShadowDOMForAnyElementEnabled(bool);
     void setStyleScopedEnabled(bool);
@@ -127,24 +118,21 @@ public:
     void setCSSVariablesEnabled(bool enabled, ExceptionCode&);
     bool cssVariablesEnabled(ExceptionCode&);
     void setCanStartMedia(bool, ExceptionCode&);
-    void setMediaPlaybackRequiresUserGesture(bool, ExceptionCode&);
     void setEditingBehavior(const String&, ExceptionCode&);
-    void setFixedPositionCreatesStackingContext(bool, ExceptionCode&);
-    void setSyncXHRInDocumentsEnabled(bool, ExceptionCode&);
-    void setWindowFocusRestricted(bool, ExceptionCode&);
     void setDialogElementEnabled(bool, ExceptionCode&);
     void setShouldDisplayTrackKind(const String& kind, bool enabled, ExceptionCode&);
     bool shouldDisplayTrackKind(const String& kind, ExceptionCode&);
-    void setMemoryInfoEnabled(bool, ExceptionCode&);
     void setStorageBlockingPolicy(const String&, ExceptionCode&);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setImagesEnabled(bool enabled, ExceptionCode&);
+    void setMinimumTimerInterval(double intervalInSeconds, ExceptionCode&);
 
 private:
     explicit InternalSettings(Page*);
 
     Settings* settings() const;
     Page* page() const { return m_page; }
+    static const char* supplementName();
 
     Page* m_page;
     Backup m_backup;

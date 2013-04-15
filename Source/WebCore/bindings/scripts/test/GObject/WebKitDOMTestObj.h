@@ -18,6 +18,10 @@
     Boston, MA 02110-1301, USA.
 */
 
+#if !defined(__WEBKITDOM_H_INSIDE__) && !defined(BUILDING_WEBKIT)
+#error "Only <webkitdom/webkitdom.h> can be included directly."
+#endif
+
 #ifndef WebKitDOMTestObj_h
 #define WebKitDOMTestObj_h
 
@@ -137,17 +141,6 @@ webkit_dom_test_obj_method_that_requires_all_args_and_throws(WebKitDOMTestObj* s
 **/
 WEBKIT_API void
 webkit_dom_test_obj_serialized_value(WebKitDOMTestObj* self, WebKitDOMSerializedScriptValue* serializedArg);
-
-/**
- * webkit_dom_test_obj_idb_key:
- * @self: A #WebKitDOMTestObj
- * @key: A #WebKitDOMIDBKey
- *
- * Returns:
- *
-**/
-WEBKIT_API void
-webkit_dom_test_obj_idb_key(WebKitDOMTestObj* self, WebKitDOMIDBKey* key);
 
 /**
  * webkit_dom_test_obj_options_object:

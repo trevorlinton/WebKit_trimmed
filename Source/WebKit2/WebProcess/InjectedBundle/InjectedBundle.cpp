@@ -51,6 +51,7 @@
 #include <WebCore/ApplicationCache.h>
 #include <WebCore/ApplicationCacheStorage.h>
 #include <WebCore/Frame.h>
+#include <WebCore/FrameLoader.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/GCController.h>
 #include <WebCore/GeolocationClient.h>
@@ -61,7 +62,6 @@
 #include <WebCore/JSUint8Array.h>
 #include <WebCore/Page.h>
 #include <WebCore/PageGroup.h>
-#include <WebCore/PageVisibilityState.h>
 #include <WebCore/PrintContext.h>
 #include <WebCore/ResourceHandle.h>
 #include <WebCore/ResourceLoadScheduler.h>
@@ -70,11 +70,10 @@
 #include <WebCore/SecurityPolicy.h>
 #include <WebCore/Settings.h>
 #include <WebCore/UserGestureIndicator.h>
-#include <WebCore/WorkerThread.h>
 #include <wtf/OwnArrayPtr.h>
 #include <wtf/PassOwnArrayPtr.h>
 
-#if ENABLE(SHADOW_DOM) || ENABLE(CSS_REGIONS)
+#if ENABLE(SHADOW_DOM) || ENABLE(CSS_REGIONS) || ENABLE(IFRAME_SEAMLESS)
 #include <WebCore/RuntimeEnabledFeatures.h>
 #endif
 
@@ -109,11 +108,11 @@ void InjectedBundle::initializeClient(WKBundleClient* client)
 
 void InjectedBundle::postMessage(const String& messageName, APIObject* messageBody)
 {
-    OwnPtr<CoreIPC::MessageEncoder> encoder = CoreIPC::MessageEncoder::create(CoreIPC::MessageKindTraits<WebContextLegacyMessage::Kind>::messageReceiverName(), CoreIPC::StringReference("PostMessage"), 0);
+    OwnPtr<CoreIPC::MessageEncoder> encoder = CoreIPC::MessageEncoder::create(WebContextLegacyMessages::messageReceiverName(), WebContextLegacyMessages::postMessageMessageName(), 0);
     encoder->encode(messageName);
     encoder->encode(InjectedBundleUserMessageEncoder(messageBody));
 
-    WebProcess::shared().connection()->sendMessage(CoreIPC::MessageID(WebContextLegacyMessage::PostMessage), encoder.release());
+    WebProcess::shared().connection()->sendMessage(encoder.release());
 }
 
 void InjectedBundle::postSynchronousMessage(const String& messageName, APIObject* messageBody, RefPtr<APIObject>& returnData)
@@ -121,11 +120,11 @@ void InjectedBundle::postSynchronousMessage(const String& messageName, APIObject
     InjectedBundleUserMessageDecoder messageDecoder(returnData);
 
     uint64_t syncRequestID;
-    OwnPtr<CoreIPC::MessageEncoder> encoder = WebProcess::shared().connection()->createSyncMessageEncoder(CoreIPC::MessageKindTraits<WebContextLegacyMessage::Kind>::messageReceiverName(), CoreIPC::StringReference("PostSynchronousMessage"), 0, syncRequestID);
+    OwnPtr<CoreIPC::MessageEncoder> encoder = WebProcess::shared().connection()->createSyncMessageEncoder(WebContextLegacyMessages::messageReceiverName(), WebContextLegacyMessages::postSynchronousMessageMessageName(), 0, syncRequestID);
     encoder->encode(messageName);
     encoder->encode(InjectedBundleUserMessageEncoder(messageBody));
 
-    OwnPtr<CoreIPC::MessageDecoder> replyDecoder = WebProcess::shared().connection()->sendSyncMessage(CoreIPC::MessageID(WebContextLegacyMessage::PostSynchronousMessage), syncRequestID, encoder.release(), CoreIPC::Connection::NoTimeout);
+    OwnPtr<CoreIPC::MessageDecoder> replyDecoder = WebProcess::shared().connection()->sendSyncMessage(syncRequestID, encoder.release(), CoreIPC::Connection::NoTimeout);
     if (!replyDecoder || !replyDecoder->decode(messageDecoder)) {
         returnData = nullptr;
         return;
@@ -204,6 +203,7 @@ void InjectedBundle::overrideBoolPreferenceForTestRunner(WebPageGroupProxy* page
     macro(WebKitCanvasUsesAcceleratedDrawing, CanvasUsesAcceleratedDrawing, canvasUsesAcceleratedDrawing) \
     macro(WebKitCSSCustomFilterEnabled, CSSCustomFilterEnabled, cssCustomFilterEnabled) \
     macro(WebKitCSSGridLayoutEnabled, CSSGridLayoutEnabled, cssGridLayoutEnabled) \
+    macro(WebKitFrameFlatteningEnabled, FrameFlatteningEnabled, frameFlatteningEnabled) \
     macro(WebKitJavaEnabled, JavaEnabled, javaEnabled) \
     macro(WebKitJavaScriptEnabled, ScriptEnabled, javaScriptEnabled) \
     macro(WebKitLoadSiteIconsKey, LoadsSiteIconsIgnoringImageLoadingSetting, loadsSiteIconsIgnoringImageLoadingPreference) \
@@ -290,7 +290,7 @@ void InjectedBundle::setJavaScriptCanAccessClipboard(WebPageGroupProxy* pageGrou
 
 void InjectedBundle::setPrivateBrowsingEnabled(WebPageGroupProxy* pageGroup, bool enabled)
 {
-#if (PLATFORM(MAC) || USE(CFNETWORK)) && !PLATFORM(WIN)
+#if PLATFORM(MAC) || USE(CFNETWORK)
     if (enabled)
         WebFrameNetworkingContext::ensurePrivateBrowsingSession();
     else
@@ -311,7 +311,7 @@ void InjectedBundle::setPopupBlockingEnabled(WebPageGroupProxy* pageGroup, bool 
 
 void InjectedBundle::switchNetworkLoaderToNewTestingSession()
 {
-#if (PLATFORM(MAC) || USE(CFNETWORK)) && !PLATFORM(WIN)
+#if PLATFORM(MAC) || USE(CFNETWORK)
     // FIXME (NetworkProcess): Do this in network process, too.
     InitWebCoreSystemInterface();
     NetworkStorageSession::switchToNewTestingSession();
@@ -399,12 +399,12 @@ void InjectedBundle::resetApplicationCacheOriginQuota(const String& originString
 
 PassRefPtr<ImmutableArray> InjectedBundle::originsWithApplicationCache()
 {
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash> origins;
+    HashSet<RefPtr<SecurityOrigin> > origins;
     cacheStorage().getOriginsWithCache(origins);
     Vector< RefPtr<APIObject> > originsVector;
 
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash>::iterator it = origins.begin();
-    HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash>::iterator end = origins.end();
+    HashSet<RefPtr<SecurityOrigin> >::iterator it = origins.begin();
+    HashSet<RefPtr<SecurityOrigin> >::iterator end = origins.end();
     for ( ; it != end; ++it)
         originsVector.append(WebString::create((*it)->databaseIdentifier()));
 
@@ -580,34 +580,11 @@ void InjectedBundle::didReceiveMessageToPage(WebPage* page, const String& messag
     m_client.didReceiveMessageToPage(this, page, messageName, messageBody);
 }
 
-void InjectedBundle::setPageVisibilityState(WebPage* page, int state, bool isInitialState)
-{
-#if ENABLE(PAGE_VISIBILITY_API) || ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
-    page->corePage()->setVisibilityState(static_cast<PageVisibilityState>(state), isInitialState);
-#endif
-}
-
-size_t InjectedBundle::workerThreadCount()
-{
-#if ENABLE(WORKERS)
-    return WebCore::WorkerThread::workerThreadCount();
-#else
-    return 0;
-#endif
-}
-
 void InjectedBundle::setUserStyleSheetLocation(WebPageGroupProxy* pageGroup, const String& location)
 {
     const HashSet<Page*>& pages = PageGroup::pageGroup(pageGroup->identifier())->pages();
     for (HashSet<Page*>::iterator iter = pages.begin(); iter != pages.end(); ++iter)
         (*iter)->settings()->setUserStyleSheetLocation(KURL(KURL(), location));
-}
-
-void InjectedBundle::setMinimumTimerInterval(WebPageGroupProxy* pageGroup, double seconds)
-{
-    const HashSet<Page*>& pages = PageGroup::pageGroup(pageGroup->identifier())->pages();
-    for (HashSet<Page*>::iterator iter = pages.begin(); iter != pages.end(); ++iter)
-        (*iter)->settings()->setMinDOMTimerInterval(seconds);
 }
 
 void InjectedBundle::setWebNotificationPermission(WebPage* page, const String& originString, bool allowed)
@@ -674,6 +651,15 @@ void InjectedBundle::setCSSRegionsEnabled(bool enabled)
 {
 #if ENABLE(CSS_REGIONS)
     RuntimeEnabledFeatures::setCSSRegionsEnabled(enabled);
+#else
+    UNUSED_PARAM(enabled);
+#endif
+}
+
+void InjectedBundle::setSeamlessIFramesEnabled(bool enabled)
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    RuntimeEnabledFeatures::setSeamlessIFramesEnabled(enabled);
 #else
     UNUSED_PARAM(enabled);
 #endif

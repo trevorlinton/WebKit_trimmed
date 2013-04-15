@@ -20,6 +20,7 @@
 #include "config.h"
 #include "Pasteboard.h"
 
+#include "CachedImage.h"
 #include "ClipboardGtk.h"
 #include "DataObjectGtk.h"
 #include "DocumentFragment.h"
@@ -171,7 +172,7 @@ PassRefPtr<DocumentFragment> Pasteboard::documentFragment(Frame* frame, PassRefP
     chosePlainText = false;
 
     if (dataObject->hasMarkup()) {
-        RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(frame->document(), dataObject->markup(), "", DisallowScriptingContent);
+        RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(frame->document(), dataObject->markup(), "", DisallowScriptingAndPluginContentIfNeeded);
         if (fragment)
             return fragment.release();
     }

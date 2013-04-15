@@ -55,6 +55,7 @@ InjectedBundle::InjectedBundle()
     , m_dumpPixels(false)
     , m_useWaitToDumpWatchdogTimer(true)
     , m_useWorkQueue(false)
+    , m_timeout(0)
 {
 }
 
@@ -153,6 +154,9 @@ void InjectedBundle::didReceiveMessage(WKStringRef messageName, WKTypeRef messag
         WKRetainPtr<WKStringRef> useWaitToDumpWatchdogTimerKey(AdoptWK, WKStringCreateWithUTF8CString("UseWaitToDumpWatchdogTimer"));
         m_useWaitToDumpWatchdogTimer = WKBooleanGetValue(static_cast<WKBooleanRef>(WKDictionaryGetItemForKey(messageBodyDictionary, useWaitToDumpWatchdogTimerKey.get())));
 
+        WKRetainPtr<WKStringRef> timeoutKey(AdoptWK, WKStringCreateWithUTF8CString("Timeout"));
+        m_timeout = (int)WKUInt64GetValue(static_cast<WKUInt64Ref>(WKDictionaryGetItemForKey(messageBodyDictionary, timeoutKey.get())));
+
         WKRetainPtr<WKStringRef> ackMessageName(AdoptWK, WKStringCreateWithUTF8CString("Ack"));
         WKRetainPtr<WKStringRef> ackMessageBody(AdoptWK, WKStringCreateWithUTF8CString("BeginTest"));
         WKBundlePostMessage(m_bundle, ackMessageName.get(), ackMessageBody.get());
@@ -246,7 +250,6 @@ void InjectedBundle::beginTesting(WKDictionaryRef settings)
     WKBundleSetAuthorAndUserStylesEnabled(m_bundle, m_pageGroup, true);
     WKBundleSetFrameFlatteningEnabled(m_bundle, m_pageGroup, false);
     WKBundleSetMinimumLogicalFontSize(m_bundle, m_pageGroup, 9);
-    WKBundleSetMinimumTimerInterval(m_bundle, m_pageGroup, 0.010); // 10 milliseconds (DOMTimer::s_minDefaultTimerInterval)
     WKBundleSetSpatialNavigationEnabled(m_bundle, m_pageGroup, false);
     WKBundleSetAllowFileAccessFromFileURLs(m_bundle, m_pageGroup, true);
     WKBundleSetPluginsEnabled(m_bundle, m_pageGroup, true);
@@ -254,6 +257,7 @@ void InjectedBundle::beginTesting(WKDictionaryRef settings)
     WKBundleSetAlwaysAcceptCookies(m_bundle, false);
     WKBundleSetSerialLoadingEnabled(m_bundle, false);
     WKBundleSetShadowDOMEnabled(m_bundle, true);
+    WKBundleSetSeamlessIFramesEnabled(m_bundle, true);
     WKBundleSetCacheModel(m_bundle, 1 /*CacheModelDocumentBrowser*/);
 
     WKBundleRemoveAllUserContent(m_bundle, m_pageGroup);
@@ -264,6 +268,8 @@ void InjectedBundle::beginTesting(WKDictionaryRef settings)
     m_testRunner->setCloseRemainingWindowsWhenComplete(false);
     m_testRunner->setAcceptsEditing(true);
     m_testRunner->setTabKeyCyclesThroughElements(true);
+
+    m_testRunner->setCustomTimeout(m_timeout);
 
     page()->prepare();
 
@@ -460,6 +466,22 @@ void InjectedBundle::setCustomPolicyDelegate(bool enabled, bool permissive)
     WKRetainPtr<WKStringRef> permissiveKeyWK(AdoptWK, WKStringCreateWithUTF8CString("permissive"));
     WKRetainPtr<WKBooleanRef> permissiveWK(AdoptWK, WKBooleanCreate(permissive));
     WKDictionaryAddItem(messageBody.get(), permissiveKeyWK.get(), permissiveWK.get());
+
+    WKBundlePostMessage(m_bundle, messageName.get(), messageBody.get());
+}
+
+void InjectedBundle::setVisibilityState(WKPageVisibilityState visibilityState, bool isInitialState)
+{
+    WKRetainPtr<WKStringRef> messageName(AdoptWK, WKStringCreateWithUTF8CString("SetVisibilityState"));
+    WKRetainPtr<WKMutableDictionaryRef> messageBody(AdoptWK, WKMutableDictionaryCreate());
+
+    WKRetainPtr<WKStringRef> visibilityStateKeyWK(AdoptWK, WKStringCreateWithUTF8CString("visibilityState"));
+    WKRetainPtr<WKUInt64Ref> visibilityStateWK(AdoptWK, WKUInt64Create(visibilityState));
+    WKDictionaryAddItem(messageBody.get(), visibilityStateKeyWK.get(), visibilityStateWK.get());
+
+    WKRetainPtr<WKStringRef> isInitialKeyWK(AdoptWK, WKStringCreateWithUTF8CString("isInitialState"));
+    WKRetainPtr<WKBooleanRef> isInitialWK(AdoptWK, WKBooleanCreate(isInitialState));
+    WKDictionaryAddItem(messageBody.get(), isInitialKeyWK.get(), isInitialWK.get());
 
     WKBundlePostMessage(m_bundle, messageName.get(), messageBody.get());
 }

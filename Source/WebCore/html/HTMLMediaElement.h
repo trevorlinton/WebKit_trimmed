@@ -27,7 +27,6 @@
 #define HTMLMediaElement_h
 
 #if ENABLE(VIDEO)
-
 #include "HTMLElement.h"
 #include "ActiveDOMObject.h"
 #include "GenericEventQueue.h"
@@ -67,12 +66,16 @@ class Widget;
 #if PLATFORM(MAC)
 class DisplaySleepDisabler;
 #endif
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+class MediaKeys;
+#endif
 
 #if ENABLE(VIDEO_TRACK)
 class InbandTextTrackPrivate;
 
 typedef PODIntervalTree<double, TextTrackCue*> CueIntervalTree;
-typedef Vector<CueIntervalTree::IntervalType> CueList;
+typedef CueIntervalTree::IntervalType CueInterval;
+typedef Vector<CueInterval> CueList;
 #endif
 
 // FIXME: The inheritance from MediaPlayerClient here should be private inheritance.
@@ -86,10 +89,6 @@ class HTMLMediaElement : public HTMLElement, public MediaPlayerClient, public Me
 {
 public:
     MediaPlayer* player() const { return m_player.get(); }
-
-    void createShadowSubtree();
-    virtual void willAddAuthorShadowRoot() OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     virtual bool isVideo() const = 0;
     virtual bool hasVideo() const { return false; }
@@ -191,7 +190,14 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyerror);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
+#endif
+#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitneedkey);
+#endif
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+    MediaKeys* mediaKeys() const { return m_mediaKeys.get(); }
+    void setMediaKeys(MediaKeys*);
 #endif
 
 // controls
@@ -247,7 +253,7 @@ public:
 
     void configureTextTrackGroupForLanguage(const TrackGroup&) const;
     void configureTextTracks();
-    void configureTextTrackGroup(const TrackGroup&) const;
+    void configureTextTrackGroup(const TrackGroup&);
 
     void toggleTrackAtIndex(int index, bool exclusive = true);
     static int textTracksOffIndex() { return -1; }
@@ -257,7 +263,7 @@ public:
     bool userIsInterestedInThisTrackKind(String) const;
     bool textTracksAreReady() const;
     void configureTextTrackDisplay();
-    void updateClosedCaptionsControls();
+    void updateTextTrackDisplay();
 
     // TextTrackClient
     virtual void textTrackReadyStateChanged(TextTrack*);
@@ -310,6 +316,7 @@ public:
     static void getSitesInMediaCache(Vector<String>&);
     static void clearMediaCache();
     static void clearMediaCacheForSite(const String&);
+    static void resetMediaEngines();
 
     bool isPlaying() const { return m_playing; }
 
@@ -382,6 +389,9 @@ protected:
 private:
     void createMediaPlayer();
 
+    virtual bool alwaysCreateUserAgentShadowRoot() const OVERRIDE { return true; }
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+
     virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool supportsFocus() const;
     virtual bool isMouseFocusable() const;
@@ -432,16 +442,15 @@ private:
     virtual void mediaPlayerFirstVideoFrameAvailable(MediaPlayer*);
     virtual void mediaPlayerCharacteristicChanged(MediaPlayer*);
 
-#if ENABLE(MEDIA_SOURCE)
-    virtual void mediaPlayerSourceOpened();
-    virtual String mediaPlayerSourceURL() const;
-#endif
-
 #if ENABLE(ENCRYPTED_MEDIA)
     virtual void mediaPlayerKeyAdded(MediaPlayer*, const String& keySystem, const String& sessionId) OVERRIDE;
     virtual void mediaPlayerKeyError(MediaPlayer*, const String& keySystem, const String& sessionId, MediaPlayerClient::MediaKeyErrorCode, unsigned short systemCode) OVERRIDE;
     virtual void mediaPlayerKeyMessage(MediaPlayer*, const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const KURL& defaultURL) OVERRIDE;
     virtual bool mediaPlayerKeyNeeded(MediaPlayer*, const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
+#endif
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+    virtual bool mediaPlayerKeyNeeded(MediaPlayer*, Uint8Array*);
 #endif
 
     virtual String mediaPlayerReferrer() const OVERRIDE;
@@ -625,7 +634,6 @@ private:
     int m_processingMediaPlayerCallback;
 
 #if ENABLE(MEDIA_SOURCE)
-    KURL m_mediaSourceURL;
     RefPtr<MediaSource> m_mediaSource;
 #endif
 
@@ -677,6 +685,7 @@ private:
 #if ENABLE(VIDEO_TRACK)
     bool m_tracksAreReady : 1;
     bool m_haveVisibleTextTrack : 1;
+    bool m_processingPreferenceChange : 1;
     float m_lastTextTrackUpdateTime;
 
     RefPtr<TextTrackList> m_textTracks;
@@ -705,6 +714,10 @@ private:
 #endif
 
     friend class TrackDisplayUpdateScope;
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+    RefPtr<MediaKeys> m_mediaKeys;
+#endif
 };
 
 #if ENABLE(VIDEO_TRACK)

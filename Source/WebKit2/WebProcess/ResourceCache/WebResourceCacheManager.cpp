@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,10 +40,9 @@ using namespace WebCore;
 
 namespace WebKit {
 
-const AtomicString& WebResourceCacheManager::supplementName()
+const char* WebResourceCacheManager::supplementName()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("WebResourceCacheManager", AtomicString::ConstructFromLiteral));
-    return name;
+    return "WebResourceCacheManager";
 }
 
 WebResourceCacheManager::WebResourceCacheManager(WebProcess* process)
@@ -52,15 +51,8 @@ WebResourceCacheManager::WebResourceCacheManager(WebProcess* process)
     m_process->addMessageReceiver(Messages::WebResourceCacheManager::messageReceiverName(), this);
 }
 
-void WebResourceCacheManager::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
-{
-    didReceiveWebResourceCacheManagerMessage(connection, messageID, decoder);
-}
-
 void WebResourceCacheManager::getCacheOrigins(uint64_t callbackID) const
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
     MemoryCache::SecurityOriginSet origins;
     memoryCache()->getOriginsWithCache(origins);
 
@@ -94,10 +86,8 @@ void WebResourceCacheManager::getCacheOrigins(uint64_t callbackID) const
     m_process->send(Messages::WebResourceCacheManagerProxy::DidGetCacheOrigins(identifiers, callbackID), 0);
 }
 
-void WebResourceCacheManager::clearCacheForOrigin(SecurityOriginData originData, uint32_t cachesToClear) const
+void WebResourceCacheManager::clearCacheForOrigin(const SecurityOriginData& originData, uint32_t cachesToClear) const
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
 #if USE(CFURLCACHE)
     ResourceCachesToClear resourceCachesToClear = static_cast<ResourceCachesToClear>(cachesToClear);
 #else
@@ -122,8 +112,6 @@ void WebResourceCacheManager::clearCacheForOrigin(SecurityOriginData originData,
 
 void WebResourceCacheManager::clearCacheForAllOrigins(uint32_t cachesToClear) const
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
     ResourceCachesToClear resourceCachesToClear = static_cast<ResourceCachesToClear>(cachesToClear);
     m_process->clearResourceCaches(resourceCachesToClear);
 }

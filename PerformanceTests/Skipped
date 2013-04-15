@@ -1,3 +1,6 @@
+# Micro benchmarks not worth running at the moment.
+DOM/TraverseChildNodes.html
+
 # Not enabled by default on some ports
 Mutation
 
@@ -24,6 +27,9 @@ Dromaeo/jslib-modify-jquery.html
 
 # https://bugs.webkit.org/show_bug.cgi?id=98708
 Layout/subtree-detaching.html
+
+# https://bugs.webkit.org/show_bug.cgi?id=108948#c7
+Layout/ArabicLineLayout.html
 
 # We have pure JS tests separately outside Dromaeo.
 Dromaeo/sunspider-3d-morph.html
@@ -62,3 +68,10 @@ SVG/SvgNestedUse.html
 
 # Bug 102646 - ShadowDOM is not enabled in some ports.
 ShadowDOM
+
+Canvas/drawimage.html
+
+# Works fine, but is mostly useful to the threaded-parsing folks, as
+# it's very similar to parser/html-parser.html just using
+# srcdoc to load instead of document.write.
+Parser/html-parser-srcdoc.html

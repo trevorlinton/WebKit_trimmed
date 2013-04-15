@@ -111,6 +111,9 @@ public:
 
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
     const KURL& url() const { return m_resourceRequest.url();}
+#if ENABLE(CACHE_PARTITIONING)
+    const String& cachePartition() const { return m_resourceRequest.cachePartition(); }
+#endif
     Type type() const { return static_cast<Type>(m_type); }
     
     ResourceLoadPriority loadPriority() const { return m_loadPriority; }
@@ -244,7 +247,7 @@ public:
     
     // HTTP revalidation support methods for CachedResourceLoader.
     void setResourceToRevalidate(CachedResource*);
-    void switchClientsToRevalidatedResource();
+    virtual void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
     void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
     
@@ -257,6 +260,8 @@ public:
     double loadFinishTime() const { return m_loadFinishTime; }
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
+    virtual bool canReuse(const ResourceRequest&) const { return true; }
 
 protected:
     virtual void checkNotify();

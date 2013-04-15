@@ -434,7 +434,7 @@ typedef short int yytype_int16;
 #define YYSIZE_MAXIMUM ((YYSIZE_T) -1)
 
 #ifndef YY_
-# if YYENABLE_NLS
+# if defined YYENABLE_NLS && YYENABLE_NLS
 #  if ENABLE_NLS
 #   include <libintl.h> /* INFRINGES ON USER NAME SPACE */
 #   define YY_(msgid) dgettext ("bison-runtime", msgid)
@@ -752,26 +752,26 @@ static const yytype_int16 yyrhs[] =
 static const yytype_uint16 yyrline[] =
 {
        0,   168,   168,   203,   206,   219,   224,   229,   235,   238,
-     317,   320,   429,   439,   452,   460,   560,   563,   571,   575,
-     582,   586,   593,   599,   608,   616,   671,   678,   688,   691,
-     701,   711,   732,   733,   734,   739,   740,   749,   761,   762,
-     770,   781,   785,   786,   796,   806,   816,   829,   830,   840,
-     853,   857,   861,   865,   866,   879,   880,   893,   894,   907,
-     908,   925,   926,   939,   940,   941,   942,   943,   947,   950,
-     961,   969,   996,  1001,  1008,  1046,  1049,  1056,  1064,  1085,
-    1106,  1117,  1146,  1151,  1161,  1166,  1176,  1179,  1182,  1185,
-    1191,  1198,  1201,  1223,  1241,  1265,  1288,  1292,  1310,  1318,
-    1350,  1370,  1459,  1468,  1491,  1494,  1500,  1508,  1516,  1524,
-    1534,  1541,  1544,  1547,  1553,  1556,  1571,  1575,  1579,  1583,
-    1592,  1597,  1602,  1607,  1612,  1617,  1622,  1627,  1632,  1637,
-    1643,  1649,  1655,  1660,  1665,  1674,  1683,  1688,  1701,  1701,
-    1715,  1715,  1724,  1727,  1742,  1778,  1782,  1788,  1796,  1812,
-    1816,  1820,  1821,  1827,  1828,  1829,  1830,  1831,  1835,  1836,
-    1836,  1836,  1846,  1847,  1851,  1851,  1852,  1852,  1857,  1860,
-    1870,  1873,  1879,  1880,  1884,  1892,  1896,  1906,  1911,  1928,
-    1928,  1933,  1933,  1940,  1940,  1948,  1951,  1957,  1960,  1966,
-    1970,  1977,  1984,  1991,  1998,  2009,  2018,  2022,  2029,  2032,
-    2038,  2038
+     317,   320,   421,   431,   444,   452,   552,   555,   563,   567,
+     574,   578,   585,   591,   600,   608,   663,   670,   680,   683,
+     693,   703,   724,   725,   726,   731,   732,   741,   753,   754,
+     762,   773,   777,   778,   788,   798,   808,   821,   822,   832,
+     845,   849,   853,   857,   858,   871,   872,   885,   886,   899,
+     900,   917,   918,   931,   932,   933,   934,   935,   939,   942,
+     953,   961,   988,   993,  1003,  1041,  1044,  1051,  1059,  1080,
+    1101,  1112,  1141,  1146,  1156,  1161,  1171,  1174,  1177,  1180,
+    1186,  1193,  1196,  1218,  1236,  1260,  1283,  1287,  1305,  1313,
+    1345,  1365,  1454,  1463,  1486,  1489,  1495,  1503,  1511,  1519,
+    1529,  1536,  1539,  1542,  1548,  1551,  1566,  1570,  1574,  1578,
+    1587,  1592,  1597,  1602,  1607,  1612,  1617,  1622,  1627,  1632,
+    1638,  1644,  1650,  1655,  1660,  1669,  1678,  1683,  1696,  1696,
+    1710,  1710,  1719,  1722,  1737,  1773,  1777,  1783,  1791,  1807,
+    1811,  1815,  1816,  1822,  1823,  1824,  1825,  1826,  1830,  1831,
+    1831,  1831,  1841,  1842,  1846,  1846,  1847,  1847,  1852,  1855,
+    1865,  1868,  1874,  1875,  1879,  1887,  1891,  1901,  1906,  1923,
+    1923,  1928,  1928,  1935,  1935,  1943,  1946,  1952,  1955,  1961,
+    1965,  1972,  1979,  1986,  1993,  2004,  2013,  2017,  2024,  2027,
+    2033,  2033
 };
 #endif
 
@@ -1407,7 +1407,7 @@ while (YYID (0))
    we won't break user code: when these are the locations we know.  */
 
 #ifndef YY_LOCATION_PRINT
-# if YYLTYPE_IS_TRIVIAL
+# if defined YYLTYPE_IS_TRIVIAL && YYLTYPE_IS_TRIVIAL
 #  define YY_LOCATION_PRINT(File, Loc)			\
      fprintf (File, "%d.%d-%d.%d",			\
 	      (Loc).first_line, (Loc).first_column,	\
@@ -2360,18 +2360,10 @@ yyreduce:
                 else
                     (yyval.interm.intermTypedNode)->setType(TType((yyvsp[(1) - (3)].interm.intermTypedNode)->getBasicType(), (yyvsp[(1) - (3)].interm.intermTypedNode)->getPrecision(), EvqConst, (int) (*(yyvsp[(3) - (3)].lex).string).size()));
             } else {
-                if (fields.num == 1) {
-                    ConstantUnion *unionArray = new ConstantUnion[1];
-                    unionArray->setIConst(fields.offsets[0]);
-                    TIntermTyped* index = context->intermediate.addConstantUnion(unionArray, TType(EbtInt, EbpUndefined, EvqConst), (yyvsp[(3) - (3)].lex).line);
-                    (yyval.interm.intermTypedNode) = context->intermediate.addIndex(EOpIndexDirect, (yyvsp[(1) - (3)].interm.intermTypedNode), index, (yyvsp[(2) - (3)].lex).line);
-                    (yyval.interm.intermTypedNode)->setType(TType((yyvsp[(1) - (3)].interm.intermTypedNode)->getBasicType(), (yyvsp[(1) - (3)].interm.intermTypedNode)->getPrecision()));
-                } else {
-                    TString vectorString = *(yyvsp[(3) - (3)].lex).string;
-                    TIntermTyped* index = context->intermediate.addSwizzle(fields, (yyvsp[(3) - (3)].lex).line);
-                    (yyval.interm.intermTypedNode) = context->intermediate.addIndex(EOpVectorSwizzle, (yyvsp[(1) - (3)].interm.intermTypedNode), index, (yyvsp[(2) - (3)].lex).line);
-                    (yyval.interm.intermTypedNode)->setType(TType((yyvsp[(1) - (3)].interm.intermTypedNode)->getBasicType(), (yyvsp[(1) - (3)].interm.intermTypedNode)->getPrecision(), EvqTemporary, (int) vectorString.size()));
-                }
+                TString vectorString = *(yyvsp[(3) - (3)].lex).string;
+                TIntermTyped* index = context->intermediate.addSwizzle(fields, (yyvsp[(3) - (3)].lex).line);
+                (yyval.interm.intermTypedNode) = context->intermediate.addIndex(EOpVectorSwizzle, (yyvsp[(1) - (3)].interm.intermTypedNode), index, (yyvsp[(2) - (3)].lex).line);
+                (yyval.interm.intermTypedNode)->setType(TType((yyvsp[(1) - (3)].interm.intermTypedNode)->getBasicType(), (yyvsp[(1) - (3)].interm.intermTypedNode)->getPrecision(), EvqTemporary, (int) vectorString.size()));
             }
         } else if ((yyvsp[(1) - (3)].interm.intermTypedNode)->isMatrix()) {
             TMatrixFields fields;
@@ -2562,7 +2554,7 @@ yyreduce:
                     (yyval.interm.intermTypedNode)->getAsAggregate()->setName(fnCandidate->getMangledName());
 
                     TQualifier qual;
-                    for (int i = 0; i < fnCandidate->getParamCount(); ++i) {
+                    for (size_t i = 0; i < fnCandidate->getParamCount(); ++i) {
                         qual = fnCandidate->getParam(i).type->getQualifier();
                         if (qual == EvqOut || qual == EvqInOut) {
                             if (context->lValueErrorCheck((yyval.interm.intermTypedNode)->getLine(), "assign", (yyval.interm.intermTypedNode)->getAsAggregate()->getSequence()[i]->getAsTyped())) {
@@ -3148,7 +3140,7 @@ yyreduce:
         prototype->setType(function.getReturnType());
         prototype->setName(function.getName());
         
-        for (int i = 0; i < function.getParamCount(); i++)
+        for (size_t i = 0; i < function.getParamCount(); i++)
         {
             const TParameter &param = function.getParam(i);
             if (param.name != 0)
@@ -3182,7 +3174,10 @@ yyreduce:
   case 73:
 
     {
-        context->symbolTable.setDefaultPrecision( (yyvsp[(3) - (4)].interm.type).type, (yyvsp[(2) - (4)].interm.precision) );
+        if (!context->symbolTable.setDefaultPrecision( (yyvsp[(3) - (4)].interm.type), (yyvsp[(2) - (4)].interm.precision) )) {
+            context->error((yyvsp[(1) - (4)].lex).line, "illegal type argument for default precision qualifier", getBasicString((yyvsp[(3) - (4)].interm.type).type));
+            context->recover();
+        }
         (yyval.interm.intermNode) = 0;
     ;}
     break;
@@ -3204,7 +3199,7 @@ yyreduce:
                 context->error((yyvsp[(2) - (2)].lex).line, "overloaded functions must have the same return type", (yyvsp[(1) - (2)].interm.function)->getReturnType().getBasicString());
                 context->recover();
             }
-            for (int i = 0; i < prevDec->getParamCount(); ++i) {
+            for (size_t i = 0; i < prevDec->getParamCount(); ++i) {
                 if (prevDec->getParam(i).type->getQualifier() != (yyvsp[(1) - (2)].interm.function)->getParam(i).type->getQualifier()) {
                     context->error((yyvsp[(2) - (2)].lex).line, "overloaded functions must have the same parameter qualifiers", (yyvsp[(1) - (2)].interm.function)->getParam(i).type->getQualifierString());
                     context->recover();
@@ -3430,7 +3425,7 @@ yyreduce:
         if (context->structQualifierErrorCheck((yyvsp[(3) - (3)].lex).line, (yyval.interm).type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck((yyvsp[(3) - (3)].lex).line, *(yyvsp[(3) - (3)].lex).string, (yyval.interm).type))
+        if (context->nonInitConstErrorCheck((yyvsp[(3) - (3)].lex).line, *(yyvsp[(3) - (3)].lex).string, (yyval.interm).type, false))
             context->recover();
 
         TVariable* variable = 0;
@@ -3447,7 +3442,7 @@ yyreduce:
         if (context->structQualifierErrorCheck((yyvsp[(3) - (5)].lex).line, (yyvsp[(1) - (5)].interm).type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck((yyvsp[(3) - (5)].lex).line, *(yyvsp[(3) - (5)].lex).string, (yyvsp[(1) - (5)].interm).type))
+        if (context->nonInitConstErrorCheck((yyvsp[(3) - (5)].lex).line, *(yyvsp[(3) - (5)].lex).string, (yyvsp[(1) - (5)].interm).type, true))
             context->recover();
 
         (yyval.interm) = (yyvsp[(1) - (5)].interm);
@@ -3469,7 +3464,7 @@ yyreduce:
         if (context->structQualifierErrorCheck((yyvsp[(3) - (6)].lex).line, (yyvsp[(1) - (6)].interm).type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck((yyvsp[(3) - (6)].lex).line, *(yyvsp[(3) - (6)].lex).string, (yyvsp[(1) - (6)].interm).type))
+        if (context->nonInitConstErrorCheck((yyvsp[(3) - (6)].lex).line, *(yyvsp[(3) - (6)].lex).string, (yyvsp[(1) - (6)].interm).type, true))
             context->recover();
 
         (yyval.interm) = (yyvsp[(1) - (6)].interm);
@@ -3532,7 +3527,7 @@ yyreduce:
         if (context->structQualifierErrorCheck((yyvsp[(2) - (2)].lex).line, (yyval.interm).type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck((yyvsp[(2) - (2)].lex).line, *(yyvsp[(2) - (2)].lex).string, (yyval.interm).type))
+        if (context->nonInitConstErrorCheck((yyvsp[(2) - (2)].lex).line, *(yyvsp[(2) - (2)].lex).string, (yyval.interm).type, false))
             context->recover();
             
             (yyval.interm).type = (yyvsp[(1) - (2)].interm.type);
@@ -3571,7 +3566,7 @@ yyreduce:
         if (context->structQualifierErrorCheck((yyvsp[(2) - (5)].lex).line, (yyvsp[(1) - (5)].interm.type)))
             context->recover();
 
-        if (context->nonInitConstErrorCheck((yyvsp[(2) - (5)].lex).line, *(yyvsp[(2) - (5)].lex).string, (yyvsp[(1) - (5)].interm.type)))
+        if (context->nonInitConstErrorCheck((yyvsp[(2) - (5)].lex).line, *(yyvsp[(2) - (5)].lex).string, (yyvsp[(1) - (5)].interm.type), true))
             context->recover();
 
         (yyval.interm).type = (yyvsp[(1) - (5)].interm.type);
@@ -4517,6 +4512,15 @@ yyreduce:
 
     {
         TFunction* function = (yyvsp[(1) - (1)].interm).function;
+        
+        const TSymbol *builtIn = context->symbolTable.findBuiltIn(function->getMangledName());
+        
+        if (builtIn)
+        {
+            context->error((yyvsp[(1) - (1)].interm).line, "built-in functions cannot be redefined", function->getName().c_str());
+            context->recover();
+        }
+        
         TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find(function->getMangledName()));
         //
         // Note:  'prevDec' could be 'function' if this is the first time we've seen function
@@ -4561,7 +4565,7 @@ yyreduce:
         // knows where to find parameters.
         //
         TIntermAggregate* paramNodes = new TIntermAggregate;
-        for (int i = 0; i < function->getParamCount(); i++) {
+        for (size_t i = 0; i < function->getParamCount(); i++) {
             const TParameter& param = function->getParam(i);
             if (param.name != 0) {
                 TVariable *variable = new TVariable(param.name, *param.type);

@@ -28,7 +28,6 @@
 #include "AccessibilityObject.h"
 #include "AnimationController.h"
 #include "ApplicationCacheStorage.h"
-#include "CSSComputedStyleDeclaration.h"
 #include "Chrome.h"
 #include "ChromeClientGtk.h"
 #include "DOMWrapperWorld.h"
@@ -45,13 +44,13 @@
 #include "GeolocationPosition.h"
 #include "GraphicsContext.h"
 #include "HTMLInputElement.h"
+#include "JSCJSValue.h"
 #include "JSCSSStyleDeclaration.h"
 #include "JSDOMWindow.h"
 #include "JSDocument.h"
 #include "JSElement.h"
 #include "JSLock.h"
 #include "JSNodeList.h"
-#include "JSValue.h"
 #include "MemoryCache.h"
 #include "MutationObserver.h"
 #include "NodeList.h"
@@ -68,7 +67,6 @@
 #include "Settings.h"
 #include "TextIterator.h"
 #include "WebKitAccessibleWrapperAtk.h"
-#include "WorkerThread.h"
 #include "webkitglobalsprivate.h"
 #include "webkitwebframe.h"
 #include "webkitwebframeprivate.h"
@@ -194,6 +192,20 @@ CString DumpRenderTreeSupportGtk::dumpRenderTree(WebKitWebFrame* frame)
     return externalRepresentation(coreFrame).utf8();
 }
 
+void DumpRenderTreeSupportGtk::addUserScript(WebKitWebFrame* frame, const char* sourceCode, bool runAtStart, bool allFrames)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_FRAME(frame));
+
+    Frame* coreFrame = core(frame);
+    if (!coreFrame)
+        return;
+
+    WebKitWebView* webView = getViewFromFrame(frame);
+    Page* page = core(webView);
+    page->group().addUserScriptToWorld(mainThreadNormalWorld(), sourceCode, KURL(), Vector<String>(), Vector<String>(),
+        runAtStart ? InjectAtDocumentStart : InjectAtDocumentEnd, allFrames ? InjectInAllFrames : InjectInTopFrameOnly);
+}
+
 /**
  * addUserStyleSheet
  * @frame: a #WebKitWebFrame
@@ -224,43 +236,6 @@ guint DumpRenderTreeSupportGtk::getPendingUnloadEventCount(WebKitWebFrame* frame
     g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), 0);
 
     return core(frame)->document()->domWindow()->pendingUnloadEventListeners();
-}
-
-bool DumpRenderTreeSupportGtk::pauseAnimation(WebKitWebFrame* frame, const char* name, double time, const char* element)
-{
-    ASSERT(core(frame));
-    Element* coreElement = core(frame)->document()->getElementById(AtomicString(element));
-    if (!coreElement || !coreElement->renderer())
-        return false;
-    return core(frame)->animation()->pauseAnimationAtTime(coreElement->renderer(), AtomicString(name), time);
-}
-
-bool DumpRenderTreeSupportGtk::pauseTransition(WebKitWebFrame* frame, const char* name, double time, const char* element)
-{
-    ASSERT(core(frame));
-    Element* coreElement = core(frame)->document()->getElementById(AtomicString(element));
-    if (!coreElement || !coreElement->renderer())
-        return false;
-    return core(frame)->animation()->pauseTransitionAtTime(coreElement->renderer(), AtomicString(name), time);
-}
-
-CString DumpRenderTreeSupportGtk::markerTextForListItem(WebKitWebFrame* frame, JSContextRef context, JSValueRef nodeObject)
-{
-    JSC::ExecState* exec = toJS(context);
-    Element* element = toElement(toJS(exec, nodeObject));
-    if (!element)
-        return CString();
-
-    return WebCore::markerTextForListItem(element).utf8();
-}
-
-unsigned int DumpRenderTreeSupportGtk::numberOfActiveAnimations(WebKitWebFrame* frame)
-{
-    Frame* coreFrame = core(frame);
-    if (!coreFrame)
-        return 0;
-
-    return coreFrame->animation()->numberOfActiveAnimations(coreFrame->document());
 }
 
 void DumpRenderTreeSupportGtk::clearMainFrameName(WebKitWebFrame* frame)
@@ -545,28 +520,9 @@ void DumpRenderTreeSupportGtk::clearOpener(WebKitWebFrame* frame)
         coreFrame->loader()->setOpener(0);
 }
 
-unsigned int DumpRenderTreeSupportGtk::workerThreadCount()
-{
-#if ENABLE(WORKERS)
-    return WebCore::WorkerThread::workerThreadCount();
-#else
-    return 0;
-#endif
-}
-
 bool DumpRenderTreeSupportGtk::findString(WebKitWebView* webView, const gchar* targetString, WebKitFindOptions findOptions)
 {
     return core(webView)->findString(String::fromUTF8(targetString), findOptions);
-}
-
-double DumpRenderTreeSupportGtk::defaultMinimumTimerInterval()
-{
-    return Settings::defaultMinDOMTimerInterval();
-}
-
-void DumpRenderTreeSupportGtk::setMinimumTimerInterval(WebKitWebView* webView, double interval)
-{
-    core(webView)->settings()->setMinDOMTimerInterval(interval);
 }
 
 CString DumpRenderTreeSupportGtk::accessibilityHelpText(AtkObject* axObject)
@@ -579,19 +535,6 @@ CString DumpRenderTreeSupportGtk::accessibilityHelpText(AtkObject* axObject)
         return CString();
 
     return coreObject->helpText().utf8();
-}
-
-void DumpRenderTreeSupportGtk::setAutofilled(JSContextRef context, JSValueRef nodeObject, bool autofilled)
-{
-    JSC::ExecState* exec = toJS(context);
-    Element* element = toElement(toJS(exec, nodeObject));
-    if (!element)
-        return;
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement)
-        return;
-
-    inputElement->setAutofilled(autofilled);
 }
 
 void DumpRenderTreeSupportGtk::setValueForUser(JSContextRef context, JSValueRef nodeObject, JSStringRef value)
@@ -709,6 +652,13 @@ void DumpRenderTreeSupportGtk::setExperimentalContentSecurityPolicyFeaturesEnabl
 #endif
 }
 
+void DumpRenderTreeSupportGtk::setSeamlessIFramesEnabled(bool enabled)
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    RuntimeEnabledFeatures::setSeamlessIFramesEnabled(enabled);
+#endif
+}
+
 void DumpRenderTreeSupportGtk::setShadowDOMEnabled(bool enabled)
 {
 #if ENABLE(SHADOW_DOM)
@@ -741,22 +691,6 @@ bool DumpRenderTreeSupportGtk::elementDoesAutoCompleteForElementWithId(WebKitWeb
 
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(coreNode);
     return inputElement->isTextField() && !inputElement->isPasswordField() && inputElement->shouldAutocomplete();
-}
-
-JSValueRef DumpRenderTreeSupportGtk::computedStyleIncludingVisitedInfo(JSContextRef context, JSValueRef nodeObject)
-{
-    JSC::ExecState* exec = toJS(context);
-    if (!nodeObject)
-        return JSValueMakeUndefined(context);
-
-    JSValue jsValue = toJS(exec, nodeObject);
-    if (!jsValue.inherits(&JSElement::s_info))
-        return JSValueMakeUndefined(context);
-
-    JSElement* jsElement = static_cast<JSElement*>(asObject(jsValue));
-    Element* element = jsElement->impl();
-    RefPtr<CSSComputedStyleDeclaration> style = CSSComputedStyleDeclaration::create(element, true);
-    return toRef(exec, toJS(exec, jsElement->globalObject(), style.get()));
 }
 
 void DumpRenderTreeSupportGtk::deliverAllMutationsIfNecessary()

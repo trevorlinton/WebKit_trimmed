@@ -33,19 +33,25 @@
 #import "JSWrapperMap.h"
 #import "JavaScriptCore.h"
 #import "ObjcRuntimeExtras.h"
+#import "Operations.h"
+#import "StrongInlines.h"
 #import <wtf/HashSet.h>
 
-#if JS_OBJC_API_ENABLED
+#if JSC_OBJC_API_ENABLED
 
 @implementation JSContext {
     JSVirtualMachine *m_virtualMachine;
     JSGlobalContextRef m_context;
     JSWrapperMap *m_wrapperMap;
-    HashCountedSet<JSValueRef> m_protectCounts;
+    JSC::Strong<JSC::JSObject> m_exception;
 }
 
-@synthesize exception;
 @synthesize exceptionHandler;
+
+- (JSGlobalContextRef)globalContextRef
+{
+    return m_context;
+}
 
 - (id)init
 {
@@ -62,12 +68,10 @@
     m_context = JSGlobalContextCreateInGroup(getGroupFromVirtualMachine(virtualMachine), 0);
     m_wrapperMap = [[JSWrapperMap alloc] initWithContext:self];
 
-    self.exception = nil;
     self.exceptionHandler = ^(JSContext *context, JSValue *exceptionValue) {
         context.exception = exceptionValue;
     };
 
-    toJS(m_context)->lexicalGlobalObject()->m_apiData = self;
     return self;
 }
 
@@ -82,6 +86,26 @@
         return [self valueFromNotifyException:exceptionValue];
 
     return [JSValue valueWithValue:result inContext:self];
+}
+
+- (void)setException:(JSValue *)value
+{
+    if (value)
+        m_exception.set(toJS(m_context)->globalData(), toJS(JSValueToObject(m_context, valueInternalValue(value), 0)));
+    else
+        m_exception.clear();
+}
+
+- (JSValue *)exception
+{
+    if (!m_exception)
+        return nil;
+    return [JSValue valueWithValue:toRef(m_exception.get()) inContext:self];
+}
+
+- (JSWrapperMap *)wrapperMap
+{
+    return m_wrapperMap;
 }
 
 - (JSValue *)globalObject
@@ -147,23 +171,31 @@
 
 @implementation JSContext(Internal)
 
-JSGlobalContextRef contextInternalContext(JSContext *context)
+- (id)initWithGlobalContextRef:(JSGlobalContextRef)context
 {
-    return context->m_context;
+    self = [super init];
+    if (!self)
+        return nil;
+
+    JSC::JSGlobalObject* globalObject = toJS(context)->lexicalGlobalObject();
+    m_virtualMachine = [[JSVirtualMachine virtualMachineWithContextGroupRef:toRef(&globalObject->globalData())] retain];
+    ASSERT(m_virtualMachine);
+    m_context = JSGlobalContextRetain(context);
+    m_wrapperMap = [[JSWrapperMap alloc] initWithContext:self];
+
+    self.exceptionHandler = ^(JSContext *context, JSValue *exceptionValue) {
+        context.exception = exceptionValue;
+    };
+
+    return self;
 }
 
 - (void)dealloc
 {
-    toJS(m_context)->lexicalGlobalObject()->m_apiData = 0;
-
-    HashCountedSet<JSValueRef>::iterator iterator = m_protectCounts.begin();
-    HashCountedSet<JSValueRef>::iterator end = m_protectCounts.end();
-    for (; iterator != end; ++iterator)
-        JSValueUnprotect(m_context, iterator->key);
-
     [m_wrapperMap release];
     JSGlobalContextRelease(m_context);
     [m_virtualMachine release];
+    [self.exceptionHandler release];
     [super dealloc];
 }
 
@@ -205,29 +237,28 @@ JSGlobalContextRef contextInternalContext(JSContext *context)
     [self release];
 }
 
-- (void)protect:(JSValueRef)value
-{
-    // Lock access to m_protectCounts
-    JSC::JSLockHolder lock(toJS(m_context));
-
-    if (m_protectCounts.add(value).isNewEntry)
-        JSValueProtect(m_context, value);
-}
-
-- (void)unprotect:(JSValueRef)value
-{
-    // Lock access to m_protectCounts
-    JSC::JSLockHolder lock(toJS(m_context));
-
-    if (m_protectCounts.remove(value))
-        JSValueUnprotect(m_context, value);
-}
-
-- (JSValue *)wrapperForObject:(id)object
+- (JSValue *)wrapperForObjCObject:(id)object
 {
     // Lock access to m_wrapperMap
     JSC::JSLockHolder lock(toJS(m_context));
-    return [m_wrapperMap wrapperForObject:object];
+    return [m_wrapperMap jsWrapperForObject:object];
+}
+
+- (JSValue *)wrapperForJSObject:(JSValueRef)value
+{
+    JSC::JSLockHolder lock(toJS(m_context));
+    return [m_wrapperMap objcWrapperForJSValueRef:value];
+}
+
++ (JSContext *)contextWithGlobalContextRef:(JSGlobalContextRef)globalContext
+{
+    JSVirtualMachine *virtualMachine = [JSVirtualMachine virtualMachineWithContextGroupRef:toRef(&toJS(globalContext)->globalData())];
+    JSContext *context = [virtualMachine contextForGlobalContextRef:globalContext];
+    if (!context) {
+        context = [[[JSContext alloc] initWithGlobalContextRef:globalContext] autorelease];
+        [virtualMachine addContext:context forGlobalContextRef:globalContext];
+    }
+    return context;
 }
 
 @end

@@ -102,24 +102,23 @@ public:
     void getItemRefElements(Vector<HTMLElement*>&);
 #endif
 
-#ifndef NDEBUG
     virtual bool isHTMLUnknownElement() const { return false; }
-#endif
 
     virtual bool isLabelable() const { return false; }
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document*, ConstructionType);
 
-    void addHTMLLengthToStyle(StylePropertySet*, CSSPropertyID, const String& value);
-    void addHTMLColorToStyle(StylePropertySet*, CSSPropertyID, const String& color);
+    void addHTMLLengthToStyle(MutableStylePropertySet*, CSSPropertyID, const String& value);
+    void addHTMLColorToStyle(MutableStylePropertySet*, CSSPropertyID, const String& color);
 
-    void applyAlignmentAttributeToStyle(const Attribute&, StylePropertySet*);
-    void applyBorderAttributeToStyle(const Attribute&, StylePropertySet*);
+    void applyAlignmentAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
+    void applyBorderAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
     void calculateAndAdjustDirectionality();
@@ -129,7 +128,7 @@ protected:
 private:
     virtual String nodeName() const;
 
-    void mapLanguageAttributeToLocale(const Attribute&, StylePropertySet*);
+    void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
     virtual HTMLFormElement* virtualForm() const;
 
@@ -151,13 +150,13 @@ private:
 
 inline HTMLElement* toHTMLElement(Node* node)
 {
-    ASSERT(!node || node->isHTMLElement());
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
     return static_cast<HTMLElement*>(node);
 }
 
 inline const HTMLElement* toHTMLElement(const Node* node)
 {
-    ASSERT(!node || node->isHTMLElement());
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
     return static_cast<const HTMLElement*>(node);
 }
 

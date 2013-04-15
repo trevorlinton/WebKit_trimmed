@@ -44,10 +44,11 @@ bool mightCompileProgram(CodeBlock*);
 bool mightCompileFunctionForCall(CodeBlock*);
 bool mightCompileFunctionForConstruct(CodeBlock*);
 bool mightInlineFunctionForCall(CodeBlock*);
+bool mightInlineFunctionForClosureCall(CodeBlock*);
 bool mightInlineFunctionForConstruct(CodeBlock*);
 
 // Opcode checking.
-inline bool canInlineResolveOperations(OpcodeID opcode, ResolveOperations* operations)
+inline bool canInlineResolveOperations(ResolveOperations* operations)
 {
     for (unsigned i = 0; i < operations->size(); i++) {
         switch (operations->data()[i].m_operation) {
@@ -64,18 +65,9 @@ inline bool canInlineResolveOperations(OpcodeID opcode, ResolveOperations* opera
             continue;
 
         case ResolveOperation::Fail:
-            switch (opcode) {
-            case op_resolve_base_to_global_dynamic:
-            case op_resolve_base_to_scope_with_top_scope_check:
-            case op_resolve_base_to_global:
-            case op_resolve_base_to_scope:
-                CRASH();
-            case op_resolve_with_base:
-            case op_resolve_with_this:
-                return false;
-            default:
-                continue;
-            }
+            // Fall-back resolves don't know how to deal with the ExecState* having a different
+            // global object (and scope) than the inlined code that is invoking that resolve.
+            return false;
 
         case ResolveOperation::SkipTopScopeNode:
             // We don't inline code blocks that create activations. Creation of
@@ -197,10 +189,11 @@ inline CapabilityLevel canCompileOpcode(OpcodeID opcodeID, CodeBlock*, Instructi
     case op_jneq_ptr:
     case op_put_to_base_variable:
     case op_put_to_base:
+    case op_typeof:
         return CanCompile;
         
     case op_call_varargs:
-        return ShouldProfile;
+        return MayInline;
 
     case op_resolve:
     case op_resolve_global_property:
@@ -233,7 +226,7 @@ inline bool canInlineOpcode(OpcodeID opcodeID, CodeBlock* codeBlock, Instruction
     case op_resolve_scoped_var:
     case op_resolve_scoped_var_on_top_scope:
     case op_resolve_scoped_var_with_top_scope_check:
-        return canInlineResolveOperations(opcodeID, codeBlock->resolveOperations(pc[3].u.operand));
+        return canInlineResolveOperations(pc[3].u.resolveOperations);
 
     case op_resolve_base_to_global:
     case op_resolve_base_to_global_dynamic:
@@ -242,7 +235,7 @@ inline bool canInlineOpcode(OpcodeID opcodeID, CodeBlock* codeBlock, Instruction
     case op_resolve_base:
     case op_resolve_with_base:
     case op_resolve_with_this:
-        return canInlineResolveOperations(opcodeID, codeBlock->resolveOperations(pc[4].u.operand));
+        return canInlineResolveOperations(pc[4].u.resolveOperations);
         
     // Inlining doesn't correctly remap regular expression operands.
     case op_new_regexp:
@@ -272,6 +265,7 @@ inline bool mightCompileProgram(CodeBlock*) { return false; }
 inline bool mightCompileFunctionForCall(CodeBlock*) { return false; }
 inline bool mightCompileFunctionForConstruct(CodeBlock*) { return false; }
 inline bool mightInlineFunctionForCall(CodeBlock*) { return false; }
+inline bool mightInlineFunctionForClosureCall(CodeBlock*) { return false; }
 inline bool mightInlineFunctionForConstruct(CodeBlock*) { return false; }
 
 inline CapabilityLevel canCompileOpcode(OpcodeID, CodeBlock*, Instruction*) { return CannotCompile; }
@@ -317,6 +311,11 @@ inline bool canInlineFunctionForCall(CodeBlock* codeBlock)
     return mightInlineFunctionForCall(codeBlock) && canInlineOpcodes(codeBlock);
 }
 
+inline bool canInlineFunctionForClosureCall(CodeBlock* codeBlock)
+{
+    return mightInlineFunctionForClosureCall(codeBlock) && canInlineOpcodes(codeBlock);
+}
+
 inline bool canInlineFunctionForConstruct(CodeBlock* codeBlock)
 {
     return mightInlineFunctionForConstruct(codeBlock) && canInlineOpcodes(codeBlock);
@@ -330,8 +329,12 @@ inline bool mightInlineFunctionFor(CodeBlock* codeBlock, CodeSpecializationKind 
     return mightInlineFunctionForConstruct(codeBlock);
 }
 
-inline bool canInlineFunctionFor(CodeBlock* codeBlock, CodeSpecializationKind kind)
+inline bool canInlineFunctionFor(CodeBlock* codeBlock, CodeSpecializationKind kind, bool isClosureCall)
 {
+    if (isClosureCall) {
+        ASSERT(kind == CodeForCall);
+        return canInlineFunctionForClosureCall(codeBlock);
+    }
     if (kind == CodeForCall)
         return canInlineFunctionForCall(codeBlock);
     ASSERT(kind == CodeForConstruct);

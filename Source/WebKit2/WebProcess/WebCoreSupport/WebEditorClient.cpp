@@ -37,6 +37,7 @@
 #include <WebCore/DocumentFragment.h>
 #include <WebCore/FocusController.h>
 #include <WebCore/Frame.h>
+#include <WebCore/FrameLoader.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/HTMLInputElement.h>
 #include <WebCore/HTMLNames.h>
@@ -44,6 +45,8 @@
 #include <WebCore/KeyboardEvent.h>
 #include <WebCore/NotImplemented.h>
 #include <WebCore/Page.h>
+#include <WebCore/SpellChecker.h>
+#include <WebCore/StylePropertySet.h>
 #include <WebCore/TextIterator.h>
 #include <WebCore/UndoStep.h>
 #include <WebCore/UserTypingGestureIndicator.h>
@@ -59,6 +62,12 @@ using namespace HTMLNames;
 
 namespace WebKit {
 
+static uint64_t generateTextCheckingRequestID()
+{
+    static uint64_t uniqueTextCheckingRequestID = 1;
+    return uniqueTextCheckingRequestID++;
+}
+
 void WebEditorClient::pageDestroyed()
 {
     delete this;
@@ -71,20 +80,17 @@ bool WebEditorClient::shouldDeleteRange(Range* range)
     return result;
 }
 
+#if ENABLE(DELETION_UI)
 bool WebEditorClient::shouldShowDeleteInterface(HTMLElement*)
 {
     notImplemented();
     return false;
 }
+#endif
 
 bool WebEditorClient::smartInsertDeleteEnabled()
 {
-    // FIXME: Why isn't this Mac specific like toggleSmartInsertDeleteEnabled?
-#if PLATFORM(MAC)
     return m_page->isSmartInsertDeleteEnabled();
-#else
-    return true;
-#endif
 }
  
 bool WebEditorClient::isSelectTrailingWhitespaceEnabled()
@@ -189,19 +195,9 @@ void WebEditorClient::respondToChangedSelection(Frame* frame)
     if (!frame)
         return;
 
-    EditorState state = m_page->editorState();
+    m_page->didChangeSelection();
 
-    m_page->send(Messages::WebPageProxy::EditorStateChanged(state));
-
-#if PLATFORM(WIN)
-    // FIXME: This should also go into the selection state.
-    if (!frame->editor()->hasComposition() || frame->editor()->ignoreCompositionSelectionChange())
-        return;
-
-    unsigned start;
-    unsigned end;
-    m_page->send(Messages::WebPageProxy::DidChangeCompositionSelection(frame->editor()->getCompositionSelection(start, end)));
-#elif PLATFORM(GTK) || PLATFORM(QT)
+#if PLATFORM(GTK) || PLATFORM(QT)
     updateGlobalSelection(frame);
 #endif
 }
@@ -228,7 +224,17 @@ void WebEditorClient::didEndEditing()
 
 void WebEditorClient::didWriteSelectionToPasteboard()
 {
-    notImplemented();
+    m_page->injectedBundleEditorClient().didWriteToPasteboard(m_page);
+}
+
+void WebEditorClient::willWriteSelectionToPasteboard(Range* range)
+{
+    m_page->injectedBundleEditorClient().willWriteToPasteboard(m_page, range);
+}
+
+void WebEditorClient::getClientPasteboardDataForRange(Range* range, Vector<String>& pasteboardTypes, Vector<RefPtr<SharedBuffer> >& pasteboardData)
+{
+    m_page->injectedBundleEditorClient().getPasteboardDataForRange(m_page, range, pasteboardTypes, pasteboardData);
 }
 
 void WebEditorClient::didSetSelectionTypesForPasteboard()
@@ -467,6 +473,16 @@ void WebEditorClient::getGuessesForWord(const String& word, const String& contex
     m_page->sendSync(Messages::WebPageProxy::GetGuessesForWord(word, context), Messages::WebPageProxy::GetGuessesForWord::Reply(guesses));
 }
 
+void WebEditorClient::requestCheckingOfString(WTF::PassRefPtr<TextCheckingRequest> prpRequest)
+{
+    RefPtr<TextCheckingRequest> request = prpRequest;
+
+    uint64_t requestID = generateTextCheckingRequestID();
+    m_page->addTextCheckingRequest(requestID, request);
+
+    m_page->send(Messages::WebPageProxy::RequestCheckingOfString(requestID, request->data()));
+}
+
 void WebEditorClient::willSetInputMethodState()
 {
 #if PLATFORM(QT)
@@ -477,11 +493,6 @@ void WebEditorClient::willSetInputMethodState()
 }
 
 void WebEditorClient::setInputMethodState(bool)
-{
-    notImplemented();
-}
-
-void WebEditorClient::requestCheckingOfString(WTF::PassRefPtr<WebCore::TextCheckingRequest>)
 {
     notImplemented();
 }

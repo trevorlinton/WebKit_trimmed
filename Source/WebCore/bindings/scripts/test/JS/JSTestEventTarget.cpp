@@ -144,7 +144,7 @@ bool JSTestEventTarget::getOwnPropertySlot(JSCell* cell, ExecState* exec, Proper
 {
     JSTestEventTarget* thisObject = jsCast<JSTestEventTarget*>(cell);
     ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    const HashEntry* entry = JSTestEventTargetTable.entry(exec, propertyName);
+    const HashEntry* entry = getStaticValueSlotEntryWithoutCaching<JSTestEventTarget>(exec, propertyName);
     if (entry) {
         slot.setCustom(thisObject, entry->propertyGetter());
         return true;
@@ -234,7 +234,7 @@ EncodedJSValue JSC_HOST_CALL jsTestEventTargetPrototypeFunctionItem(ExecState* e
     TestEventTarget* impl = static_cast<TestEventTarget*>(castedThis->impl());
     if (exec->argumentCount() < 1)
         return throwVMError(exec, createNotEnoughArgumentsError(exec));
-    int index(MAYBE_MISSING_PARAMETER(exec, 0, DefaultIsUndefined).toUInt32(exec));
+    int index(exec->argument(0).toUInt32(exec));
     if (index < 0) {
         setDOMException(exec, INDEX_SIZE_ERR);
         return JSValue::encode(jsUndefined());
@@ -287,7 +287,7 @@ EncodedJSValue JSC_HOST_CALL jsTestEventTargetPrototypeFunctionDispatchEvent(Exe
     if (exec->argumentCount() < 1)
         return throwVMError(exec, createNotEnoughArgumentsError(exec));
     ExceptionCode ec = 0;
-    Event* evt(toEvent(MAYBE_MISSING_PARAMETER(exec, 0, DefaultIsUndefined)));
+    Event* evt(toEvent(exec->argument(0)));
     if (exec->hadException())
         return JSValue::encode(jsUndefined());
 

@@ -94,9 +94,9 @@ bool SharedWorkerProcess::shouldTerminate()
     return true;
 }
 
-void SharedWorkerProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
+void SharedWorkerProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
 {
-    didReceiveSharedWorkerProcessMessage(connection, messageID, decoder);
+    didReceiveSharedWorkerProcessMessage(connection, decoder);
 }
 
 void SharedWorkerProcess::didClose(CoreIPC::Connection*)
@@ -113,8 +113,6 @@ void SharedWorkerProcess::initializeSharedWorkerProcess(const SharedWorkerProces
 {
     setMinimumLifetime(parameters.minimumLifetime);
     setTerminationTimeout(parameters.terminationTimeout);
-
-    platformInitializeSharedWorkerProcess(parameters);
 }
 
 void SharedWorkerProcess::createWebProcessConnection()
@@ -129,7 +127,7 @@ void SharedWorkerProcess::createWebProcessConnection()
     m_webProcessConnections.append(connection.release());
 
     CoreIPC::Attachment clientPort(listeningPort, MACH_MSG_TYPE_MAKE_SEND);
-    m_connection->send(Messages::SharedWorkerProcessProxy::DidCreateWebProcessConnection(clientPort), 0);
+    parentProcessConnection()->send(Messages::SharedWorkerProcessProxy::DidCreateWebProcessConnection(clientPort), 0);
 #elif USE(UNIX_DOMAIN_SOCKETS)
     int sockets[2];
     if (socketpair(AF_UNIX, SOCKET_TYPE, 0, sockets) == -1) {
@@ -161,7 +159,7 @@ void SharedWorkerProcess::createWebProcessConnection()
     m_webProcessConnections.append(connection.release());
 
     CoreIPC::Attachment clientSocket(sockets[0]);
-    m_connection->send(Messages::SharedWorkerProcessProxy::DidCreateWebProcessConnection(clientSocket), 0);
+    parentProcessConnection()->send(Messages::SharedWorkerProcessProxy::DidCreateWebProcessConnection(clientSocket), 0);
 #else
     notImplemented();
 #endif

@@ -52,16 +52,18 @@ namespace JSC { namespace DFG {
     macro(ConvertThis, NodeResultJS) \
     macro(CreateThis, NodeResultJS) /* Note this is not MustGenerate since we're returning it anyway. */ \
     macro(GetCallee, NodeResultJS) \
+    macro(SetCallee, NodeMustGenerate) \
     \
     /* Nodes for local variable access. These nodes are linked together using Phi nodes. */\
     /* Any two nodes that are part of the same Phi graph will share the same */\
     /* VariableAccessData, and thus will share predictions. */\
     macro(GetLocal, NodeResultJS) \
-    macro(SetLocal, 0) \
-    macro(Phantom, NodeMustGenerate | NodeDoesNotExit) \
-    macro(Nop, 0 | NodeDoesNotExit) \
-    macro(Phi, 0 | NodeDoesNotExit) \
+    macro(SetLocal, NodeExitsForward) \
+    macro(Phantom, NodeMustGenerate) \
+    macro(Nop, NodeDoesNotExit) \
+    macro(Phi, NodeDoesNotExit | NodeRelevantToOSR) \
     macro(Flush, NodeMustGenerate | NodeDoesNotExit) \
+    macro(PhantomLocal, NodeMustGenerate | NodeDoesNotExit) \
     \
     /* Get the value of a local variable, without linking into the VariableAccessData */\
     /* network. This is only valid for variable accesses whose predictions originated */\
@@ -77,24 +79,23 @@ namespace JSC { namespace DFG {
     macro(InlineStart, 0 | NodeDoesNotExit) \
     \
     /* Nodes for bitwise operations. */\
-    macro(BitAnd, NodeResultInt32) \
-    macro(BitOr, NodeResultInt32) \
-    macro(BitXor, NodeResultInt32) \
-    macro(BitLShift, NodeResultInt32) \
-    macro(BitRShift, NodeResultInt32) \
-    macro(BitURShift, NodeResultInt32) \
+    macro(BitAnd, NodeResultInt32 | NodeMustGenerate) \
+    macro(BitOr, NodeResultInt32 | NodeMustGenerate) \
+    macro(BitXor, NodeResultInt32 | NodeMustGenerate) \
+    macro(BitLShift, NodeResultInt32 | NodeMustGenerate) \
+    macro(BitRShift, NodeResultInt32 | NodeMustGenerate) \
+    macro(BitURShift, NodeResultInt32 | NodeMustGenerate) \
     /* Bitwise operators call ToInt32 on their operands. */\
-    macro(ValueToInt32, NodeResultInt32 | NodeMustGenerate) \
+    macro(ValueToInt32, NodeResultInt32) \
     /* Used to box the result of URShift nodes (result has range 0..2^32-1). */\
-    macro(UInt32ToNumber, NodeResultNumber) \
+    macro(UInt32ToNumber, NodeResultNumber | NodeExitsForward) \
     \
     /* Used to cast known integers to doubles, so as to separate the double form */\
     /* of the value from the integer form. */\
     macro(Int32ToDouble, NodeResultNumber) \
+    macro(ForwardInt32ToDouble, NodeResultNumber | NodeExitsForward) \
     /* Used to speculate that a double value is actually an integer. */\
-    macro(DoubleAsInt32, NodeResultInt32) \
-    /* Used to record places where we must check if a value is a number. */\
-    macro(CheckNumber, NodeMustGenerate) \
+    macro(DoubleAsInt32, NodeResultInt32 | NodeExitsForward) \
     \
     /* Nodes for arithmetic operations. */\
     macro(ArithAdd, NodeResultNumber | NodeMustGenerate) \
@@ -124,7 +125,8 @@ namespace JSC { namespace DFG {
     macro(PutById, NodeMustGenerate | NodeClobbersWorld) \
     macro(PutByIdDirect, NodeMustGenerate | NodeClobbersWorld) \
     macro(CheckStructure, NodeMustGenerate) \
-    macro(ForwardCheckStructure, NodeMustGenerate) \
+    macro(CheckExecutable, NodeMustGenerate) \
+    macro(ForwardCheckStructure, NodeMustGenerate | NodeExitsForward) \
     /* Transition watchpoints are a contract between the party setting the watchpoint */\
     /* and the runtime system, where the party promises that the child object once had */\
     /* the structure being watched, and the runtime system in turn promises that the */\
@@ -137,7 +139,7 @@ namespace JSC { namespace DFG {
     /* the object's structure does not need to be rechecked due to side-effecting */\
     /* (clobbering) operations. */\
     macro(StructureTransitionWatchpoint, NodeMustGenerate) \
-    macro(ForwardStructureTransitionWatchpoint, NodeMustGenerate) \
+    macro(ForwardStructureTransitionWatchpoint, NodeMustGenerate | NodeExitsForward) \
     macro(PutStructure, NodeMustGenerate) \
     macro(PhantomPutStructure, NodeMustGenerate | NodeDoesNotExit) \
     macro(AllocatePropertyStorage, NodeMustGenerate | NodeDoesNotExit | NodeResultStorage) \
@@ -150,7 +152,9 @@ namespace JSC { namespace DFG {
     macro(GetByOffset, NodeResultJS) \
     macro(PutByOffset, NodeMustGenerate) \
     macro(GetArrayLength, NodeResultInt32) \
+    macro(GetScope, NodeResultJS) \
     macro(GetMyScope, NodeResultJS) \
+    macro(SetMyScope, NodeMustGenerate) \
     macro(SkipTopScope, NodeResultJS) \
     macro(SkipScope, NodeResultJS) \
     macro(GetScopeRegisters, NodeResultStorage) \
@@ -161,7 +165,7 @@ namespace JSC { namespace DFG {
     macro(GlobalVarWatchpoint, NodeMustGenerate) \
     macro(PutGlobalVarCheck, NodeMustGenerate) \
     macro(CheckFunction, NodeMustGenerate) \
-    macro(InheritorIDWatchpoint, NodeMustGenerate) \
+    macro(AllocationProfileWatchpoint, NodeMustGenerate) \
     \
     /* Optimizations for array mutation. */\
     macro(ArrayPush, NodeResultJS | NodeMustGenerate | NodeClobbersWorld) \
@@ -181,7 +185,9 @@ namespace JSC { namespace DFG {
     macro(CompareGreater, NodeResultBoolean | NodeMustGenerate | NodeMightClobber) \
     macro(CompareGreaterEq, NodeResultBoolean | NodeMustGenerate | NodeMightClobber) \
     macro(CompareEq, NodeResultBoolean | NodeMustGenerate | NodeMightClobber) \
+    macro(CompareEqConstant, NodeResultBoolean | NodeMustGenerate) \
     macro(CompareStrictEq, NodeResultBoolean) \
+    macro(CompareStrictEqConstant, NodeResultBoolean) \
     \
     /* Calls. */\
     macro(Call, NodeResultJS | NodeMustGenerate | NodeHasVarArgs | NodeClobbersWorld) \
@@ -210,6 +216,7 @@ namespace JSC { namespace DFG {
     macro(IsString, NodeResultBoolean) \
     macro(IsObject, NodeResultBoolean) \
     macro(IsFunction, NodeResultBoolean) \
+    macro(TypeOf, NodeResultJS) \
     macro(LogicalNot, NodeResultBoolean) \
     macro(ToPrimitive, NodeResultJS | NodeMustGenerate | NodeClobbersWorld) \
     macro(StrCat, NodeResultJS | NodeMustGenerate | NodeHasVarArgs | NodeClobbersWorld) \
@@ -270,7 +277,7 @@ inline NodeFlags defaultFlags(NodeType op)
     FOR_EACH_DFG_OP(DFG_OP_ENUM)
 #undef DFG_OP_ENUM
     default:
-        ASSERT_NOT_REACHED();
+        RELEASE_ASSERT_NOT_REACHED();
         return 0;
     }
 }

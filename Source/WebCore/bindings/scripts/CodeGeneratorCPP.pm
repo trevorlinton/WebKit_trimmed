@@ -123,7 +123,7 @@ sub GetClassName
 
     # special cases
     return "WebDOMString" if $codeGenerator->IsStringType($name) or $name eq "SerializedScriptValue";
-    return "WebDOMObject" if $name eq "DOMObject";
+    return "WebDOMObject" if $name eq "any";
     return "bool" if $name eq "boolean";
     return $name if $codeGenerator->IsPrimitiveType($name);
 
@@ -199,23 +199,28 @@ sub SkipFunction
 sub SkipAttribute
 {
     my $attribute = shift;
+    my $type = $attribute->signature->type;
 
     return 1 if $attribute->signature->extendedAttributes->{"Custom"}
                 or $attribute->signature->extendedAttributes->{"CustomGetter"};
 
-    return 1 if $attribute->signature->type =~ /Constructor$/;
+    return 1 if $type =~ /Constructor$/;
+    return 1 if $attribute->isStatic;
+    return 1 if $codeGenerator->IsTypedArrayType($type);
 
-    return 1 if $codeGenerator->IsTypedArrayType($attribute->signature->type);
-
-    if ($codeGenerator->GetArrayType($attribute->signature->type)) {
+    if ($codeGenerator->GetArrayType($type)) {
         return 1;
     }
 
-    if ($codeGenerator->GetSequenceType($attribute->signature->type)) {
+    if ($codeGenerator->GetSequenceType($type)) {
         return 1;
     }
 
-    $codeGenerator->AssertNotSequenceType($attribute->signature->type);
+    if ($codeGenerator->IsEnumType($type)) {
+        return 1;
+    }
+
+    $codeGenerator->AssertNotSequenceType($type);
 
     # FIXME: This is typically used to add script execution state arguments to the method.
     # These functions will not compile with the C++ bindings as is, so disable them
@@ -293,7 +298,7 @@ sub AddIncludesForType
         return;
     }
 
-    if ($type eq "DOMObject") {
+    if ($type eq "any") {
         $implIncludes{"WebDOMObject.h"} = 1;
         return;
     }
@@ -317,7 +322,7 @@ sub AddIncludesForType
     $implIncludes{"StylePropertySet.h"} = 1 if $type eq "CSSStyleDeclaration";
 
     # Default, include the same named file (the implementation) and the same name prefixed with "WebDOM". 
-    $implIncludes{"$type.h"} = 1 unless $type eq "DOMObject";
+    $implIncludes{"$type.h"} = 1 unless $type eq "any";
     $implIncludes{"WebDOM$type.h"} = 1;
 }
 

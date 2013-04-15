@@ -52,7 +52,6 @@ set(test_webcore_BINARIES
 set(test_webkit2_api_BINARIES
     AboutBlankLoad
     CookieManager
-    DOMWindowExtensionBasic
     DOMWindowExtensionNoCache
     DocumentStartUserScriptAlertCrash
     EvaluateJavaScript
@@ -64,10 +63,13 @@ set(test_webkit2_api_BINARIES
     GetInjectedBundleInitializationUserDataCallback
     HitTestResultNodeHandle
     InjectedBundleBasic
+    InjectedBundleFrameHitTest
     InjectedBundleInitializationUserDataCallbackWins
     LoadAlternateHTMLStringWithNonDirectoryURL
     LoadCanceledNoServerRedirectCallback
     MouseMoveAfterCrash
+    ReloadPageAfterCrash
+    ResizeWindowAfterCrash
     NewFirstVisuallyNonEmptyLayout
     NewFirstVisuallyNonEmptyLayoutFails
     NewFirstVisuallyNonEmptyLayoutForImages
@@ -77,16 +79,19 @@ set(test_webkit2_api_BINARIES
     PreventEmptyUserAgent
     PrivateBrowsingPushStateNoHistoryCallback
     ShouldGoToBackForwardListItem
+    UserMessage
     WKConnection
     WKPreferences
     WKString
     WKStringJSString
     WKURL
     WillSendSubmitEvent
+    efl/WKViewClientWebProcessCallbacks
 )
 
 set(test_webkit2_api_fail_BINARIES
     CanHandleRequest
+    DOMWindowExtensionBasic
     DownloadDecideDestinationCrash
     NewFirstVisuallyNonEmptyLayoutFrames
     RestoreSessionStateContainingFormData
@@ -99,7 +104,3 @@ add_definitions(-DTHEME_DIR="${THEME_BINARY_DIR}")
 #
 #   ResponsivenessTimerDoesntFireEarly
 #   SpacebarScrolling
-#
-# Flaky test, fails on Release but passes on Debug:
-#
-#   UserMessage

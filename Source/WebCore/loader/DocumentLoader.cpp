@@ -133,6 +133,13 @@ PassRefPtr<ResourceBuffer> DocumentLoader::mainResourceData() const
     return 0;
 }
 
+Document* DocumentLoader::document() const
+{
+    if (m_frame && m_frame->loader()->documentLoader() == this)
+        return m_frame->document();
+    return 0;
+}
+
 const ResourceRequest& DocumentLoader::originalRequest() const
 {
     return m_originalRequest;
@@ -208,6 +215,9 @@ void DocumentLoader::mainReceivedError(const ResourceError& error)
 // but not loads initiated by child frames' data sources -- that's the WebFrame's job.
 void DocumentLoader::stopLoading()
 {
+    RefPtr<Frame> protectFrame(m_frame);
+    RefPtr<DocumentLoader> protectLoader(this);
+
     // In some rare cases, calling FrameLoader::stopLoading could cause isLoading() to return false.
     // (This can happen when there's a single XMLHttpRequest currently loading and stopLoading causes it
     // to stop loading. Because of this, we need to save it so we don't return early.
@@ -244,9 +254,6 @@ void DocumentLoader::stopLoading()
     // See <rdar://problem/9673866> for more details.
     if (m_isStopping)
         return;
-    
-    RefPtr<Frame> protectFrame(m_frame);
-    RefPtr<DocumentLoader> protectLoader(this);
 
     m_isStopping = true;
 
@@ -276,6 +283,18 @@ void DocumentLoader::commitIfReady()
         m_committed = true;
         frameLoader()->commitProvisionalLoad();
     }
+}
+
+bool DocumentLoader::isLoading() const
+{
+    // FIXME: This should always be enabled, but it seems to cause
+    // http/tests/security/feed-urls-from-remote.html to timeout on Mac WK1
+    // see http://webkit.org/b/110554 and http://webkit.org/b/110401
+#if ENABLE(THREADED_HTML_PARSER)
+    if (document() && document()->hasActiveParser())
+        return true;
+#endif
+    return isLoadingMainResource() || !m_subresourceLoaders.isEmpty() || !m_plugInStreamLoaders.isEmpty();
 }
 
 void DocumentLoader::finishedLoading()
@@ -359,26 +378,36 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
 void DocumentLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
-    info.addMember(m_frame);
-    info.addMember(m_mainResourceLoader);
-    info.addMember(m_subresourceLoaders);
-    info.addMember(m_multipartSubresourceLoaders);
-    info.addMember(m_plugInStreamLoaders);
-    info.addMember(m_substituteData);
-    info.addMember(m_pageTitle.string());
-    info.addMember(m_overrideEncoding);
-    info.addMember(m_responses);
-    info.addMember(m_originalRequest);
-    info.addMember(m_originalRequestCopy);
-    info.addMember(m_request);
-    info.addMember(m_response);
-    info.addMember(m_lastCheckedRequest);
-    info.addMember(m_responses);
-    info.addMember(m_pendingSubstituteResources);
-    info.addMember(m_resourcesClientKnowsAbout);
-    info.addMember(m_resourcesLoadedFromMemoryCacheForClientNotification);
-    info.addMember(m_clientRedirectSourceForHistory);
-    info.addMember(m_mainResourceData);
+    info.addMember(m_frame, "frame");
+    info.addMember(m_cachedResourceLoader, "cachedResourceLoader");
+    info.addMember(m_mainResourceLoader, "mainResourceLoader");
+    info.addMember(m_mainResourceData, "mainResourceData");
+    info.addMember(m_subresourceLoaders, "subresourceLoaders");
+    info.addMember(m_multipartSubresourceLoaders, "multipartSubresourceLoaders");
+    info.addMember(m_plugInStreamLoaders, "plugInStreamLoaders");
+    info.addMember(m_substituteData, "substituteData");
+    info.addMember(m_pageTitle.string(), "pageTitle.string()");
+    info.addMember(m_overrideEncoding, "overrideEncoding");
+    info.addMember(m_responses, "responses");
+    info.addMember(m_originalRequest, "originalRequest");
+    info.addMember(m_originalRequestCopy, "originalRequestCopy");
+    info.addMember(m_request, "request");
+    info.addMember(m_response, "response");
+    info.addMember(m_lastCheckedRequest, "lastCheckedRequest");
+    info.addMember(m_responses, "responses");
+    info.addMember(m_pendingSubstituteResources, "pendingSubstituteResources");
+    info.addMember(m_substituteResourceDeliveryTimer, "substituteResourceDeliveryTimer");
+    info.addMember(m_archiveResourceCollection, "archiveResourceCollection");
+#if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
+    info.addMember(m_archive, "archive");
+    info.addMember(m_parsedArchiveData, "parsedArchiveData");
+#endif
+    info.addMember(m_resourcesClientKnowsAbout, "resourcesClientKnowsAbout");
+    info.addMember(m_resourcesLoadedFromMemoryCacheForClientNotification, "resourcesLoadedFromMemoryCacheForClientNotification");
+    info.addMember(m_clientRedirectSourceForHistory, "clientRedirectSourceForHistory");
+    info.addMember(m_iconLoadDecisionCallback, "iconLoadDecisionCallback");
+    info.addMember(m_iconDataCallback, "iconDataCallback");
+    info.addMember(m_applicationCacheHost, "applicationCacheHost");
 }
 
 void DocumentLoader::receivedData(const char* data, int length)
@@ -409,7 +438,11 @@ void DocumentLoader::checkLoadComplete()
 {
     if (!m_frame || isLoading())
         return;
+#if !ENABLE(THREADED_HTML_PARSER)
+    // This ASSERT triggers with the threaded HTML parser.
+    // See https://bugs.webkit.org/show_bug.cgi?id=110937
     ASSERT(this == frameLoader()->activeDocumentLoader());
+#endif
     m_frame->document()->domWindow()->finishedLoading();
 }
 
@@ -468,9 +501,10 @@ bool DocumentLoader::isLoadingInAPISense() const
             return true;
         if (m_cachedResourceLoader->requestCount())
             return true;
-        if (DocumentParser* parser = doc->parser())
-            if (parser->processingData())
-                return true;
+        if (doc->processingLoadEvent())
+            return true;
+        if (doc->hasActiveParser())
+            return true;
     }
     return frameLoader()->subframeIsLoading();
 }
@@ -680,14 +714,12 @@ void DocumentLoader::cancelPendingSubstituteLoad(ResourceLoader* loader)
 }
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
-bool DocumentLoader::scheduleArchiveLoad(ResourceLoader* loader, const ResourceRequest& request, const KURL& originalURL)
+bool DocumentLoader::scheduleArchiveLoad(ResourceLoader* loader, const ResourceRequest& request)
 {
-    if (request.url() == originalURL) {
-        if (ArchiveResource* resource = archiveResourceForURL(originalURL)) {
-            m_pendingSubstituteResources.set(loader, resource);
-            deliverSubstituteResourcesAfterDelay();
-            return true;
-        }
+    if (ArchiveResource* resource = archiveResourceForURL(request.url())) {
+        m_pendingSubstituteResources.set(loader, resource);
+        deliverSubstituteResourcesAfterDelay();
+        return true;
     }
 
     if (!m_archive)
@@ -884,6 +916,8 @@ void DocumentLoader::startLoadingMainResource()
 
     // FIXME: Is there any way the extra fields could have not been added by now?
     // If not, it would be great to remove this line of code.
+    // Note that currently, some requests may have incorrect extra fields even if this function has been called,
+    // because we pass a wrong loadType (see FIXME in addExtraFieldsToMainResourceRequest()).
     frameLoader()->addExtraFieldsToMainResourceRequest(m_request);
     m_mainResourceLoader->load(m_request, m_substituteData);
 

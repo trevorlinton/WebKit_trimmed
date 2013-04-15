@@ -34,6 +34,11 @@
 #endif
 #include <gst/pbutils/pbutils.h>
 
+// GStaticRecMutex is deprecated in Glib, but required in GStreamer 0.10
+#if (COMPILER(GCC) && GCC_VERSION_AT_LEAST(4, 6, 0) && !defined(GST_API_VERSION_1))
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 using namespace WebCore;
 
 typedef struct _WebKitWebAudioSrcClass   WebKitWebAudioSrcClass;
@@ -202,7 +207,7 @@ static void webkit_web_audio_src_init(WebKitWebAudioSrc* src)
 
 #ifdef GST_API_VERSION_1
     g_rec_mutex_init(&priv->mutex);
-    priv->task = gst_task_new(reinterpret_cast<GstTaskFunction>(webKitWebAudioSrcLoop), src, reinterpret_cast<GDestroyNotify>(g_object_unref));
+    priv->task = gst_task_new(reinterpret_cast<GstTaskFunction>(webKitWebAudioSrcLoop), src, 0);
 #else
     g_static_rec_mutex_init(&priv->mutex);
     priv->task = gst_task_create(reinterpret_cast<GstTaskFunction>(webKitWebAudioSrcLoop), src);
@@ -419,15 +424,11 @@ static GstStateChangeReturn webKitWebAudioSrcChangeState(GstElement* element, Gs
     switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
         GST_DEBUG_OBJECT(src, "READY->PAUSED");
-        returnValue = GST_STATE_CHANGE_NO_PREROLL;
-        break;
-    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-        GST_DEBUG_OBJECT(src, "PAUSED->PLAYING");
         if (!gst_task_start(src->priv->task.get()))
             returnValue = GST_STATE_CHANGE_FAILURE;
         break;
-    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-        GST_DEBUG_OBJECT(src, "PLAYING->PAUSED");
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+        GST_DEBUG_OBJECT(src, "PAUSED->READY");
         if (!gst_task_join(src->priv->task.get()))
             returnValue = GST_STATE_CHANGE_FAILURE;
         break;

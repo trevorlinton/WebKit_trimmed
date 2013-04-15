@@ -27,12 +27,12 @@
 #include "config.h"
 #include "TreeScope.h"
 
-#include "ComposedShadowTreeWalker.h"
 #include "ContainerNode.h"
 #include "DOMSelection.h"
 #include "DOMWindow.h"
 #include "Document.h"
 #include "Element.h"
+#include "EventPathWalker.h"
 #include "FocusController.h"
 #include "Frame.h"
 #include "FrameView.h"
@@ -352,11 +352,11 @@ Node* TreeScope::focusedNode()
     if (!node)
         return 0;
     Vector<Node*> targetStack;
-    for (AncestorChainWalker walker(node); walker.get(); walker.parent()) {
-        Node* node = walker.get();
+    for (EventPathWalker walker(node); walker.node(); walker.moveToParent()) {
+        Node* node = walker.node();
         if (targetStack.isEmpty())
             targetStack.append(node);
-        else if (walker.crossingInsertionPoint())
+        else if (walker.isVisitingInsertionPointInReprojection())
             targetStack.append(targetStack.last());
         if (node == rootNode())
             return targetStack.last();
@@ -371,13 +371,15 @@ Node* TreeScope::focusedNode()
 void TreeScope::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_rootNode);
-    info.addMember(m_parentTreeScope);
-    info.addMember(m_elementsById);
-    info.addMember(m_imageMapsByName);
-    info.addMember(m_labelsByForAttribute);
-    info.addMember(m_idTargetObserverRegistry);
-    info.addMember(m_selection);
+    info.addMember(m_rootNode, "rootNode");
+    info.addMember(m_parentTreeScope, "parentTreeScope");
+    info.addMember(m_elementsById, "elementsById");
+    info.addMember(m_imageMapsByName, "imageMapsByName");
+    info.addMember(m_labelsByForAttribute, "labelsByForAttribute");
+    info.addMember(m_idTargetObserverRegistry, "idTargetObserverRegistry");
+    info.addMember(m_selection, "selection");
+    info.addMember(m_documentScope, "documentScope");
+
 }
 
 static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)

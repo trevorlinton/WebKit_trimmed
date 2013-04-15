@@ -31,9 +31,9 @@
 #ifndef BaseMultipleFieldsDateAndTimeInputType_h
 #define BaseMultipleFieldsDateAndTimeInputType_h
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "BaseDateAndTimeInputType.h"
 
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeEditElement.h"
 #include "PickerIndicatorElement.h"
 #include "SpinButtonElement.h"
@@ -42,7 +42,11 @@ namespace WebCore {
 
 struct DateTimeChooserParameters;
 
-class BaseMultipleFieldsDateAndTimeInputType : public BaseDateAndTimeInputType, protected DateTimeEditElement::EditControlOwner, protected PickerIndicatorElement::PickerIndicatorOwner {
+class BaseMultipleFieldsDateAndTimeInputType
+    : public BaseDateAndTimeInputType
+    , protected DateTimeEditElement::EditControlOwner
+    , protected PickerIndicatorElement::PickerIndicatorOwner
+    , protected SpinButtonElement::SpinButtonOwner {
 protected:
     BaseMultipleFieldsDateAndTimeInputType(HTMLInputElement*);
     virtual ~BaseMultipleFieldsDateAndTimeInputType();
@@ -74,18 +78,17 @@ private:
     // InputType functions
     virtual String badInputText() const OVERRIDE;
     virtual void blur() OVERRIDE FINAL;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const OVERRIDE FINAL;
+    virtual PassRefPtr<RenderStyle> customStyleForRenderer(PassRefPtr<RenderStyle>) OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE FINAL;
     virtual void destroyShadowSubtree() OVERRIDE FINAL;
     virtual void disabledAttributeChanged() OVERRIDE FINAL;
-    virtual void focus(bool restorePreviousSelection) OVERRIDE FINAL;
     virtual void forwardEvent(Event*) OVERRIDE FINAL;
+    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection) OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE FINAL;
     virtual bool hasBadInput() const OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE FINAL;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE FINAL;
     virtual bool isMouseFocusable() const OVERRIDE FINAL;
-    virtual bool isTextField() const OVERRIDE FINAL;
     virtual void minOrMaxAttributeChanged() OVERRIDE FINAL;
     virtual void readonlyAttributeChanged() OVERRIDE FINAL;
     virtual void restoreFormControlState(const FormControlState&) OVERRIDE FINAL;
@@ -110,4 +113,4 @@ private:
 } // namespace WebCore
 
 #endif
-#endif // TimeInputType_h
+#endif // BaseMultipleFieldsDateAndTimeInputType_h

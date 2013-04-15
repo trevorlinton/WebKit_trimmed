@@ -60,6 +60,7 @@
 #include "SecureTextInput.h"
 #include "Settings.h"
 #include "SpatialNavigation.h"
+#include "StylePropertySet.h"
 #include "TextIterator.h"
 #include "TypingCommand.h"
 #include "htmlediting.h"
@@ -123,6 +124,16 @@ Element* FrameSelection::rootEditableElementOrDocumentElement() const
 {
     Element* selectionRoot = m_selection.rootEditableElement();
     return selectionRoot ? selectionRoot : m_frame->document()->documentElement();
+}
+
+Node* FrameSelection::rootEditableElementOrTreeScopeRootNode() const
+{
+    Element* selectionRoot = m_selection.rootEditableElement();
+    if (selectionRoot)
+        return selectionRoot;
+
+    Node* node = m_selection.base().containerNode();
+    return node ? node->treeScope()->rootNode() : 0;
 }
 
 Element* FrameSelection::rootEditableElementRespectingShadowTree() const
@@ -269,7 +280,13 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     if (s.base().anchorNode()) {
         Document* document = s.base().anchorNode()->document();
         if (document && document->frame() && document->frame() != m_frame && document != m_frame->document()) {
+            RefPtr<Frame> guard = document->frame();
             document->frame()->selection()->setSelection(s, options, align, granularity);
+            // It's possible that during the above set selection, this FrameSelection has been modified by
+            // selectFrameElementInParentIfFullySelected, but that the selection is no longer valid since
+            // the frame is about to be destroyed. If this is the case, clear our selection.
+            if (guard->hasOneRef() && !m_selection.isNonOrphanedCaretOrRange())
+                clear();
             return;
         }
     }
@@ -338,7 +355,7 @@ static bool removingNodeRemovesPosition(Node* node, const Position& position)
         return false;
 
     Element* element = static_cast<Element*>(node);
-    return element->contains(position.anchorNode()) || element->contains(position.anchorNode()->shadowAncestorNode());
+    return element->containsIncludingShadowDOM(position.anchorNode());
 }
 
 static void clearRenderViewSelection(const Position& position)
@@ -1219,6 +1236,25 @@ void CaretBase::clearCaretRect()
     m_caretLocalRect = LayoutRect();
 }
 
+static inline bool caretRendersInsideNode(Node* node)
+{
+    return node && !isTableElement(node) && !editingIgnoresContent(node);
+}
+
+static RenderObject* caretRenderer(Node* node)
+{
+    if (!node)
+        return 0;
+
+    RenderObject* renderer = node->renderer();
+    if (!renderer)
+        return 0;
+
+    // if caretNode is a block and caret is inside it then caret should be painted by that block
+    bool paintedByBlock = renderer->isBlockFlow() && caretRendersInsideNode(node);
+    return paintedByBlock ? renderer : renderer->containingBlock();
+}
+
 bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caretPosition)
 {
     document->updateStyleIfNeeded();
@@ -1257,33 +1293,14 @@ bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caret
     return true;
 }
 
-static inline bool caretRendersInsideNode(Node* node)
-{
-    return node && !isTableElement(node) && !editingIgnoresContent(node);
-}
-
-RenderObject* CaretBase::caretRenderer(Node* node) const
-{
-    if (!node)
-        return 0;
-
-    RenderObject* renderer = node->renderer();
-    if (!renderer)
-        return 0;
-
-    // if caretNode is a block and caret is inside it then caret should be painted by that block
-    bool paintedByBlock = renderer->isBlockFlow() && caretRendersInsideNode(node);
-    return paintedByBlock ? renderer : renderer->containingBlock();
-}
-
 RenderObject* FrameSelection::caretRenderer() const
 {
-    return CaretBase::caretRenderer(m_selection.start().deprecatedNode());
+    return WebCore::caretRenderer(m_selection.start().deprecatedNode());
 }
 
 RenderObject* DragCaretController::caretRenderer() const
 {
-    return CaretBase::caretRenderer(m_position.deepEquivalent().deprecatedNode());
+    return WebCore::caretRenderer(m_position.deepEquivalent().deprecatedNode());
 }
 
 static bool isNonOrphanedCaret(const VisibleSelection& selection)
@@ -1321,20 +1338,18 @@ IntRect FrameSelection::absoluteCaretBounds()
     return m_absCaretBounds;
 }
 
-static LayoutRect repaintRectForCaret(LayoutRect caret)
+static void repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
 {
-    if (caret.isEmpty())
-        return LayoutRect();
-    // Ensure that the dirty rect intersects the block that paints the caret even in the case where
-    // the caret itself is just outside the block. See <https://bugs.webkit.org/show_bug.cgi?id=19086>.
-    caret.inflateX(1);
-    caret.inflateY(1);
-    return caret;
-}
+    RenderObject* caretPainter = caretRenderer(node);
+    if (!caretPainter)
+        return;
 
-IntRect CaretBase::caretRepaintRect(Node* node) const
-{
-    return absoluteBoundsForLocalRect(node, repaintRectForCaret(localCaretRectWithoutUpdate()));
+    // FIXME: Need to over-paint 1 pixel to workaround some rounding problems.
+    // https://bugs.webkit.org/show_bug.cgi?id=108283
+    LayoutRect inflatedRect = rect;
+    inflatedRect.inflate(1);
+
+    caretPainter->repaintRectangle(inflatedRect);
 }
 
 bool FrameSelection::recomputeCaretRect()
@@ -1355,7 +1370,6 @@ bool FrameSelection::recomputeCaretRect()
         return false;
 
     IntRect oldAbsCaretBounds = m_absCaretBounds;
-    // FIXME: Rename m_caretRect to m_localCaretRect.
     m_absCaretBounds = absoluteBoundsForLocalRect(m_selection.start().deprecatedNode(), localCaretRectWithoutUpdate());
     m_absCaretBoundsDirty = false;
     
@@ -1363,18 +1377,13 @@ bool FrameSelection::recomputeCaretRect()
         return false;
 
 #if ENABLE(TEXT_CARET)
-    IntRect oldAbsoluteCaretRepaintBounds = m_absoluteCaretRepaintBounds;
-#endif
-
-    // We believe that we need to inflate the local rect before transforming it to obtain the repaint bounds.
-    m_absoluteCaretRepaintBounds = caretRepaintRect(m_selection.start().deprecatedNode());
-
-#if ENABLE(TEXT_CARET)
     if (RenderView* view = m_frame->document()->renderView()) {
-        // FIXME: make caret repainting container-aware.
-        view->repaintRectangleInViewAndCompositedLayers(oldAbsoluteCaretRepaintBounds, false);
+        Node* node = m_selection.start().deprecatedNode();
+        if (m_previousCaretNode)
+            repaintCaretForLocalRect(m_previousCaretNode.get(), oldRect);
+        m_previousCaretNode = node;
         if (shouldRepaintCaret(view, isContentEditable()))
-            view->repaintRectangleInViewAndCompositedLayers(m_absoluteCaretRepaintBounds, false);
+            repaintCaretForLocalRect(node, newRect);
     }
 #endif
     return true;
@@ -1416,7 +1425,7 @@ void CaretBase::invalidateCaretRect(Node* node, bool caretRectChanged)
 
     if (RenderView* view = node->document()->renderView()) {
         if (shouldRepaintCaret(view, node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
-            view->repaintRectangleInViewAndCompositedLayers(caretRepaintRect(node), false);
+            repaintCaretForLocalRect(node, localCaretRectWithoutUpdate());
     }
 }
 
@@ -1620,13 +1629,13 @@ void FrameSelection::selectAll()
     if (isContentEditable()) {
         root = highestEditableRoot(m_selection.start());
         if (Node* shadowRoot = m_selection.nonBoundaryShadowTreeRootNode())
-            selectStartTarget = shadowRoot->shadowAncestorNode();
+            selectStartTarget = shadowRoot->shadowHost();
         else
             selectStartTarget = root.get();
     } else {
         root = m_selection.nonBoundaryShadowTreeRootNode();
         if (root)
-            selectStartTarget = root->shadowAncestorNode();
+            selectStartTarget = root->shadowHost();
         else {
             root = document->documentElement();
             selectStartTarget = document->body();
@@ -1683,7 +1692,7 @@ void FrameSelection::focusedOrActiveStateChanged()
     // RenderObject::selectionForegroundColor() check if the frame is active,
     // we have to update places those colors were painted.
     if (RenderView* view = m_frame->document()->renderView())
-        view->repaintRectangleInViewAndCompositedLayers(enclosingIntRect(bounds()));
+        view->repaintSelection();
 
     // Caret appears in the active frame.
     if (activeAndFocused)
@@ -1843,9 +1852,6 @@ void FrameSelection::notifyRendererOfSelectionChange(EUserTriggered userTriggere
 {
     m_frame->document()->updateStyleIfNeeded();
 
-    if (!rootEditableElement())
-        return;
-
     if (HTMLTextFormControlElement* textControl = enclosingTextFormControl(start()))
         textControl->selectionChanged(userTriggered == UserTriggered);
 }
@@ -1886,7 +1892,7 @@ void FrameSelection::setFocusedNodeIfNeeded()
                 m_frame->page()->focusController()->setFocusedNode(target, m_frame);
                 return;
             }
-            target = target->parentOrHostNode(); 
+            target = target->parentOrShadowHostNode();
         }
         m_frame->document()->setFocusedNode(0);
     }

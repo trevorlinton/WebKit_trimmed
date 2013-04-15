@@ -36,10 +36,13 @@
       'ENABLE_BATTERY_STATUS=0',
       'ENABLE_BLOB=1',
       'ENABLE_BLOB_SLICE=1',
+      'ENABLE_CANVAS_PATH=1',
+      'ENABLE_CANVAS_PROXY=1',
       'ENABLE_CHANNEL_MESSAGING=1',
       'ENABLE_CSP_NEXT=1',
       'ENABLE_CSS3_CONDITIONAL_RULES=0',
       'ENABLE_CSS3_TEXT=0',
+      'ENABLE_CSS3_TEXT_LINE_BREAK=0',
       'ENABLE_CSS_BOX_DECORATION_BREAK=1',
       'ENABLE_CSS_COMPOSITING=0',
       'ENABLE_CSS_DEVICE_ADAPTATION=0',
@@ -49,9 +52,10 @@
       'ENABLE_CSS_IMAGE_RESOLUTION=0',
       'ENABLE_CSS_REGIONS=1',
       'ENABLE_CSS_SHADERS=1',
-      'ENABLE_CSS_TRANSFORMS_ANIMATIONS_TRANSITIONS_UNPREFIXED=0',
+      'ENABLE_CSS_TRANSFORMS_ANIMATIONS_UNPREFIXED=0',
       'ENABLE_CSS_VARIABLES=1',
       'ENABLE_CSS_STICKY_POSITION=1',
+      'ENABLE_CUSTOM_ELEMENTS=1',
       'ENABLE_CUSTOM_SCHEME_HANDLER=0',
       'ENABLE_DASHBOARD_SUPPORT=0',
       'ENABLE_DATA_TRANSFER_ITEMS=1',
@@ -59,11 +63,13 @@
       'ENABLE_DEVICE_ORIENTATION=1',
       'ENABLE_DIALOG_ELEMENT=1',
       'ENABLE_DIRECTORY_UPLOAD=1',
+      'ENABLE_DOM4_EVENTS_CONSTRUCTOR=1',
       'ENABLE_DOWNLOAD_ATTRIBUTE=1',
       'ENABLE_DRAGGABLE_REGION=1',
       'ENABLE_ENCRYPTED_MEDIA=1',
       'ENABLE_FILE_SYSTEM=1',
       'ENABLE_FILTERS=1',
+      'ENABLE_FONT_LOAD_EVENTS=0',
       'ENABLE_FULLSCREEN_API=1',
       'ENABLE_GAMEPAD=1',
       'ENABLE_GEOLOCATION=1',
@@ -72,7 +78,6 @@
       'ENABLE_IFRAME_SEAMLESS=1',
       'ENABLE_INDEXED_DATABASE=1',
       'ENABLE_INPUT_TYPE_DATE=1',
-      'ENABLE_INPUT_TYPE_DATETIME=1',
       'ENABLE_INPUT_TYPE_DATETIMELOCAL=1',
       'ENABLE_INPUT_TYPE_MONTH=1',
       'ENABLE_INPUT_TYPE_TIME=1',
@@ -84,7 +89,7 @@
       'ENABLE_LEGACY_WEB_AUDIO=1',
       'ENABLE_LINK_PREFETCH=1',
       'ENABLE_LINK_PRERENDER=1',
-      'ENABLE_MATHML=1',
+      'ENABLE_MATHML=0',
       'ENABLE_MEDIA_SOURCE=1',
       'ENABLE_MEDIA_STATISTICS=1',
       'ENABLE_MEDIA_STREAM=<(enable_webrtc)',
@@ -92,7 +97,7 @@
       'ENABLE_MHTML=1',
       'ENABLE_MICRODATA=0',
       'ENABLE_MOUSE_CURSOR_SCALE=1',
-      'ENABLE_NAVIGATOR_CONTENT_UTILS=1',
+      'ENABLE_NOSNIFF=1',
       'ENABLE_PAGE_VISIBILITY_API=1',
       'ENABLE_PERFORMANCE_TIMELINE=1',
       'ENABLE_POINTER_LOCK=1',
@@ -108,16 +113,19 @@
       'ENABLE_SCRIPTED_SPEECH=1',
       'ENABLE_SHADOW_DOM=1',
       'ENABLE_SMOOTH_SCROLLING=1',
-      'ENABLE_SQL_DATABASE=1',
+      'ENABLE_SPEECH_SYNTHESIS=0',
+      'ENABLE_SQL_DATABASE=<(enable_sql_database)',
       'ENABLE_STYLE_SCOPED=1',
+      'ENABLE_SUBPIXEL_LAYOUT=1',
       'ENABLE_SVG=<(enable_svg)',
       'ENABLE_SVG_FONTS=<(enable_svg)',
       'ENABLE_TEMPLATE_ELEMENT=1',
       'ENABLE_TEXT_AUTOSIZING=1',
+      'ENABLE_THREADED_HTML_PARSER=1',
       'ENABLE_TOUCH_ADJUSTMENT=1',
       'ENABLE_TOUCH_EVENTS=<(enable_touch_events)',
-      'ENABLE_TOUCH_ICON_LOADING=<(enable_touch_icon_loading)',
       'ENABLE_TOUCH_EVENT_TRACKING=<(enable_touch_events)',
+      'ENABLE_TOUCH_ICON_LOADING=<(enable_touch_icon_loading)',
       'ENABLE_TOUCH_SLIDER=1',
       'ENABLE_USER_TIMING=1',
       'ENABLE_V8_SCRIPT_DEBUG_SERVER=1',
@@ -125,11 +133,9 @@
       'ENABLE_VIDEO_TRACK=1',
       'ENABLE_VIEWPORT=1',
       'ENABLE_WEBGL=1',
-      'ENABLE_WEB_INTENTS=1',
       'ENABLE_WEB_SOCKETS=1',
       'ENABLE_WEB_TIMING=1',
       'ENABLE_WORKERS=1',
-      'ENABLE_XHR_RESPONSE_BLOB=1',
       'ENABLE_XHR_TIMEOUT=0',
       'ENABLE_XSLT=1',
       'WTF_USE_LEVELDB=1',
@@ -148,18 +154,19 @@
     'variables': {
       'use_accelerated_compositing%': 1,
       'enable_skia_text%': 1,
+      'enable_sql_database%': 1,
       'enable_svg%': 1,
       'enable_touch_events%': 1,
       'enable_touch_icon_loading%' : 0,
     },
     'use_accelerated_compositing%': '<(use_accelerated_compositing)',
     'enable_skia_text%': '<(enable_skia_text)',
+    'enable_sql_database%': '<(enable_sql_database)',
     'enable_svg%': '<(enable_svg)',
     'enable_touch_events%': '<(enable_touch_events)',
     'conditions': [
       ['OS=="android"', {
         'feature_defines': [
-          'ENABLE_ACCELERATED_OVERFLOW_SCROLLING=1',
           'ENABLE_CALENDAR_PICKER=0',
           'ENABLE_DATALIST_ELEMENT=0',
           'ENABLE_FAST_MOBILE_SCROLLING=1',
@@ -172,7 +179,7 @@
           'ENABLE_ORIENTATION_EVENTS=1',
           'ENABLE_PAGE_POPUP=0',
           'ENABLE_PRINTING=0',
-          'ENABLE_REGISTER_PROTOCOL_HANDLER=0',
+          'ENABLE_NAVIGATOR_CONTENT_UTILS=0',
           # FIXME: Disable once the linking error has been resolved.
           # https://bugs.webkit.org/show_bug.cgi?id=88636
           'ENABLE_SHARED_WORKERS=1',
@@ -182,7 +189,6 @@
         'enable_touch_icon_loading': 1,
       }, { # OS!="android"
         'feature_defines': [
-          'ENABLE_ACCELERATED_OVERFLOW_SCROLLING=0',
           'ENABLE_CALENDAR_PICKER=1',
           'ENABLE_DATALIST_ELEMENT=1',
           'ENABLE_INPUT_SPEECH=1',
@@ -191,12 +197,24 @@
           'ENABLE_INPUT_MULTIPLE_FIELDS_UI=1',
           'ENABLE_LEGACY_NOTIFICATIONS=1',
           'ENABLE_MEDIA_CAPTURE=0',
+          'ENABLE_NAVIGATOR_CONTENT_UTILS=1',
           'ENABLE_NOTIFICATIONS=1',
           'ENABLE_ORIENTATION_EVENTS=0',
           'ENABLE_PAGE_POPUP=1',
           'ENABLE_PRINTING=1',
           'ENABLE_SHARED_WORKERS=1',
           'ENABLE_WEB_AUDIO=1',
+        ],
+      }],
+      ['OS=="linux" or OS=="mac"', {
+        'feature_defines': [
+          # 8Bit text runs should be enabled for all platforms webkit.org/b/111348
+          'ENABLE_8BIT_TEXTRUN=1',
+          'ENABLE_BINDING_INTEGRITY=1',
+        ],
+      }, { # OS!="linux"
+        'feature_defines': [
+          'ENABLE_BINDING_INTEGRITY=0',
         ],
       }],
       ['use_accelerated_compositing==1', {
@@ -217,16 +235,6 @@
           'ENABLE_OPENTYPE_VERTICAL=1',
         ],
       }],
-      ['enable_web_intents==1', {
-        'feature_defines': [
-          'ENABLE_WEB_INTENTS=1',
-        ],
-      }],
-      ['enable_web_intents_tag==1', {
-        'feature_defines': [
-          'ENABLE_WEB_INTENTS_TAG=1',
-        ],
-      }],
       ['OS=="mac"', {
         'feature_defines': [
           'ENABLE_RUBBER_BANDING=1',
@@ -235,7 +243,7 @@
       }],
       ['use_x11==1 or OS=="android"', {
         'feature_defines': [
-          'WTF_USE_HARFBUZZ_NG=1',
+          'WTF_USE_HARFBUZZ=1',
         ],
       }],
       ['chromeos==1', {

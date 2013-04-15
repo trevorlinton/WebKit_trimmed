@@ -67,6 +67,12 @@ WebInspector.NetworkRequest.Events = {
     ResponseHeadersChanged: "ResponseHeadersChanged",
 }
 
+WebInspector.NetworkRequest.InitiatorType = {
+    Parser: "parser",
+    Script: "script",
+    Other: "other",
+}
+
 WebInspector.NetworkRequest.prototype = {
     /**
      * @return {NetworkAgent.RequestId}
@@ -424,7 +430,15 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
-     * @return {WebInspector.Resource|undefined}
+     * @return {string}
+     */
+    get domain()
+    {
+        return this._parsedURL.host;
+    },
+
+    /**
+     * @return {?WebInspector.NetworkRequest}
      */
     get redirectSource()
     {
@@ -493,7 +507,7 @@ WebInspector.NetworkRequest.prototype = {
 
         this._sortedRequestHeaders = [];
         this._sortedRequestHeaders = this.requestHeaders.slice();
-        this._sortedRequestHeaders.sort(function(a,b) { return a.name.toLowerCase().localeCompare(b.name.toLowerCase()) });
+        this._sortedRequestHeaders.sort(function(a,b) { return a.name.toLowerCase().compareTo(b.name.toLowerCase()) });
         return this._sortedRequestHeaders;
     },
 
@@ -595,7 +609,7 @@ WebInspector.NetworkRequest.prototype = {
         
         this._sortedResponseHeaders = [];
         this._sortedResponseHeaders = this.responseHeaders.slice();
-        this._sortedResponseHeaders.sort(function(a,b) { return a.name.toLowerCase().localeCompare(b.name.toLowerCase()) });
+        this._sortedResponseHeaders.sort(function(a,b) { return a.name.toLowerCase().compareTo(b.name.toLowerCase()) });
         return this._sortedResponseHeaders;
     },
 
@@ -706,6 +720,8 @@ WebInspector.NetworkRequest.prototype = {
             if (headers[i].name.toLowerCase() === headerName)
                 values.push(headers[i].value);
         }
+        if (!values.length)
+            return undefined;
         // Set-Cookie values should be separated by '\n', not comma, otherwise cookies could not be parsed.
         if (headerName === "set-cookie")
             return values.join("\n");

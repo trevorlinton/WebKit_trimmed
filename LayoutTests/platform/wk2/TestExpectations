@@ -89,10 +89,6 @@ inspector/elements/edit-dom-actions.html
 inspector/extensions/extensions-events.html
 inspector/styles/styles-computed-trace.html
 
-# Fail until SUBPIXEL_LAYOUT is enabled
-# https://bugs.webkit.org/show_bug.cgi?id=85532
-fast/sub-pixel
-
 # [WK2][WTR] svg/animations/animate-text-nested-transforms.html fails
 # https://bugs.webkit.org/show_bug.cgi?id=95191
 svg/animations/animate-text-nested-transforms.html
@@ -180,9 +176,9 @@ platform/mac/fast/text/justified-text-rect.html
 
 # WebKitTestRunner needs to support needsDeletionUI mechanism to show deletion UI
 # <https://bugs.webkit.org/show_bug.cgi?id=42535>
-fast/dom/Element/id-in-deletebutton.html
-editing/deleting/5408255.html
-editing/deleting/deletionUI-single-instance.html
+platform/mac/editing/deleting/id-in-deletebutton.html
+platform/mac/editing/deleting/deletionUI-click-on-delete-button.html
+platform/mac/editing/deleting/deletionUI-single-instance.html
 platform/mac/editing/deleting/deletionUI-borders.html
 platform/mac/editing/deleting/deletionUI-differing-background.html
 platform/mac/editing/deleting/deletionUI-minimum-size.html
@@ -284,12 +280,6 @@ fast/forms/validation-message-on-radio.html
 fast/forms/validation-message-on-range.html
 fast/forms/validation-message-on-textarea.html
 
-# Misbehaving computedStyleIncludingVisitedInfo or keepWebHistory API in WebKitTestRunner
-# http://webkit.org/b/58334
-fast/history/nested-visited-test.html
-fast/history/self-is-visited.html
-fast/history/sibling-visited-test.html
-fast/loader/stateobjects/state-url-sets-links-visited.html
 platform/mac/accessibility/search-predicate.html
 
 # [WK2] CSP reporting doesn't work
@@ -312,14 +302,6 @@ editing/pasteboard/drag-files-to-editable-element.html
 # https://bugs.webkit.org/show_bug.cgi?id=63806
 http/tests/cache/history-only-cached-subresource-loads-max-age-https.html
 
-# [WK2] New tests introduced in 100895 fail
-# https://bugs.webkit.org/show_bug.cgi?id=73913
-http/tests/security/referrer-policy-https-always.html
-http/tests/security/referrer-policy-https-origin.html
-http/tests/security/referrer-policy-redirect.html
-http/tests/security/referrer-policy-https-never.html
-http/tests/security/referrer-policy-https-default.html
-
 # Frame::findString does nothing on pages that prevent selection
 # https://bugs.webkit.org/show_bug.cgi?id=40361
 editing/text-iterator/findString-selection-disabled.html
@@ -338,13 +320,10 @@ fast/selectors/selection-window-inactive.html
 # autoZoomPageToFitWidth().
 inspector/styles/override-screen-size.html
 
-# The network stack unconditionally strips the header on transitions from
-# secure to insecure. It should take the referrer policy into account instead.
-# https://bugs.webkit.org/show_bug.cgi?id=86000
-http/tests/security/referrer-policy-redirect-link.html
-
 # css3-conditionals support is not yet enabled.
 webkit.org/b/86146 css3/supports.html
+webkit.org/b/104822 css3/supports-cssom.html
+webkit.org/b/100324 css3/supports-dom-api.html
 
 # Text Autosizing is not yet enabled.
 # https://bugs.webkit.org/show_bug.cgi?id=84186
@@ -388,23 +367,6 @@ http/tests/misc/link-rel-icon-beforeload.html
 # WebKitTestRunner should dump text/plain content as text
 http/tests/incremental/slow-utf8-text.pl
 
-# WebKitTestRunner needs layoutTestController.setHandlesAuthenticationChallenges
-http/tests/misc/authentication-redirect-1/authentication-sent-to-redirect-cross-origin.html
-http/tests/misc/authentication-redirect-2/authentication-sent-to-redirect-same-origin.html
-http/tests/misc/authentication-redirect-3/authentication-sent-to-redirect-same-origin-with-location-credentials.html
-http/tests/loading/authentication-after-redirect-stores-wrong-credentials/authentication-after-redirect-stores-wrong-credentials.html
-http/tests/loading/basic-auth-resend-wrong-credentials.html
-http/tests/loading/basic-credentials-sent-automatically.html
-http/tests/security/401-logout/401-logout.php
-http/tests/xmlhttprequest/basic-auth-nopassword.html
-http/tests/xmlhttprequest/basic-auth-nouser.html
-http/tests/xmlhttprequest/remember-bad-password.html
-http/tests/xmlhttprequest/failed-auth.html
-http/tests/misc/401-alternative-content.php
-
-# WebKitTestRunner needs layoutTestController.setSmartInsertDeleteEnabled
-editing/deleting/smart-editing-disabled.html
-
 # WebKitTestRunner needs plainText.plainText
 editing/text-iterator/basic-iteration.html
 
@@ -428,8 +390,19 @@ editing/spelling/design-mode-spellcheck-off.html
 editing/spelling/spellcheck-attribute.html
 editing/spelling/spelling-attribute-at-child.html
 editing/spelling/spelling-attribute-change.html
-editing/spelling/spelling-linebreak.html
+editing/spelling/spelling-double-clicked-word.html
+editing/spelling/spelling-double-clicked-word-with-underscores.html
+editing/spelling/spelling-exactly-selected-multiple-words.html
+editing/spelling/spelling-exactly-selected-word.html
 editing/spelling/spelling-hasspellingmarker.html
+editing/spelling/spelling-linebreak.html
+editing/spelling/spelling-multiword-selection.html
+editing/spelling/spelling-should-select-multiple-words.html
+editing/spelling/spelling-should-select-single-word.html
+editing/spelling/spelling-subword-selection.html
+editing/spelling/spelling-with-punctuation-selection.html
+editing/spelling/spelling-with-underscore-selection.html
+editing/spelling/spelling-with-whitespace-selection.html
 platform/mac/editing/spelling/delete-into-misspelled-word.html
 platform/mac/editing/spelling/editing-multiple-words-with-markers.html
 platform/mac/editing/spelling/editing-word-with-marker-1.html
@@ -522,14 +495,6 @@ storage/domstorage/localstorage/storagetracker/storage-tracker-5-delete-one.html
 storage/domstorage/localstorage/storagetracker/storage-tracker-6-create.html
 storage/domstorage/localstorage/storagetracker/storage-tracker-7-usage.html
 
-# WebKitTestRunner needs layoutTestController.setAutofilled
-fast/forms/input-autofilled.html
-fast/forms/reset-autofilled.html
-
-# WebKitTestRunner needs a more-complete implementation of eventSender
-# https://bugs.webkit.org/show_bug.cgi?id=42194
-fast/dom/MutationObserver/inline-event-listener.html
-
 # WebKitTestRunner needs eventSender.contextClick()
 # https://bugs.webkit.org/show_bug.cgi?id=86881
 editing/selection/context-menu-text-selection.html
@@ -540,6 +505,7 @@ fast/events/context-nodrag.html
 # eventSender.dragMode is unimplemented in WKTR
 # Mac: https://bugs.webkit.org/show_bug.cgi?id=68552
 # Qt: https://bugs.webkit.org/show_bug.cgi?id=69946
+fast/events/controlclick-no-onclick.html
 fast/events/moving-text-should-fire-drop-and-dragend-events.html
 fast/events/moving-text-should-fire-drop-and-dragend-events-2.html
 editing/pasteboard/drag-drop-url-with-style.html
@@ -576,6 +542,7 @@ editing/spelling/spelling-marker-description.html
 
 # WTR needs an implementation of setAutomaticLinkDetectionEnabled.
 # https://bugs.webkit.org/show_bug.cgi?id=87162
+editing/inserting/smart-link-when-caret-is-moved-before-URL.html
 editing/inserting/typing-space-to-trigger-smart-link.html
 
 # No CORS support for media elements is implemented yet.
@@ -584,6 +551,9 @@ http/tests/security/video-cross-origin-readback.html
 # Content Security Policy 1.1 (ENABLE_CSP_NEXT) is not enabled
 # https://bugs.webkit.org/show_bug.cgi?id=85558
 http/tests/security/contentSecurityPolicy/1.1
+
+# X-Content-Type-Options (ENABLE_NOSNIFF) is not enabled.
+http/tests/security/contentTypeOptions
 
 # Unexpected redirection happens.
 http/tests/loading/redirect-methods.html
@@ -678,9 +648,6 @@ http/tests/security/cross-frame-access-location-get.html
 http/tests/security/cross-frame-access-protocol-explicit-domain.html
 http/tests/security/cross-frame-access-protocol.html
 
-# Wrong color for visited link
-fast/history/multiple-classes-visited.html
-
 # Flaky tests (slow)
 fast/workers/storage/interrupt-database.html
 fast/workers/storage/use-same-database-in-page-and-workers.html
@@ -698,7 +665,6 @@ plugins/embed-attributes-style.html
 plugins/plugin-initiate-popup-window.html
 storage/websql/open-database-while-transaction-in-progress.html
 svg/custom/clip-path-referencing-use2.svg
-svg/dom/fuzz-path-parser.html
 svg/hixie/cascade/002.xml
 tables/mozilla_expected_failures/bugs/bug8499.html
 transitions/font-family-during-transition.html
@@ -919,6 +885,9 @@ http/tests/local/formdata/send-form-data-with-sliced-file.html
 http/tests/local/formdata/send-form-data.html
 http/tests/local/formdata/upload-events.html
 http/tests/security/clipboard/clipboard-file-access.html
+media/video-src-blob.html
+storage/indexeddb/noblobs.html
+storage/indexeddb/structured-clone.html
 
 # WebKitTestRunner doesn't have eventSender.fireKeyboardEventsToElement
 platform/mac/fast/events/objc-keyboard-event-creation.html

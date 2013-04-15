@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,26 +29,23 @@
 #if ENABLE(VIDEO) && USE(AVFOUNDATION) && HAVE(AVFOUNDATION_TEXT_TRACK_SUPPORT)
 
 #include "InbandTextTrackPrivate.h"
-#include <wtf/RetainPtr.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
-class MediaPlayerPrivateAVFoundation;
+class GenericCueData;
+
+class AVFInbandTrackParent {
+public:
+    virtual ~AVFInbandTrackParent();
+    
+    virtual void trackModeChanged() = 0;
+};
 
 class InbandTextTrackPrivateAVF : public InbandTextTrackPrivate {
 public:
+
     ~InbandTextTrackPrivateAVF();
-
-    String id() const { return m_currentCueId; }
-    double start() const { return m_currentCueStartTime; }
-    double end() const { return m_currentCueEndTime; }
-    String settings() { return m_currentCueSettings.toString(); }
-    String content() { return m_currentCueContent.toString(); }
-
-    void processCue(CFArrayRef, double);
-
-    void resetCueValues();
 
     virtual void setMode(InbandTextTrackPrivate::Mode) OVERRIDE;
 
@@ -60,18 +57,20 @@ public:
     bool hasBeenReported() const { return m_hasBeenReported; }
     void setHasBeenReported(bool reported) { m_hasBeenReported = reported; }
 
+    void processCue(CFArrayRef, double);
+    void resetCueValues();
+
 protected:
-    InbandTextTrackPrivateAVF(MediaPlayerPrivateAVFoundation*);
+    InbandTextTrackPrivateAVF(AVFInbandTrackParent*);
 
-    void processCueAttributes(CFAttributedStringRef, StringBuilder& content, StringBuilder& settings);
+    void processCueAttributes(CFAttributedStringRef, GenericCueData*);
 
-    String m_currentCueId;
     double m_currentCueStartTime;
     double m_currentCueEndTime;
-    StringBuilder m_currentCueSettings;
-    StringBuilder m_currentCueContent;
 
-    MediaPlayerPrivateAVFoundation* m_player;
+    Vector<OwnPtr<GenericCueData> > m_cues;
+
+    AVFInbandTrackParent* m_owner;
     int m_index;
     bool m_havePartialCue;
     bool m_hasBeenReported;

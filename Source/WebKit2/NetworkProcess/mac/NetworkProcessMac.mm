@@ -31,12 +31,20 @@
 #import "NetworkProcessCreationParameters.h"
 #import "PlatformCertificateInfo.h"
 #import "SandboxExtension.h"
+#import "SandboxInitializationParameters.h"
+#import "StringUtilities.h"
+#import <WebCore/FileSystem.h>
 #import <WebCore/LocalizedStrings.h>
 #import <WebKitSystemInterface.h>
 #import <mach/host_info.h>
 #import <mach/mach.h>
 #import <mach/mach_error.h>
+#import <sysexits.h>
 #import <wtf/text/WTFString.h>
+
+#if USE(SECURITY_FRAMEWORK)
+#import "SecItemShim.h"
+#endif
 
 using namespace WebCore;
 
@@ -46,10 +54,51 @@ using namespace WebCore;
 
 namespace WebKit {
 
-void NetworkProcess::initializeSandbox(const String&)
+void NetworkProcess::initializeProcessName(const ChildProcessInitializationParameters& parameters)
 {
-    // FIXME: Initialize the sandbox.
+    if (!parameters.uiProcessName.isNull()) {
+        NSString *applicationName = [NSString stringWithFormat:WEB_UI_STRING("%@ Networking", "visible name of the network process. The argument is the application name."), (NSString *)parameters.uiProcessName];
+        WKSetVisibleApplicationName((CFStringRef)applicationName);
+
+        // Having a window server connection in this process would result in spin logs (<rdar://problem/13239119>).
+        shutdownWindowServerConnection();
+    }
 }
+
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+static void overrideSystemProxies(const String& httpProxy, const String& httpsProxy)
+{
+    NSMutableDictionary *proxySettings = [NSMutableDictionary dictionary];
+
+    if (!httpProxy.isNull()) {
+        KURL httpProxyURL(KURL(), httpProxy);
+        if (httpProxyURL.isValid()) {
+            [proxySettings setObject:nsStringFromWebCoreString(httpProxyURL.host()) forKey:(NSString *)kCFNetworkProxiesHTTPProxy];
+            if (httpProxyURL.hasPort()) {
+                NSNumber *port = [NSNumber numberWithInt:httpProxyURL.port()];
+                [proxySettings setObject:port forKey:(NSString *)kCFNetworkProxiesHTTPPort];
+            }
+        }
+        else
+            NSLog(@"Malformed HTTP Proxy URL '%s'.  Expected 'http://<hostname>[:<port>]'\n", httpProxy.utf8().data());
+    }
+
+    if (!httpsProxy.isNull()) {
+        KURL httpsProxyURL(KURL(), httpsProxy);
+        if (httpsProxyURL.isValid()) {
+            [proxySettings setObject:nsStringFromWebCoreString(httpsProxyURL.host()) forKey:(NSString *)kCFNetworkProxiesHTTPSProxy];
+            if (httpsProxyURL.hasPort()) {
+                NSNumber *port = [NSNumber numberWithInt:httpsProxyURL.port()];
+                [proxySettings setObject:port forKey:(NSString *)kCFNetworkProxiesHTTPSPort];
+            }
+        } else
+            NSLog(@"Malformed HTTPS Proxy URL '%s'.  Expected 'https://<hostname>[:<port>]'\n", httpsProxy.utf8().data());
+    }
+
+    if ([proxySettings count] > 0)
+        WKCFNetworkSetOverrideSystemProxySettings((CFDictionaryRef)proxySettings);
+}
+#endif // __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
 
 void NetworkProcess::platformInitializeNetworkProcess(const NetworkProcessCreationParameters& parameters)
 {
@@ -63,6 +112,15 @@ void NetworkProcess::platformInitializeNetworkProcess(const NetworkProcessCreati
         RetainPtr<NSURLCache> parentProcessURLCache(AdoptNS, [[NSURLCache alloc] initWithMemoryCapacity:cacheMemoryCapacity diskCapacity:cacheDiskCapacity diskPath:parameters.diskCacheDirectory]);
         [NSURLCache setSharedURLCache:parentProcessURLCache.get()];
     }
+
+#if USE(SECURITY_FRAMEWORK)
+    SecItemShim::shared().initialize(this);
+#endif
+
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+    if (!parameters.httpProxy.isNull() || !parameters.httpsProxy.isNull())
+        overrideSystemProxies(parameters.httpProxy, parameters.httpsProxy);
+#endif
 }
 
 static uint64_t memorySize()
@@ -118,6 +176,15 @@ void NetworkProcess::platformSetCacheModel(CacheModel cacheModel)
 void NetworkProcess::allowSpecificHTTPSCertificateForHost(const PlatformCertificateInfo& certificateInfo, const String& host)
 {
     [NSURLRequest setAllowsSpecificHTTPSCertificate:(NSArray *)certificateInfo.certificateChain() forHost:(NSString *)host];
+}
+
+void NetworkProcess::initializeSandbox(const ChildProcessInitializationParameters& parameters, SandboxInitializationParameters& sandboxParameters)
+{
+    // Need to overide the default, because service has a different bundle ID.
+    NSBundle *webkit2Bundle = [NSBundle bundleForClass:NSClassFromString(@"WKView")];
+    sandboxParameters.setOverrideSandboxProfilePath([webkit2Bundle pathForResource:@"com.apple.WebKit.NetworkProcess" ofType:@"sb"]);
+
+    ChildProcess::initializeSandbox(parameters, sandboxParameters);
 }
 
 } // namespace WebKit

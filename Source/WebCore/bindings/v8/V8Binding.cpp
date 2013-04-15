@@ -53,7 +53,6 @@
 #include "XPathNSResolver.h"
 #include <wtf/MathExtras.h>
 #include <wtf/MainThread.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Threading.h>
 #include <wtf/text/AtomicString.h>
@@ -64,14 +63,6 @@
 
 #include "third_party/node/src/node.h"
 #include "third_party/node/src/req_wrap.h"
-
-namespace WTF {
-
-template<> struct SequenceMemoryInstrumentationTraits<v8::String*> {
-    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
-};
-
-}
 
 namespace WebCore {
 
@@ -132,7 +123,7 @@ int toInt32(v8::Handle<v8::Value> value, bool& ok)
     
     // Does the value convert to nan or to an infinity?
     double numberValue = numberObject->Value();
-    if (isnan(numberValue) || isinf(numberValue)) {
+    if (std::isnan(numberValue) || std::isinf(numberValue)) {
         ok = false;
         return 0;
     }
@@ -171,7 +162,7 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok)
 
     // Does the value convert to nan or to an infinity?
     double numberValue = numberObject->Value();
-    if (isnan(numberValue) || isinf(numberValue)) {
+    if (std::isnan(numberValue) || std::isinf(numberValue)) {
         ok = false;
         return 0;
     }
@@ -186,24 +177,18 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok)
     return uintValue->Value();
 }
 
-v8::Persistent<v8::FunctionTemplate> createRawTemplate()
+v8::Persistent<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 {
     v8::HandleScope scope;
     v8::Local<v8::FunctionTemplate> result = v8::FunctionTemplate::New(V8ObjectConstructor::isValidConstructorMode);
-    return v8::Persistent<v8::FunctionTemplate>::New(result);
+    return v8::Persistent<v8::FunctionTemplate>::New(isolate, result);
 }        
 
-void StringCache::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
-    info.addMember(m_stringCache);
-}
-    
 PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(value));
 
-    if (V8DOMStringList::HasInstance(v8Value)) {
+    if (V8DOMStringList::HasInstance(v8Value, isolate)) {
         RefPtr<DOMStringList> ret = V8DOMStringList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
         return ret.release();
     }
@@ -220,13 +205,13 @@ PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isola
     return ret.release();
 }
 
-PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value)
+PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     RefPtr<XPathNSResolver> resolver;
-    if (V8XPathNSResolver::HasInstance(value))
+    if (V8XPathNSResolver::HasInstance(value, isolate))
         resolver = V8XPathNSResolver::toNative(v8::Handle<v8::Object>::Cast(value));
     else if (value->IsObject())
-        resolver = V8CustomXPathNSResolver::create(value->ToObject());
+        resolver = V8CustomXPathNSResolver::create(value->ToObject(), isolate);
     return resolver;
 }
 
@@ -235,39 +220,47 @@ v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context> context)
     return v8::Handle<v8::Object>::Cast(context->Global()->GetPrototype());
 }
 
-static DOMWindow* DOMWindowFromNode()
+static DOMWindow* DOMWindowFromNode(v8::Handle<v8::Context> context)
 {
     v8::Context::Scope context_scope(node::g_context);
     v8::Handle<v8::Object> global = node::g_context->Global();
     v8::Local<v8::Value> val_window = global->Get(v8::String::New("window"));
     ASSERT (!val_window->IsUndefined());
     v8::Local<v8::Object> window = v8::Local<v8::Object>::Cast(val_window);
-    global = window->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    global = window->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
     ASSERT (!global.IsEmpty());
     return V8DOMWindow::toNative(global);
 }
 
+
 DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 {
     if (context == node::g_context) {
-        return DOMWindowFromNode();
+        return DOMWindowFromNode(context);
     }
+
     v8::Handle<v8::Object> global = context->Global();
-    ASSERT(!global.IsEmpty());
-    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
     if (global.IsEmpty())
-        return DOMWindowFromNode();
+        return DOMWindowFromNode(context);
+    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    if (!global.IsEmpty())
+        return V8DOMWindow::toNative(global);
+    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
+    ASSERT(!global.IsEmpty());
     return V8DOMWindow::toNative(global);
 }
 
 ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
-    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    if (!windowWrapper.IsEmpty())
+        return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
+    windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
         return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
 #if ENABLE(WORKERS)
-    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate());
+    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
         return V8WorkerContext::toNative(workerWrapper)->scriptExecutionContext();
 #endif
@@ -291,6 +284,26 @@ v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, const WorldC
     if (context->isDocument()) {
         if (Frame* frame = static_cast<Document*>(context)->frame())
             return worldContext.adjustedContext(frame->script());
+#if ENABLE(WORKERS)
+    } else if (context->isWorkerContext()) {
+        if (WorkerScriptController* script = static_cast<WorkerContext*>(context)->script())
+            return script->context();
+#endif
+    }
+    return v8::Local<v8::Context>();
+}
+
+v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, DOMWrapperWorld* world)
+{
+    if (context->isDocument()) {
+        if (Frame* frame = static_cast<Document*>(context)->frame()) {
+            // FIXME: Store the DOMWrapperWorld for the main world in the v8::Context so callers
+            // that are looking up their world with DOMWrapperWorld::isolatedWorld(v8::Context::GetCurrent())
+            // won't end up passing null here when later trying to get their v8::Context back.
+            if (!world)
+                return frame->script()->mainWorldContext();
+            return v8::Local<v8::Context>::New(frame->script()->windowShell(world)->context());
+        }
 #if ENABLE(WORKERS)
     } else if (context->isWorkerContext()) {
         if (WorkerScriptController* script = static_cast<WorkerContext*>(context)->script())
@@ -326,7 +339,7 @@ bool handleOutOfMemory()
 
 v8::Local<v8::Value> handleMaxRecursionDepthExceeded()
 {
-    throwError(v8RangeError, "Maximum call stack size exceeded.");
+    throwError(v8RangeError, "Maximum call stack size exceeded.", v8::Isolate::GetCurrent());
     return v8::Local<v8::Value>();
 }
 
@@ -337,6 +350,26 @@ void crashIfV8IsDead()
         // such as out-of-memory by crashing the renderer.
         CRASH();
     }
+}
+
+WrapperWorldType worldType(v8::Isolate* isolate)
+{
+    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
+    // FIXME: Rename domDataStore() to workerDataStore().
+    if (!data->domDataStore())
+        return worldTypeInMainThread(isolate);
+    return WorkerWorld;
+}
+
+WrapperWorldType worldTypeInMainThread(v8::Isolate* isolate)
+{
+    if (!DOMWrapperWorld::isolatedWorldsExist())
+        return MainWorld;
+    ASSERT(!v8::Context::GetEntered().IsEmpty());
+    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(v8::Context::GetEntered());
+    if (isolatedWorld)
+        return IsolatedWorld;
+    return MainWorld;
 }
 
 } // namespace WebCore

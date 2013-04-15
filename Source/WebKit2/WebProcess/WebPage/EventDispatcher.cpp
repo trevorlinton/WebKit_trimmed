@@ -26,6 +26,7 @@
 #include "config.h"
 #include "EventDispatcher.h"
 
+#include "EventDispatcherMessages.h"
 #include "WebEvent.h"
 #include "WebEventConversion.h"
 #include "WebPage.h"
@@ -45,7 +46,13 @@ using namespace WebCore;
 
 namespace WebKit {
 
+PassRefPtr<EventDispatcher> EventDispatcher::create()
+{
+    return adoptRef(new EventDispatcher);
+}
+
 EventDispatcher::EventDispatcher()
+    : m_queue(WorkQueue::create("com.apple.WebKit.EventDispatcher"))
 {
 }
 
@@ -72,15 +79,12 @@ void EventDispatcher::removeScrollingTreeForPage(WebPage* webPage)
 }
 #endif
 
-void EventDispatcher::didReceiveMessageOnConnectionWorkQueue(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder, bool& didHandleMessage)
+void EventDispatcher::initializeConnection(CoreIPC::Connection* connection)
 {
-    if (messageID.is<CoreIPC::MessageClassEventDispatcher>()) {
-        didReceiveEventDispatcherMessageOnConnectionWorkQueue(connection, messageID, decoder, didHandleMessage);
-        return;
-    }
+    connection->addWorkQueueMessageReceiver(Messages::EventDispatcher::messageReceiverName(), m_queue.get(), this);
 }
 
-void EventDispatcher::wheelEvent(CoreIPC::Connection*, uint64_t pageID, const WebWheelEvent& wheelEvent, bool canGoBack, bool canGoForward)
+void EventDispatcher::wheelEvent(uint64_t pageID, const WebWheelEvent& wheelEvent, bool canGoBack, bool canGoForward)
 {
 #if ENABLE(THREADED_SCROLLING)
     MutexLocker locker(m_scrollingTreesMutex);
@@ -109,7 +113,7 @@ void EventDispatcher::wheelEvent(CoreIPC::Connection*, uint64_t pageID, const We
 }
 
 #if ENABLE(GESTURE_EVENTS)
-void EventDispatcher::gestureEvent(CoreIPC::Connection*, uint64_t pageID, const WebGestureEvent& gestureEvent)
+void EventDispatcher::gestureEvent(uint64_t pageID, const WebGestureEvent& gestureEvent)
 {
     RunLoop::main()->dispatch(bind(&EventDispatcher::dispatchGestureEvent, this, pageID, gestureEvent));
 }

@@ -89,6 +89,7 @@ public:
     virtual void dispatchDidCancelAuthenticationChallenge(WebCore::DocumentLoader*, unsigned long identifier, const WebCore::AuthenticationChallenge&);
     virtual void dispatchDidReceiveResponse(WebCore::DocumentLoader*, unsigned long identifier, const WebCore::ResourceResponse&);
     virtual void dispatchDidReceiveContentLength(WebCore::DocumentLoader*, unsigned long identifier, int dataLength);
+    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, WebCore::ResourceLoadPriority);
     virtual void dispatchDidFinishLoading(WebCore::DocumentLoader*, unsigned long identifier);
     virtual void dispatchDidFailLoading(WebCore::DocumentLoader*, unsigned long identifier, const WebCore::ResourceError&);
     virtual bool dispatchDidLoadResourceFromMemoryCache(WebCore::DocumentLoader*, const WebCore::ResourceRequest&, const WebCore::ResourceResponse&, int length);
@@ -212,17 +213,6 @@ public:
     virtual bool willCheckAndDispatchMessageEvent(WebCore::SecurityOrigin* target, WebCore::MessageEvent*) const;
     virtual void didChangeName(const String&);
 
-#if ENABLE(WEB_INTENTS_TAG)
-    virtual void registerIntentService(const String& action,
-                                       const String& type,
-                                       const WebCore::KURL& href,
-                                       const String& title,
-                                       const String& disposition);
-#endif
-#if ENABLE(WEB_INTENTS)
-    virtual void dispatchIntent(PassRefPtr<WebCore::IntentRequest>) OVERRIDE;
-#endif
-
     virtual void dispatchWillOpenSocketStream(WebCore::SocketStreamHandle*) OVERRIDE;
 
 #if ENABLE(MEDIA_STREAM)
@@ -237,6 +227,8 @@ public:
     virtual bool allowWebGL(bool enabledPerSettings) OVERRIDE;
     virtual void didLoseWebGLContext(int arbRobustnessContextLostReason) OVERRIDE;
 #endif
+
+    virtual void dispatchWillInsertBody() OVERRIDE;
 
 private:
     void makeDocumentView();

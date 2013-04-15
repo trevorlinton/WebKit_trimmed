@@ -103,7 +103,7 @@ typedef enum {
     QObj,
     Object,
     Null,
-    RTUint8ClampedArray
+    RTUint8Array
 } JSRealType;
 
 #if defined(QTWK_RUNTIME_CONVERSION_DEBUG) || defined(QTWK_RUNTIME_MATCH_DEBUG)
@@ -145,9 +145,9 @@ void registerCustomType(int qtMetaTypeId, ConvertToVariantFunction toVariantFunc
     customRuntimeConversions()->insert(qtMetaTypeId, conversion);
 }
 
-static bool isJSUint8ClampedArray(JSObjectRef object)
+static bool isJSUint8Array(JSObjectRef object)
 {
-    return toJS(object)->inherits(&JSUint8ClampedArray::s_info);
+    return toJS(object)->inherits(&JSUint8Array::s_info);
 }
 
 static bool isJSArray(JSObjectRef object)
@@ -180,8 +180,8 @@ static JSRealType valueRealType(JSContextRef context, JSValueRef value, JSValueR
 
     JSObjectRef object = JSValueToObject(context, value, exception);
 
-    if (isJSUint8ClampedArray(object))
-        return RTUint8ClampedArray;
+    if (isJSUint8Array(object))
+        return RTUint8Array;
     if (isJSArray(object))
             return Array;
     if (isJSDate(object))
@@ -236,7 +236,7 @@ static QVariantMap convertValueToQVariantMap(JSContextRef context, JSObjectRef o
 
 template <typename ItemType>
 QList<ItemType> convertToList(JSContextRef context, JSRealType type, JSObjectRef object,
-                              JSValueRef value, int* distance, JSValueRef* exception,
+                              JSValueRef value, int* distance, HashSet<JSObjectRef>* visitedObjects, int recursionLimit, JSValueRef* exception,
                               const QMetaType::Type typeId = static_cast<QMetaType::Type>(qMetaTypeId<ItemType>()))
 {
     QList<ItemType> list;
@@ -248,7 +248,7 @@ QList<ItemType> convertToList(JSContextRef context, JSRealType type, JSObjectRef
         for (size_t i = 0; i < length; ++i) {
             JSValueRef value = JSObjectGetPropertyAtIndex(context, object, i, exception);
             int itemDistance = -1;
-            QVariant variant = convertValueToQVariant(context, value, typeId, &itemDistance, exception);
+            QVariant variant = convertValueToQVariant(context, value, typeId, &itemDistance, visitedObjects, recursionLimit, exception);
             if (itemDistance >= 0)
                 list << variant.value<ItemType>();
             else
@@ -260,7 +260,7 @@ QList<ItemType> convertToList(JSContextRef context, JSRealType type, JSObjectRef
             *distance = 5;
     } else {
         int itemDistance = -1;
-        QVariant variant = convertValueToQVariant(context, value, typeId, &itemDistance, exception);
+        QVariant variant = convertValueToQVariant(context, value, typeId, &itemDistance, visitedObjects, recursionLimit, exception);
         if (itemDistance >= 0) {
             list << variant.value<ItemType>();
             if (distance)
@@ -322,7 +322,7 @@ QVariant convertValueToQVariant(JSContextRef context, JSValueRef value, QMetaTyp
 
     // check magic pointer values before dereferencing value
     if (JSValueIsNumber(context, value)
-        && isnan(JSValueToNumber(context, value, exception))) {
+        && std::isnan(JSValueToNumber(context, value, exception))) {
         if (distance)
             *distance = -1;
         return QVariant();
@@ -356,7 +356,7 @@ QVariant convertValueToQVariant(JSContextRef context, JSValueRef value, QMetaTyp
             case QObj:
                 hint = QMetaType::QObjectStar;
                 break;
-            case RTUint8ClampedArray:
+            case RTUint8Array:
                 hint = QMetaType::QByteArray;
                 break;
             case Array:
@@ -481,17 +481,17 @@ QVariant convertValueToQVariant(JSContextRef context, JSValueRef value, QMetaTyp
             break;
 
         case QMetaType::QVariantList:
-            ret = QVariant(convertToList<QVariant>(context, type, object, value, &dist, exception, QMetaType::Void));
+            ret = QVariant(convertToList<QVariant>(context, type, object, value, &dist, visitedObjects, recursionLimit, exception, QMetaType::Void));
             break;
 
         case QMetaType::QStringList: {
-            ret = QVariant(convertToList<QString>(context, type, object, value, &dist, exception));
+            ret = QVariant(convertToList<QString>(context, type, object, value, &dist, visitedObjects, recursionLimit, exception));
             break;
         }
 
         case QMetaType::QByteArray: {
-            if (type == RTUint8ClampedArray) {
-                WTF::Uint8ClampedArray* arr = toUint8ClampedArray(toJS(toJS(context), value));
+            if (type == RTUint8Array) {
+                WTF::Uint8Array* arr = toUint8Array(toJS(toJS(context), value));
                 ret = QVariant(QByteArray(reinterpret_cast<const char*>(arr->data()), arr->length()));
                 dist = 0;
             } else {
@@ -616,11 +616,11 @@ QVariant convertValueToQVariant(JSContextRef context, JSValueRef value, QMetaTyp
         default:
             // Non const type ids
             if (hint == (QMetaType::Type) qMetaTypeId<QObjectList>()) {
-                ret = QVariant::fromValue(convertToList<QObject*>(context, type, object, value, &dist, exception));
+                ret = QVariant::fromValue(convertToList<QObject*>(context, type, object, value, &dist, visitedObjects, recursionLimit, exception));
                 break;
             }
             if (hint == (QMetaType::Type) qMetaTypeId<QList<int> >()) {
-                ret = QVariant::fromValue(convertToList<int>(context, type, object, value, &dist, exception));
+                ret = QVariant::fromValue(convertToList<int>(context, type, object, value, &dist, visitedObjects, recursionLimit, exception));
                 break;
             }
             if (QtPixmapRuntime::canHandle(static_cast<QMetaType::Type>(hint))) {
@@ -1559,7 +1559,7 @@ void QtConnectionObject::execute(void** argv)
     const QMetaMethod method = meta->method(m_signalIndex);
 
     JSValueRef* ignoredException = 0;
-    JSRetainPtr<JSStringRef> lengthProperty(JSStringCreateWithUTF8CString("length"));
+    JSRetainPtr<JSStringRef> lengthProperty(Adopt, JSStringCreateWithUTF8CString("length"));
     int receiverLength = int(JSValueToNumber(m_context, JSObjectGetProperty(m_context, m_receiverFunction, lengthProperty.get(), ignoredException), ignoredException));
     int argc = qMax(method.parameterCount(), receiverLength);
     WTF::Vector<JSValueRef> args(argc);

@@ -94,21 +94,6 @@ namespace WebCore {
         void setPictographFontFamily(const AtomicString&, UScriptCode = USCRIPT_COMMON);
         const AtomicString& pictographFontFamily(UScriptCode = USCRIPT_COMMON) const;
 
-        void setMinimumFontSize(int);
-        int minimumFontSize() const { return m_minimumFontSize; }
-
-        void setMinimumLogicalFontSize(int);
-        int minimumLogicalFontSize() const { return m_minimumLogicalFontSize; }
-
-        void setDefaultFontSize(int);
-        int defaultFontSize() const { return m_defaultFontSize; }
-
-        void setDefaultFixedFontSize(int);
-        int defaultFixedFontSize() const { return m_defaultFixedFontSize; }
-
-        void setScreenFontSubstitutionEnabled(bool);
-        bool screenFontSubstitutionEnabled() const { return m_screenFontSubstitutionEnabled; }
-
 #if ENABLE(TEXT_AUTOSIZING)
         void setTextAutosizingEnabled(bool);
         bool textAutosizingEnabled() const { return m_textAutosizingEnabled; }
@@ -152,9 +137,6 @@ namespace WebCore {
         void setImagesEnabled(bool);
         bool areImagesEnabled() const { return m_areImagesEnabled; }
 
-        void setMediaEnabled(bool);
-        bool isMediaEnabled() const { return m_isMediaEnabled; }
-
         void setPluginsEnabled(bool);
         bool arePluginsEnabled() const { return m_arePluginsEnabled; }
 
@@ -180,15 +162,9 @@ namespace WebCore {
         void setUserStyleSheetLocation(const KURL&);
         const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
 
-        void setTextAreasAreResizable(bool);
-        bool textAreasAreResizable() const { return m_textAreasAreResizable; }
-
         void setNeedsAdobeFrameReloadingQuirk(bool);
         bool needsAcrobatFrameReloadingQuirk() const { return m_needsAdobeFrameReloadingQuirk; }
 
-        void setDOMPasteAllowed(bool);
-        bool isDOMPasteAllowed() const { return m_isDOMPasteAllowed; }
-        
         static void setDefaultMinDOMTimerInterval(double); // Interval specified in seconds.
         static double defaultMinDOMTimerInterval();
         
@@ -207,14 +183,8 @@ namespace WebCore {
         void setUsesPageCache(bool);
         bool usesPageCache() const { return m_usesPageCache; }
         
-        void setAuthorAndUserStylesEnabled(bool);
-        bool authorAndUserStylesEnabled() const { return m_authorAndUserStylesEnabled; }
-        
         void setFontRenderingMode(FontRenderingMode mode);
         FontRenderingMode fontRenderingMode() const;
-
-        void setApplicationChromeMode(bool);
-        bool inApplicationChromeMode() const { return m_inApplicationChromeMode; }
 
         void setCSSCustomFilterEnabled(bool enabled) { m_isCSSCustomFilterEnabled = enabled; }
         bool isCSSCustomFilterEnabled() const { return m_isCSSCustomFilterEnabled; }
@@ -235,15 +205,6 @@ namespace WebCore {
         bool cssVariablesEnabled() const { return false; }
 #endif
 
-        void setAcceleratedCompositingEnabled(bool);
-        bool acceleratedCompositingEnabled() const { return m_acceleratedCompositingEnabled; }
-
-        void setShowDebugBorders(bool);
-        bool showDebugBorders() const { return m_showDebugBorders; }
-
-        void setShowRepaintCounter(bool);
-        bool showRepaintCounter() const { return m_showRepaintCounter; }
-
         void setShowTiledScrollingIndicator(bool);
         bool showTiledScrollingIndicator() const { return m_showTiledScrollingIndicator; }
 
@@ -256,12 +217,14 @@ namespace WebCore {
         bool tiledBackingStoreEnabled() const { return m_tiledBackingStoreEnabled; }
 
 #if USE(AVFOUNDATION)
-        static void setAVFoundationEnabled(bool flag) { gAVFoundationEnabled = flag; }
+        static void setAVFoundationEnabled(bool flag);
         static bool isAVFoundationEnabled() { return gAVFoundationEnabled; }
 #endif
 
-        void setUnifiedTextCheckerEnabled(bool flag) { m_unifiedTextCheckerEnabled = flag; }
-        bool unifiedTextCheckerEnabled() const { return m_unifiedTextCheckerEnabled; }
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+        static void setQTKitEnabled(bool flag);
+        static bool isQTKitEnabled() { return gQTKitEnabled; }
+#endif
 
         static const unsigned defaultMaximumHTMLParserDOMTreeDepth = 512;
 
@@ -317,11 +280,6 @@ namespace WebCore {
         ScriptFontFamilyMap m_cursiveFontFamilyMap;
         ScriptFontFamilyMap m_fantasyFontFamilyMap;
         ScriptFontFamilyMap m_pictographFontFamilyMap;
-        int m_minimumFontSize;
-        int m_minimumLogicalFontSize;
-        int m_defaultFontSize;
-        int m_defaultFixedFontSize;
-        bool m_screenFontSubstitutionEnabled;
         SecurityOrigin::StorageBlockingPolicy m_storageBlockingPolicy;
 #if ENABLE(TEXT_AUTOSIZING)
         float m_textAutosizingFontScaleFactor;
@@ -337,16 +295,11 @@ namespace WebCore {
         bool m_loadsImagesAutomatically : 1;
         bool m_privateBrowsingEnabled : 1;
         bool m_areImagesEnabled : 1;
-        bool m_isMediaEnabled : 1;
         bool m_arePluginsEnabled : 1;
         bool m_isScriptEnabled : 1;
-        bool m_textAreasAreResizable : 1;
         bool m_needsAdobeFrameReloadingQuirk : 1;
-        bool m_isDOMPasteAllowed : 1;
         bool m_usesPageCache : 1;
-        bool m_authorAndUserStylesEnabled : 1;
         unsigned m_fontRenderingMode : 1;
-        bool m_inApplicationChromeMode : 1;
         bool m_isCSSCustomFilterEnabled : 1;
 #if ENABLE(CSS_STICKY_POSITION)
         bool m_cssStickyPositionEnabled : 1;
@@ -354,13 +307,9 @@ namespace WebCore {
 #if ENABLE(CSS_VARIABLES)
         bool m_cssVariablesEnabled : 1;
 #endif
-        bool m_acceleratedCompositingEnabled : 1;
-        bool m_showDebugBorders : 1;
-        bool m_showRepaintCounter : 1;
         bool m_showTiledScrollingIndicator : 1;
         bool m_tiledBackingStoreEnabled : 1;
         bool m_dnsPrefetchingEnabled : 1;
-        bool m_unifiedTextCheckerEnabled : 1;
 #if ENABLE(SMOOTH_SCROLLING)
         bool m_scrollAnimatorEnabled : 1;
 #endif
@@ -380,6 +329,11 @@ namespace WebCore {
 #if USE(AVFOUNDATION)
         static bool gAVFoundationEnabled;
 #endif
+
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+        static bool gQTKitEnabled;
+#endif
+        
         static bool gMockScrollbarsEnabled;
         static bool gUsesOverlayScrollbars;
 

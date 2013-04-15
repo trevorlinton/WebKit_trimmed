@@ -54,15 +54,12 @@ OBJC_CLASS NSBundle;
 namespace CoreIPC {
     class ArgumentDecoder;
     class Connection;
-    class MessageID;
 }
 
 namespace WebKit {
 
 #if PLATFORM(MAC)
 typedef NSBundle *PlatformBundle;
-#elif PLATFORM(WIN)
-typedef HMODULE PlatformBundle;
 #elif PLATFORM(QT)
 typedef QLibrary PlatformBundle;
 #elif PLATFORM(GTK)
@@ -97,10 +94,6 @@ public:
     void initializeClient(WKBundleClient*);
     void postMessage(const String&, APIObject*);
     void postSynchronousMessage(const String&, APIObject*, RefPtr<APIObject>& returnData);
-#if PLATFORM(WIN)
-    void setHostAllowsAnyHTTPSCertificate(const String&);
-    void setClientCertificate(const String& host, const String& certificateSystemStoreName, const WebCertificateInfo*);
-#endif
 
     WebConnection* webConnectionToUIProcess() const;
 
@@ -131,7 +124,6 @@ public:
     String pageSizeAndMarginsInPixels(WebFrame*, int, int, int, int, int, int, int);
     bool isPageBoxVisible(WebFrame*, int);
     void setUserStyleSheetLocation(WebPageGroupProxy*, const String&);
-    void setMinimumTimerInterval(WebPageGroupProxy*, double seconds);
     void setWebNotificationPermission(WebPage*, const String& originString, bool allowed);
     void removeAllWebNotificationPermissions(WebPage*);
     uint64_t webNotificationID(JSContextRef, JSValueRef);
@@ -175,14 +167,11 @@ public:
 
     static bool isProcessingUserGesture();
 
-    void setPageVisibilityState(WebPage*, int state, bool isInitialState);
-
-    static size_t workerThreadCount();
-
     void setTabKeyCyclesThroughElements(WebPage*, bool enabled);
     void setSerialLoadingEnabled(bool);
     void setShadowDOMEnabled(bool);
     void setCSSRegionsEnabled(bool);
+    void setSeamlessIFramesEnabled(bool);
     void dispatchPendingLoadRequests();
 
 private:

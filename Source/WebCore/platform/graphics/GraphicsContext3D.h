@@ -34,6 +34,8 @@
 #include <wtf/HashMap.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/OwnArrayPtr.h>
+#include <wtf/PassOwnArrayPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
@@ -249,6 +251,7 @@ public:
         INT = 0x1404,
         UNSIGNED_INT = 0x1405,
         FLOAT = 0x1406,
+        HALF_FLOAT_OES = 0x8D61,
         FIXED = 0x140C,
         DEPTH_COMPONENT = 0x1902,
         ALPHA = 0x1906,
@@ -591,54 +594,67 @@ public:
                             const void* pixels,
                             Vector<uint8_t>& data);
 
-    // Flips the given image data vertically, in-place.
-    static void flipVertically(void* imageData,
-                        unsigned int width,
-                        unsigned int height,
-                        unsigned int bytesPerPixel,
-                        unsigned int unpackAlignment);
 
     // Attempt to enumerate all possible native image formats to
     // reduce the amount of temporary allocations during texture
     // uploading. This enum must be public because it is accessed
     // by non-member functions.
-    enum SourceDataFormat {
-        SourceFormatRGBA8 = 0,
-        SourceFormatRGBA16Little,
-        SourceFormatRGBA16Big,
-        SourceFormatRGBA32F,
-        SourceFormatRGB8,
-        SourceFormatRGB16Little,
-        SourceFormatRGB16Big,
-        SourceFormatRGB32F,
-        SourceFormatBGR8,
-        SourceFormatBGRA8,
-        SourceFormatBGRA16Little,
-        SourceFormatBGRA16Big,
-        SourceFormatARGB8,
-        SourceFormatARGB16Little,
-        SourceFormatARGB16Big,
-        SourceFormatABGR8,
-        SourceFormatRGBA5551,
-        SourceFormatRGBA4444,
-        SourceFormatRGB565,
-        SourceFormatR8,
-        SourceFormatR16Little,
-        SourceFormatR16Big,
-        SourceFormatR32F,
-        SourceFormatRA8,
-        SourceFormatRA16Little,
-        SourceFormatRA16Big,
-        SourceFormatRA32F,
-        SourceFormatAR8,
-        SourceFormatAR16Little,
-        SourceFormatAR16Big,
-        SourceFormatA8,
-        SourceFormatA16Little,
-        SourceFormatA16Big,
-        SourceFormatA32F,
-        SourceFormatNumFormats
+    enum DataFormat {
+        DataFormatRGBA8 = 0,
+        DataFormatRGBA16Little,
+        DataFormatRGBA16Big,
+        DataFormatRGBA32F,
+        DataFormatRGB8,
+        DataFormatRGB16Little,
+        DataFormatRGB16Big,
+        DataFormatRGB32F,
+        DataFormatBGR8,
+        DataFormatBGRA8,
+        DataFormatBGRA16Little,
+        DataFormatBGRA16Big,
+        DataFormatARGB8,
+        DataFormatARGB16Little,
+        DataFormatARGB16Big,
+        DataFormatABGR8,
+        DataFormatRGBA5551,
+        DataFormatRGBA4444,
+        DataFormatRGB565,
+        DataFormatR8,
+        DataFormatR16Little,
+        DataFormatR16Big,
+        DataFormatR32F,
+        DataFormatRA8,
+        DataFormatRA16Little,
+        DataFormatRA16Big,
+        DataFormatRA32F,
+        DataFormatAR8,
+        DataFormatAR16Little,
+        DataFormatAR16Big,
+        DataFormatA8,
+        DataFormatA16Little,
+        DataFormatA16Big,
+        DataFormatA32F,
+        DataFormatNumFormats
     };
+
+    // Check if the format is one of the formats from the ImageData or DOM elements.
+    // The formats from ImageData is always RGBA8.
+    // The formats from DOM elements vary with Graphics ports. It can only be RGBA8 or BGRA8 for non-CG port while a little more for CG port.
+    static ALWAYS_INLINE bool srcFormatComeFromDOMElementOrImageData(DataFormat SrcFormat)
+    {
+#if USE(CG)
+#if CPU(BIG_ENDIAN)
+    return SrcFormat == DataFormatRGBA8 || SrcFormat == DataFormatARGB8 || SrcFormat == DataFormatRGB8;
+#else
+    // That LITTLE_ENDIAN case has more possible formats than BIG_ENDIAN case is because some decoded image data is actually big endian
+    // even on little endian architectures.
+    return SrcFormat == DataFormatBGRA8 || SrcFormat == DataFormatABGR8 || SrcFormat == DataFormatBGR8
+        || SrcFormat == DataFormatRGBA8 || SrcFormat == DataFormatARGB8 || SrcFormat == DataFormatRGB8;
+#endif
+#else
+    return SrcFormat == DataFormatBGRA8 || SrcFormat == DataFormatRGBA8;
+#endif
+    }
 
     //----------------------------------------------------------------------
     // Entry points for WebGL.
@@ -791,16 +807,13 @@ public:
 
     void reshape(int width, int height);
 
-#if USE(CG)
-    static void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
-                              int canvasWidth, int canvasHeight, CGContextRef);
-#elif PLATFORM(GTK) || PLATFORM(EFL)
+#if PLATFORM(GTK) || PLATFORM(EFL)
     void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
                        int canvasWidth, int canvasHeight, PlatformContextCairo* context);
 #elif PLATFORM(QT)
     void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
                        int canvasWidth, int canvasHeight, QPainter* context);
-#elif PLATFORM(BLACKBERRY)
+#elif PLATFORM(BLACKBERRY) || USE(CG)
     void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
                        int canvasWidth, int canvasHeight, GraphicsContext*);
 #endif
@@ -885,7 +898,7 @@ public:
     // Packs the contents of the given Image which is passed in |pixels| into the passed Vector
     // according to the given format and type, and obeying the flipY and AlphaOp flags.
     // Returns true upon success.
-    static bool packImageData(Image*, const void* pixels, GC3Denum format, GC3Denum type, bool flipY, AlphaOp, SourceDataFormat sourceFormat, unsigned width, unsigned height, unsigned sourceUnpackAlignment, Vector<uint8_t>& data);
+    static bool packImageData(Image*, const void* pixels, GC3Denum format, GC3Denum type, bool flipY, AlphaOp, DataFormat sourceFormat, unsigned width, unsigned height, unsigned sourceUnpackAlignment, Vector<uint8_t>& data);
 
     class ImageExtractor {
     public:
@@ -899,7 +912,7 @@ public:
         const void* imagePixelData() { return m_imagePixelData; }
         unsigned imageWidth() { return m_imageWidth; }
         unsigned imageHeight() { return m_imageHeight; }
-        SourceDataFormat imageSourceFormat() { return m_imageSourceFormat; }
+        DataFormat imageSourceFormat() { return m_imageSourceFormat; }
         AlphaOp imageAlphaOp() { return m_alphaOp; }
         unsigned imageSourceUnpackAlignment() { return m_imageSourceUnpackAlignment; }
         ImageHtmlDomSource imageHtmlDomSource() { return m_imageHtmlDomSource; }
@@ -919,6 +932,7 @@ public:
         CGImageRef m_cgImage;
         RetainPtr<CGImageRef> m_decodedImage;
         RetainPtr<CFDataRef> m_pixelData;
+        OwnArrayPtr<uint8_t> m_formalizedRGBA8Data;
 #elif PLATFORM(QT)
         QImage m_qtImage;
 #endif
@@ -928,7 +942,7 @@ public:
         const void* m_imagePixelData;
         unsigned m_imageWidth;
         unsigned m_imageHeight;
-        SourceDataFormat m_imageSourceFormat;
+        DataFormat m_imageSourceFormat;
         AlphaOp m_alphaOp;
         unsigned m_imageSourceUnpackAlignment;
     };
@@ -936,20 +950,12 @@ public:
 private:
     GraphicsContext3D(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
 
-    // Helper for getImageData which implements packing of pixel
+    // Helper for packImageData/extractImageData/extractTextureData which implement packing of pixel
     // data into the specified OpenGL destination format and type.
     // A sourceUnpackAlignment of zero indicates that the source
     // data is tightly packed. Non-zero values may take a slow path.
     // Destination data will have no gaps between rows.
-    static bool packPixels(const uint8_t* sourceData,
-                    SourceDataFormat sourceDataFormat,
-                    unsigned int width,
-                    unsigned int height,
-                    unsigned int sourceUnpackAlignment,
-                    unsigned int destinationFormat,
-                    unsigned int destinationType,
-                    AlphaOp alphaOp,
-                    void* destinationData);
+    static bool packPixels(const uint8_t* sourceData, DataFormat sourceDataFormat, unsigned width, unsigned height, unsigned sourceUnpackAlignment, unsigned destinationFormat, unsigned destinationType, AlphaOp, void* destinationData, bool flipY);
 
 #if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL) || PLATFORM(BLACKBERRY)
     // Take into account the user's requested context creation attributes,
@@ -1076,10 +1082,19 @@ private:
     bool m_layerComposited;
     GC3Duint m_internalColorFormat;
 
-    // For tracking which FBO/texture is bound
-    GC3Duint m_boundFBO;
-    GC3Denum m_activeTexture;
-    GC3Duint m_boundTexture0;
+    struct GraphicsContext3DState {
+        GraphicsContext3DState()
+            : boundFBO(0)
+            , activeTexture(GraphicsContext3D::TEXTURE0)
+            , boundTexture0(0)
+        { }
+
+        GC3Duint boundFBO;
+        GC3Denum activeTexture;
+        GC3Duint boundTexture0;
+    };
+
+    GraphicsContext3DState m_state;
 
     // For multisampling
     GC3Duint m_multisampleFBO;

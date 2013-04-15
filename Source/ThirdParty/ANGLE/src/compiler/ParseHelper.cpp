@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "compiler/glslang.h"
-#include "compiler/preprocessor/new/SourceLocation.h"
+#include "compiler/preprocessor/SourceLocation.h"
 
 ///////////////////////////////////////////////////////////////////////
 //
@@ -184,7 +184,6 @@ void TParseContext::error(TSourceLoc loc,
     diagnostics.writeInfo(pp::Diagnostics::ERROR,
                           srcLoc, reason, token, extraInfo);
 
-    ++numErrors;
 }
 
 void TParseContext::warning(TSourceLoc loc,
@@ -494,7 +493,7 @@ bool TParseContext::constructorErrorCheck(int line, TIntermNode* node, TFunction
     bool overFull = false;
     bool matrixInMatrix = false;
     bool arrayArg = false;
-    for (int i = 0; i < function.getParamCount(); ++i) {
+    for (size_t i = 0; i < function.getParamCount(); ++i) {
         const TParameter& param = function.getParam(i);
         size += param.type->getObjectSize();
         
@@ -513,7 +512,7 @@ bool TParseContext::constructorErrorCheck(int line, TIntermNode* node, TFunction
     if (constType)
         type->setQualifier(EvqConst);
 
-    if (type->isArray() && type->getArraySize() != function.getParamCount()) {
+    if (type->isArray() && static_cast<size_t>(type->getArraySize()) != function.getParamCount()) {
         error(line, "array constructor needs one argument per array element", "constructor");
         return true;
     }
@@ -847,14 +846,26 @@ bool TParseContext::arraySetMaxSize(TIntermSymbol *node, TType* type, int size, 
 //
 // Returns true if there was an error.
 //
-bool TParseContext::nonInitConstErrorCheck(int line, TString& identifier, TPublicType& type)
+bool TParseContext::nonInitConstErrorCheck(int line, TString& identifier, TPublicType& type, bool array)
 {
-    //
-    // Make the qualifier make sense.
-    //
-    if (type.qualifier == EvqConst) {
+    if (type.qualifier == EvqConst)
+    {
+        // Make the qualifier make sense.
         type.qualifier = EvqTemporary;
-        error(line, "variables with qualifier 'const' must be initialized", identifier.c_str());
+        
+        if (array)
+        {
+            error(line, "arrays may not be declared constant since they cannot be initialized", identifier.c_str());
+        }
+        else if (type.isStructureContainingArrays())
+        {
+            error(line, "structures containing arrays may not be declared constant since they cannot be initialized", identifier.c_str());
+        }
+        else
+        {
+            error(line, "variables with qualifier 'const' must be initialized", identifier.c_str());
+        }
+
         return true;
     }
 
@@ -1496,7 +1507,7 @@ bool TParseContext::structNestingErrorCheck(TSourceLoc line, const TType& fieldT
 //
 // Returns 0 for success.
 //
-int PaParseStrings(int count, const char* const string[], const int length[],
+int PaParseStrings(size_t count, const char* const string[], const int length[],
                    TParseContext* context) {
     if ((count == 0) || (string == NULL))
         return 1;
@@ -1510,7 +1521,7 @@ int PaParseStrings(int count, const char* const string[], const int length[],
 
     glslang_finalize(context);
 
-    return (error == 0) && (context->numErrors == 0) ? 0 : 1;
+    return (error == 0) && (context->numErrors() == 0) ? 0 : 1;
 }
 
 

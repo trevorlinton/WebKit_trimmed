@@ -582,6 +582,11 @@ void MediaPlayerPrivateAVFoundation::seekCompleted(bool finished)
     LOG(Media, "MediaPlayerPrivateAVFoundation::seekCompleted(%p) - finished = %d", this, finished);
     UNUSED_PARAM(finished);
 
+#if HAVE(AVFOUNDATION_TEXT_TRACK_SUPPORT)
+    if (currentTrack())
+        currentTrack()->resetCueValues();
+#endif
+
     m_seekTo = MediaPlayer::invalidTime();
     updateStates();
     m_player->timeChanged();
@@ -690,9 +695,22 @@ void MediaPlayerPrivateAVFoundation::scheduleMainThreadNotification(Notification
     scheduleMainThreadNotification(Notification(type, finished));
 }
 
+#if !LOG_DISABLED
+static const char* notificationName(MediaPlayerPrivateAVFoundation::Notification& notification)
+{
+#define DEFINE_TYPE_STRING_CASE(type) case MediaPlayerPrivateAVFoundation::Notification::type: return #type;
+    switch (notification.type()) {
+        FOR_EACH_MEDIAPLAYERPRIVATEAVFOUNDATION_NOTIFICATION_TYPE(DEFINE_TYPE_STRING_CASE)
+        default: return "";
+    }
+#undef DEFINE_TYPE_STRING_CASE
+}
+#endif // !LOG_DISABLED
+    
+
 void MediaPlayerPrivateAVFoundation::scheduleMainThreadNotification(Notification notification)
 {
-    LOG(Media, "MediaPlayerPrivateAVFoundation::scheduleMainThreadNotification(%p) - notification %d", this, static_cast<int>(notification.type()));
+    LOG(Media, "MediaPlayerPrivateAVFoundation::scheduleMainThreadNotification(%p) - notification %s", this, notificationName(notification));
     m_queueMutex.lock();
 
     // It is important to always process the properties in the order that we are notified, 
@@ -739,7 +757,7 @@ void MediaPlayerPrivateAVFoundation::dispatchNotification()
             return;
     }
 
-    LOG(Media, "MediaPlayerPrivateAVFoundation::dispatchNotification(%p) - dispatching %d", this, static_cast<int>(notification.type()));
+    LOG(Media, "MediaPlayerPrivateAVFoundation::dispatchNotification(%p) - dispatching %s", this, notificationName(notification));
 
     switch (notification.type()) {
     case Notification::ItemDidPlayToEndTime:
@@ -811,21 +829,6 @@ void MediaPlayerPrivateAVFoundation::dispatchNotification()
 }
 
 #if HAVE(AVFOUNDATION_TEXT_TRACK_SUPPORT)
-void MediaPlayerPrivateAVFoundation::flushCurrentCue(InbandTextTrackPrivateAVF* track)
-{
-    if (!track->client())
-        return;
-
-    // AVFoundation returns a cue every time the data is buffered, only add it once.
-    if (track->client()->hasCue(track, track->start(), track->end(), track->id(), track->content(), track->settings())) {
-        LOG(Media, "MediaPlayerPrivateAVFoundation::flushCurrentCue(%p) - already have cue for time %.2f", this, track->start());
-        return;
-    }
-
-    LOG(Media, "MediaPlayerPrivateAVFoundation::flushCurrentCue(%p) - adding cue for time %.2f", this, track->start());
-    track->client()->addCue(track, track->start(), track->end(), track->id(), track->content(), track->settings());
-}
-
 void MediaPlayerPrivateAVFoundation::configureInbandTracks()
 {
     RefPtr<InbandTextTrackPrivateAVF> trackToEnable;

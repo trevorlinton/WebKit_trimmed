@@ -51,6 +51,7 @@
 namespace WebCore {
 
 class CachedScript;
+class DatabaseContext;
 class DOMTimer;
 class EventListener;
 class EventQueue;
@@ -88,6 +89,8 @@ public:
 
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0, unsigned long requestIdentifier = 0);
     virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0) = 0;
+
+    virtual const SecurityOrigin* topOrigin() const = 0;
 
 #if ENABLE(BLOB)
     PublicURLManager& publicURLManager();
@@ -142,10 +145,10 @@ public:
 
     virtual void postTask(PassOwnPtr<Task>) = 0; // Executes the task on context's thread asynchronously.
 
-    // Creates a unique id for setTimeout, setInterval or navigator.geolocation.watchPosition.
-    int newUniqueID();
+    // Gets the next id in a circular sequence from 1 to 2^31-1.
+    int circularSequentialID();
 
-    void addTimeout(int timeoutId, DOMTimer* timer) { ASSERT(!m_timeouts.contains(timeoutId)); m_timeouts.set(timeoutId, timer); }
+    bool addTimeout(int timeoutId, DOMTimer* timer) { return m_timeouts.add(timeoutId, timer).isNewEntry; }
     void removeTimeout(int timeoutId) { m_timeouts.remove(timeoutId); }
     DOMTimer* findTimeout(int timeoutId) { return m_timeouts.get(timeoutId); }
 
@@ -168,6 +171,10 @@ public:
     virtual EventQueue* eventQueue() const = 0;
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+#if ENABLE(SQL_DATABASE)
+    void setDatabaseContext(DatabaseContext*);
+#endif
 
 protected:
     class AddConsoleMessageTask : public Task {
@@ -209,7 +216,7 @@ private:
     bool m_iteratingActiveDOMObjects;
     bool m_inDestructor;
 
-    int m_sequentialID;
+    int m_circularSequentialID;
     typedef HashMap<int, DOMTimer*> TimeoutMap;
     TimeoutMap m_timeouts;
 
@@ -224,6 +231,10 @@ private:
 #if ENABLE(BLOB)
     OwnPtr<PublicURLManager> m_publicURLManager;
     RefPtr<FileThread> m_fileThread;
+#endif
+
+#if ENABLE(SQL_DATABASE)
+    RefPtr<DatabaseContext> m_databaseContext;
 #endif
 };
 

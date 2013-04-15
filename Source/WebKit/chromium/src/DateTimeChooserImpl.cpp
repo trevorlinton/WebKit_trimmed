@@ -105,10 +105,6 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     String stepString = String::number(m_parameters.step);
     String stepBaseString = String::number(m_parameters.stepBase, 11, WTF::TruncateTrailingZeros);
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_parameters.anchorRectInRootView);
-    FrameView* view = static_cast<WebViewImpl*>(m_chromeClient->webView())->page()->mainFrame()->view();
-    IntRect rootViewVisibleContentRect = view->visibleContentRect(true /* include scrollbars */);
-    IntRect rootViewRectInScreen = m_chromeClient->rootViewToScreen(rootViewVisibleContentRect);
-    rootViewRectInScreen.move(-view->scrollX(), -view->scrollY());
     String todayLabelString;
     String otherDateLabelString;
     if (m_parameters.type == WebCore::InputTypeNames::month()) {
@@ -124,20 +120,13 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
 
     addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);
     writer.addData(WebCore::pickerCommonCss, sizeof(WebCore::pickerCommonCss));
+    writer.addData(WebCore::pickerCommonChromiumCss, sizeof(WebCore::pickerCommonChromiumCss));
     writer.addData(WebCore::suggestionPickerCss, sizeof(WebCore::suggestionPickerCss));
     writer.addData(WebCore::calendarPickerCss, sizeof(WebCore::calendarPickerCss));
-    CString extraStyle = WebCore::RenderTheme::defaultTheme()->extraCalendarPickerStyleSheet();
-    if (extraStyle.length())
-        writer.addData(extraStyle.data(), extraStyle.length());
+    writer.addData(WebCore::calendarPickerChromiumCss, sizeof(WebCore::calendarPickerChromiumCss));
     addString("</style></head><body><div id=main>Loading...</div><script>\n"
                "window.dialogArguments = {\n", writer);
     addProperty("anchorRectInScreen", anchorRectInScreen, writer);
-    addProperty("rootViewRectInScreen", rootViewRectInScreen, writer);
-#if OS(MAC_OS_X)
-    addProperty("confineToRootView", true, writer);
-#else
-    addProperty("confineToRootView", false, writer);
-#endif
     addProperty("min", minDate.toString(), writer);
     addProperty("max", maxDate.toString(), writer);
     addProperty("step", stepString, writer);
@@ -180,7 +169,17 @@ void DateTimeChooserImpl::setValueAndClosePopup(int numValue, const String& stri
 {
     RefPtr<DateTimeChooserImpl> protector(this);
     if (numValue >= 0)
-        m_client->didChooseValue(stringValue);
+        setValue(stringValue);
+    endChooser();
+}
+
+void DateTimeChooserImpl::setValue(const String& value)
+{
+    m_client->didChooseValue(value);
+}
+
+void DateTimeChooserImpl::closePopup()
+{
     endChooser();
 }
 

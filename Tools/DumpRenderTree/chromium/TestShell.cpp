@@ -33,9 +33,9 @@
 
 #include "DRTDevToolsAgent.h"
 #include "DRTDevToolsClient.h"
-#include "DRTTestRunner.h"
+#include "MockPlatform.h"
 #include "MockWebPrerenderingSupport.h"
-#include "WebCache.h"
+#include "WebArrayBufferView.h"
 #include "WebDataSource.h"
 #include "WebDocument.h"
 #include "WebElement.h"
@@ -43,14 +43,11 @@
 #include "WebHistoryItem.h"
 #include "WebIDBFactory.h"
 #include "WebTestingSupport.h"
-#include "WebPermissions.h"
-#include "WebRuntimeFeatures.h"
-#include "WebScriptController.h"
 #include "WebSettings.h"
 #include "WebTestProxy.h"
+#include "WebTestRunner.h"
 #include "WebView.h"
 #include "WebViewHost.h"
-#include "platform/WebArrayBufferView.h"
 #include "skia/ext/platform_canvas.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/webkit_support_gfx.h"
@@ -116,6 +113,7 @@ TestShell::TestShell()
     , m_softwareCompositingEnabled(false)
     , m_threadedCompositingEnabled(false)
     , m_forceCompositingMode(false)
+    , m_threadedHTMLParser(true)
     , m_accelerated2dCanvasEnabled(false)
     , m_deferred2dCanvasEnabled(false)
     , m_acceleratedPaintingEnabled(false)
@@ -127,30 +125,6 @@ TestShell::TestShell()
     , m_dumpWhenFinished(true)
     , m_isDisplayingModalDialog(false)
 {
-    WebRuntimeFeatures::enableDataTransferItems(true);
-    WebRuntimeFeatures::enableDeviceMotion(false);
-    WebRuntimeFeatures::enableGeolocation(true);
-    WebRuntimeFeatures::enableIndexedDatabase(true);
-    WebRuntimeFeatures::enableInputTypeDateTime(true);
-    WebRuntimeFeatures::enableInputTypeDateTimeLocal(true);
-    WebRuntimeFeatures::enableInputTypeMonth(true);
-    WebRuntimeFeatures::enableInputTypeTime(true);
-    WebRuntimeFeatures::enableInputTypeWeek(true);
-    WebRuntimeFeatures::enableFileSystem(true);
-    WebRuntimeFeatures::enableJavaScriptI18NAPI(true);
-    WebRuntimeFeatures::enableMediaSource(true);
-    WebRuntimeFeatures::enableEncryptedMedia(true);
-    WebRuntimeFeatures::enableMediaStream(true);
-    WebRuntimeFeatures::enablePeerConnection(true);
-    WebRuntimeFeatures::enableWebAudio(true);
-    WebRuntimeFeatures::enableVideoTrack(true);
-    WebRuntimeFeatures::enableGamepad(true);
-    WebRuntimeFeatures::enableShadowDOM(true);
-    WebRuntimeFeatures::enableStyleScoped(true);
-    WebRuntimeFeatures::enableScriptedSpeech(true);
-    WebRuntimeFeatures::enableRequestAutocomplete(true);
-    WebRuntimeFeatures::enableExperimentalContentSecurityPolicyFeatures(true);
-
     // 30 second is the same as the value in Mac DRT.
     // If we use a value smaller than the timeout value of
     // (new-)run-webkit-tests, (new-)run-webkit-tests misunderstands that a
@@ -158,15 +132,11 @@ TestShell::TestShell()
     m_timeout = 30 * 1000;
 }
 
-void TestShell::initialize()
+void TestShell::initialize(MockPlatform* platformSupport)
 {
-    m_webPermissions = adoptPtr(new WebPermissions(this));
     m_testInterfaces = adoptPtr(new WebTestInterfaces());
-    m_testRunner = adoptPtr(new DRTTestRunner(this));
-    m_testInterfaces->setTestRunner(m_testRunner.get());
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
-    m_notificationPresenter = adoptPtr(new NotificationPresenter(this));
-#endif
+    platformSupport->setInterfaces(m_testInterfaces.get());
+    m_devToolsTestInterfaces = adoptPtr(new WebTestInterfaces());
 #if ENABLE(LINK_PRERENDER)
     m_prerenderingSupport = adoptPtr(new MockWebPrerenderingSupport());
 #endif
@@ -183,22 +153,22 @@ void TestShell::initialize()
 void TestShell::createMainWindow()
 {
     m_drtDevToolsAgent = adoptPtr(new DRTDevToolsAgent);
-    m_webViewHost = adoptPtr(createNewWindow(WebURL(), m_drtDevToolsAgent.get()));
+    m_webViewHost = adoptPtr(createNewWindow(WebURL(), m_drtDevToolsAgent.get(), m_testInterfaces.get()));
     m_webView = m_webViewHost->webView();
     m_testInterfaces->setDelegate(m_webViewHost.get());
-    m_testInterfaces->setWebView(m_webView);
-    m_testRunner->setDelegate(m_webViewHost.get());
-    m_testRunner->setWebView(m_webView);
+    m_testInterfaces->setWebView(m_webView, m_webViewHost->proxy());
     m_drtDevToolsAgent->setWebView(m_webView);
 }
 
 TestShell::~TestShell()
 {
     m_testInterfaces->setDelegate(0);
-    m_testInterfaces->setWebView(0);
-    m_testRunner->setDelegate(0);
-    m_testRunner->setWebView(0);
+    m_testInterfaces->setWebView(0, 0);
+    m_devToolsTestInterfaces->setDelegate(0);
+    m_devToolsTestInterfaces->setWebView(0, 0);
     m_drtDevToolsAgent->setWebView(0);
+    if (m_webViewHost)
+        m_webViewHost->shutdown();
 }
 
 void TestShell::createDRTDevToolsClient(DRTDevToolsAgent* agent)
@@ -214,9 +184,11 @@ void TestShell::showDevTools()
             ASSERT(false);
             return;
         }
-        m_devTools = createNewWindow(url);
+        m_devTools = createNewWindow(url, 0, m_devToolsTestInterfaces.get());
         m_devTools->webView()->settings()->setMemoryInfoEnabled(true);
-        m_devTools->setLogConsoleOutput(false);
+        m_devTools->proxy()->setLogConsoleOutput(false);
+        m_devToolsTestInterfaces->setDelegate(m_devTools);
+        m_devToolsTestInterfaces->setWebView(m_devTools->webView(), m_devTools->proxy());
         ASSERT(m_devTools);
         createDRTDevToolsClient(m_drtDevToolsAgent.get());
     }
@@ -229,6 +201,8 @@ void TestShell::closeDevTools()
         m_devTools->webView()->settings()->setMemoryInfoEnabled(false);
         m_drtDevToolsAgent->reset();
         m_drtDevToolsClient.clear();
+        m_devToolsTestInterfaces->setDelegate(0);
+        m_devToolsTestInterfaces->setWebView(0, 0);
         closeWindow(m_devTools);
         m_devTools = 0;
     }
@@ -248,6 +222,7 @@ void TestShell::resetWebSettings(WebView& webView)
     m_prefs.perTilePaintingEnabled = m_perTilePaintingEnabled;
     m_prefs.acceleratedAnimationEnabled = m_acceleratedAnimationEnabled;
     m_prefs.deferredImageDecodingEnabled = m_deferredImageDecodingEnabled;
+    m_prefs.threadedHTMLParser = m_threadedHTMLParser;
     m_prefs.applyTo(&webView);
 }
 
@@ -256,14 +231,10 @@ void TestShell::runFileTest(const TestParams& params, bool shouldDumpPixels)
     ASSERT(params.testUrl.isValid());
     m_dumpPixelsForCurrentTest = shouldDumpPixels;
     m_testIsPreparing = true;
+    m_testInterfaces->setTestIsRunning(true);
     m_params = params;
     string testUrl = m_params.testUrl.spec();
-
-    m_testRunner->setShouldGeneratePixelResults(shouldDumpPixels);
-
-    if (testUrl.find("loading/") != string::npos
-        || testUrl.find("loading\\") != string::npos)
-        m_testRunner->setShouldDumpFrameLoadCallbacks(true);
+    m_testInterfaces->configureForTestWithURL(m_params.testUrl, shouldDumpPixels);
 
     if (testUrl.find("compositing/") != string::npos || testUrl.find("compositing\\") != string::npos) {
         if (!m_softwareCompositingEnabled)
@@ -274,22 +245,12 @@ void TestShell::runFileTest(const TestParams& params, bool shouldDumpPixels)
         m_prefs.applyTo(m_webView);
     }
 
-    if (testUrl.find("/dumpAsText/") != string::npos
-        || testUrl.find("\\dumpAsText\\") != string::npos) {
-        m_testRunner->setShouldDumpAsText(true);
-        m_testRunner->setShouldGeneratePixelResults(false);
-    }
-
-    if (testUrl.find("/inspector/") != string::npos
-        || testUrl.find("\\inspector\\") != string::npos)
-        showDevTools();
-
-    if (m_params.debugLayerTree)
-        m_testRunner->setShowDebugLayerTree(true);
-
     if (m_dumpWhenFinished)
         m_printer.handleTestHeader(testUrl.c_str());
     loadURL(m_params.testUrl);
+
+    if (m_devTools)
+        this->setFocus(m_devTools->webView(), true);
 
     m_testIsPreparing = false;
     waitTestFinished();
@@ -316,13 +277,9 @@ void TestShell::resizeWindowForTest(WebViewHost* window, const WebURL& url)
 void TestShell::resetTestController()
 {
     resetWebSettings(*webView());
-    m_webPermissions->reset();
     m_testInterfaces->resetAll();
-    m_testRunner->reset();
+    m_devToolsTestInterfaces->resetAll();
     m_webViewHost->reset();
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
-    m_notificationPresenter->reset();
-#endif
 #if OS(ANDROID)
     webkit_support::ReleaseMediaResources();
 #endif
@@ -334,12 +291,11 @@ void TestShell::resetTestController()
     webView()->setFixedLayoutSize(WebSize(0, 0));
     webView()->mainFrame()->clearOpener();
     WebTestingSupport::resetInternalsObject(webView()->mainFrame());
-    WebCache::clear();
 }
 
 void TestShell::loadURL(const WebURL& url)
 {
-    m_webViewHost->loadURLForFrame(url, WebString());
+    m_webViewHost->loadURLForFrame(url, string());
 }
 
 void TestShell::reload()
@@ -383,11 +339,15 @@ void TestShell::setFocus(WebWidget* widget, bool enable)
     }
 }
 
-void TestShell::testFinished()
+void TestShell::testFinished(WebViewHost* host)
 {
+    if (host == m_devTools)
+        return;
+
     if (!m_testIsPending)
         return;
     m_testIsPending = false;
+    m_testInterfaces->setTestIsRunning(false);
     if (m_dumpWhenFinished)
         dump();
     webkit_support::QuitMessageLoop();
@@ -396,190 +356,22 @@ void TestShell::testFinished()
 void TestShell::testTimedOut()
 {
     m_printer.handleTimedOut();
-    testFinished();
-}
-
-static string dumpDocumentText(WebFrame* frame)
-{
-    // We use the document element's text instead of the body text here because
-    // not all documents have a body, such as XML documents.
-    WebElement documentElement = frame->document().documentElement();
-    if (documentElement.isNull())
-        return string();
-    return documentElement.innerText().utf8();
-}
-
-static string dumpFramesAsText(WebFrame* frame, bool recursive)
-{
-    string result;
-
-    // Add header for all but the main frame. Skip empty frames.
-    if (frame->parent() && !frame->document().documentElement().isNull()) {
-        result.append("\n--------\nFrame: '");
-        result.append(frame->uniqueName().utf8().data());
-        result.append("'\n--------\n");
-    }
-
-    result.append(dumpDocumentText(frame));
-    result.append("\n");
-
-    if (recursive) {
-        for (WebFrame* child = frame->firstChild(); child; child = child->nextSibling())
-            result.append(dumpFramesAsText(child, recursive));
-    }
-
-    return result;
-}
-
-static string dumpFramesAsPrintedText(WebFrame* frame, bool recursive)
-{
-    string result;
-
-    // Cannot do printed format for anything other than HTML
-    if (!frame->document().isHTMLDocument())
-        return string();
-
-    // Add header for all but the main frame. Skip empty frames.
-    if (frame->parent() && !frame->document().documentElement().isNull()) {
-        result.append("\n--------\nFrame: '");
-        result.append(frame->uniqueName().utf8().data());
-        result.append("'\n--------\n");
-    }
-
-    result.append(frame->renderTreeAsText(WebFrame::RenderAsTextPrinting).utf8());
-    result.append("\n");
-
-    if (recursive) {
-        for (WebFrame* child = frame->firstChild(); child; child = child->nextSibling())
-            result.append(dumpFramesAsPrintedText(child, recursive));
-    }
-
-    return result;
-}
-
-static void dumpFrameScrollPosition(WebFrame* frame, bool recursive)
-{
-    WebSize offset = frame->scrollOffset();
-    if (offset.width > 0 || offset.height > 0) {
-        if (frame->parent())
-            printf("frame '%s' ", frame->uniqueName().utf8().data());
-        printf("scrolled to %d,%d\n", offset.width, offset.height);
-    }
-
-    if (!recursive)
-        return;
-    for (WebFrame* child = frame->firstChild(); child; child = child->nextSibling())
-        dumpFrameScrollPosition(child, recursive);
-}
-
-struct ToLower {
-    char16 operator()(char16 c) { return tolower(c); }
-};
-
-// FIXME: Eliminate std::transform(), std::vector, and std::sort().
-
-// Returns True if item1 < item2.
-static bool HistoryItemCompareLess(const WebHistoryItem& item1, const WebHistoryItem& item2)
-{
-    string16 target1 = item1.target();
-    string16 target2 = item2.target();
-    std::transform(target1.begin(), target1.end(), target1.begin(), ToLower());
-    std::transform(target2.begin(), target2.end(), target2.begin(), ToLower());
-    return target1 < target2;
-}
-
-static string normalizeLayoutTestURLInternal(const string& url)
-{
-    string result = url;
-    size_t pos;
-    if (!url.find(fileUrlPattern) && ((pos = url.find(layoutTestsPattern)) != string::npos)) {
-        // adjust file URLs to match upstream results.
-        result.replace(0, pos + layoutTestsPatternSize, fileTestPrefix);
-    } else if (!url.find(dataUrlPattern)) {
-        // URL-escape data URLs to match results upstream.
-        string path = url.substr(dataUrlPatternSize);
-        result.replace(dataUrlPatternSize, url.length(), path);
-    }
-    return result;
-}
-
-static string dumpHistoryItem(const WebHistoryItem& item, int indent, bool isCurrent)
-{
-    string result;
-
-    if (isCurrent) {
-        result.append("curr->");
-        result.append(indent - 6, ' '); // 6 == "curr->".length()
-    } else
-        result.append(indent, ' ');
-
-    string url = normalizeLayoutTestURLInternal(item.urlString().utf8());
-    result.append(url);
-    if (!item.target().isEmpty()) {
-        result.append(" (in frame \"");
-        result.append(item.target().utf8());
-        result.append("\")");
-    }
-    if (item.isTargetItem())
-        result.append("  **nav target**");
-    result.append("\n");
-
-    const WebVector<WebHistoryItem>& children = item.children();
-    if (!children.isEmpty()) {
-        // Must sort to eliminate arbitrary result ordering which defeats
-        // reproducible testing.
-        // FIXME: WebVector should probably just be a std::vector!!
-        std::vector<WebHistoryItem> sortedChildren;
-        for (size_t i = 0; i < children.size(); ++i)
-            sortedChildren.push_back(children[i]);
-        std::sort(sortedChildren.begin(), sortedChildren.end(), HistoryItemCompareLess);
-        for (size_t i = 0; i < sortedChildren.size(); ++i)
-            result += dumpHistoryItem(sortedChildren[i], indent + 4, false);
-    }
-
-    return result;
-}
-
-static void dumpBackForwardList(const TestNavigationController& navigationController, string& result)
-{
-    result.append("\n============== Back Forward List ==============\n");
-    for (int index = 0; index < navigationController.entryCount(); ++index) {
-        int currentIndex = navigationController.lastCommittedEntryIndex();
-        WebHistoryItem historyItem = navigationController.entryAtIndex(index)->contentState();
-        if (historyItem.isNull()) {
-            historyItem.initialize();
-            historyItem.setURLString(navigationController.entryAtIndex(index)->URL().spec().utf16());
-        }
-        result.append(dumpHistoryItem(historyItem, 8, index == currentIndex));
-    }
-    result.append("===============================================\n");
-}
-
-string TestShell::dumpAllBackForwardLists()
-{
-    string result;
-    for (unsigned i = 0; i < m_windowList.size(); ++i)
-        dumpBackForwardList(*m_windowList[i]->navigationController(), result);
-    return result;
+    testFinished(webViewHost());
 }
 
 void TestShell::dump()
 {
-    WebScriptController::flushConsoleMessages();
-
     // Dump the requested representation.
     WebFrame* frame = m_webView->mainFrame();
     if (!frame)
         return;
-    bool shouldDumpAsText = m_testRunner->shouldDumpAsText();
-    bool shouldDumpAsAudio = m_testRunner->shouldDumpAsAudio();
-    bool shouldGeneratePixelResults = m_testRunner->shouldGeneratePixelResults();
-    bool shouldDumpAsPrinted = m_testRunner->isPrinting();
+    bool shouldDumpAsAudio = m_testInterfaces->testRunner()->shouldDumpAsAudio();
+    bool shouldGeneratePixelResults = m_testInterfaces->testRunner()->shouldGeneratePixelResults();
     bool dumpedAnything = false;
 
     if (shouldDumpAsAudio) {
-        const WebKit::WebArrayBufferView& webArrayBufferView = m_testRunner->audioData();
-        m_printer.handleAudio(webArrayBufferView.baseAddress(), webArrayBufferView.byteLength());
+        const WebKit::WebArrayBufferView* webArrayBufferView = m_testInterfaces->testRunner()->audioData();
+        m_printer.handleAudio(webArrayBufferView->baseAddress(), webArrayBufferView->byteLength());
         m_printer.handleAudioFooter();
         m_printer.handleTestFooter(true);
 
@@ -591,33 +383,9 @@ void TestShell::dump()
     if (m_params.dumpTree) {
         dumpedAnything = true;
         m_printer.handleTextHeader();
-        // Text output: the test page can request different types of output
-        // which we handle here.
-        if (!shouldDumpAsText) {
-            // Plain text pages should be dumped as text
-            string mimeType = frame->dataSource()->response().mimeType().utf8();
-            if (mimeType == "text/plain") {
-                shouldDumpAsText = true;
-                shouldGeneratePixelResults = false;
-            }
-        }
-        if (shouldDumpAsText) {
-            bool recursive = m_testRunner->shouldDumpChildFramesAsText();
-            string dataUtf8 = shouldDumpAsPrinted ? dumpFramesAsPrintedText(frame, recursive) : dumpFramesAsText(frame, recursive);
-            if (fwrite(dataUtf8.c_str(), 1, dataUtf8.size(), stdout) != dataUtf8.size())
-                FATAL("Short write to stdout, disk full?\n");
-        } else {
-          WebFrame::RenderAsTextControls renderTextBehavior = WebFrame::RenderAsTextNormal;
-            if (shouldDumpAsPrinted)
-                renderTextBehavior |= WebFrame::RenderAsTextPrinting;
-            if (m_params.debugRenderTree)
-                renderTextBehavior |= WebFrame::RenderAsTextDebug;
-            printf("%s", frame->renderTreeAsText(renderTextBehavior).utf8().data());
-            bool recursive = m_testRunner->shouldDumpChildFrameScrollPositions();
-            dumpFrameScrollPosition(frame, recursive);
-        }
-        if (m_testRunner->shouldDumpBackForwardList())
-            printf("%s", dumpAllBackForwardLists().c_str());
+        string dataUtf8 = m_webViewHost->proxy()->captureTree(m_params.debugRenderTree);
+        if (fwrite(dataUtf8.c_str(), 1, dataUtf8.size(), stdout) != dataUtf8.size())
+            FATAL("Short write to stdout, disk full?\n");
     }
     if (dumpedAnything && m_params.printSeparators)
         m_printer.handleTextFooter();
@@ -627,43 +395,7 @@ void TestShell::dump()
         // command line (for the dump pixels argument), and the MD5 sum to
         // stdout.
         dumpedAnything = true;
-        m_webView->layout();
-        if (m_testRunner->testRepaint()) {
-            WebSize viewSize = m_webView->size();
-            int width = viewSize.width;
-            int height = viewSize.height;
-            if (m_testRunner->sweepHorizontally()) {
-                for (WebRect column(0, 0, 1, height); column.x < width; column.x++)
-                    m_webViewHost->paintRect(column);
-            } else {
-                for (WebRect line(0, 0, width, 1); line.y < height; line.y++)
-                    m_webViewHost->paintRect(line);
-            }
-        } else if (m_testRunner->isPrinting())
-            m_webViewHost->paintPagesWithBoundaries();
-        else
-            m_webViewHost->paintInvalidatedRegion();
-
-        // See if we need to draw the selection bounds rect. Selection bounds
-        // rect is the rect enclosing the (possibly transformed) selection.
-        // The rect should be drawn after everything is laid out and painted.
-        if (m_testRunner->shouldDumpSelectionRect()) {
-            // If there is a selection rect - draw a red 1px border enclosing rect
-            WebRect wr = frame->selectionBoundsRect();
-            if (!wr.isEmpty()) {
-                // Render a red rectangle bounding selection rect
-                SkPaint paint;
-                paint.setColor(0xFFFF0000); // Fully opaque red
-                paint.setStyle(SkPaint::kStroke_Style);
-                paint.setFlags(SkPaint::kAntiAlias_Flag);
-                paint.setStrokeWidth(1.0f);
-                SkIRect rect; // Bounding rect
-                rect.set(wr.x, wr.y, wr.x + wr.width, wr.y + wr.height);
-                m_webViewHost->canvas()->drawIRect(rect, paint);
-            }
-        }
-
-        dumpImage(m_webViewHost->canvas());
+        dumpImage(m_webViewHost->proxy()->capturePixels());
     }
     m_printer.handleTestFooter(dumpedAnything);
     fflush(stdout);
@@ -740,33 +472,34 @@ void TestShell::dumpImage(SkCanvas* canvas) const
 void TestShell::bindJSObjectsToWindow(WebFrame* frame)
 {
     WebTestingSupport::injectInternalsObject(frame);
-    m_testInterfaces->bindTo(frame);
-    m_testRunner->bindToJavascript(frame, WebString::fromUTF8("testRunner"));
-    m_testRunner->bindToJavascript(frame, WebString::fromUTF8("layoutTestController"));
+    if (m_devTools && m_devTools->webView() == frame->view())
+        m_devToolsTestInterfaces->bindTo(frame);
+    else
+        m_testInterfaces->bindTo(frame);
 }
 
 WebViewHost* TestShell::createNewWindow(const WebKit::WebURL& url)
 {
-    return createNewWindow(url, 0);
+    return createNewWindow(url, 0, m_testInterfaces.get());
 }
 
-WebViewHost* TestShell::createNewWindow(const WebKit::WebURL& url, DRTDevToolsAgent* devToolsAgent)
+WebViewHost* TestShell::createNewWindow(const WebKit::WebURL& url, DRTDevToolsAgent* devToolsAgent, WebTestInterfaces *testInterfaces)
 {
     WebTestProxy<WebViewHost, TestShell*>* host = new WebTestProxy<WebViewHost, TestShell*>(this);
-    host->setInterfaces(m_testInterfaces.get());
+    host->setInterfaces(testInterfaces);
     if (m_webViewHost)
         host->setDelegate(m_webViewHost.get());
     else
         host->setDelegate(host);
     host->setProxy(host);
     WebView* view = WebView::create(host);
-    view->setPermissionClient(webPermissions());
+    view->setPermissionClient(testInterfaces->testRunner()->webPermissions());
     view->setDevToolsAgentClient(devToolsAgent);
     host->setWebWidget(view);
     m_prefs.applyTo(view);
     view->initializeMainFrame(host);
     m_windowList.append(host);
-    host->loadURLForFrame(url, WebString());
+    host->loadURLForFrame(url, string());
     return host;
 }
 
@@ -782,6 +515,7 @@ void TestShell::closeWindow(WebViewHost* window)
     if (window->webWidget() == m_focusedWidget)
         focusedWidget = 0;
 
+    window->shutdown();
     delete window;
     // We set the focused widget after deleting the web view host because it
     // can change the focus.
@@ -816,7 +550,23 @@ int TestShell::windowCount()
     return m_windowList.size();
 }
 
-string TestShell::normalizeLayoutTestURL(const string& url)
+void TestShell::captureHistoryForWindow(size_t windowIndex, WebVector<WebHistoryItem>* history, size_t* currentEntryIndex)
 {
-    return normalizeLayoutTestURLInternal(url);
+    ASSERT(history);
+    ASSERT(currentEntryIndex);
+    if (windowIndex >= m_windowList.size())
+        return;
+    TestNavigationController& navigationController = *m_windowList[windowIndex]->navigationController();
+    size_t entryCount = navigationController.entryCount();
+    WebVector<WebHistoryItem> result(entryCount);
+    *currentEntryIndex = navigationController.lastCommittedEntryIndex();
+    for (size_t index = 0; index < entryCount; ++index) {
+        WebHistoryItem historyItem = navigationController.entryAtIndex(index)->contentState();
+        if (historyItem.isNull()) {
+            historyItem.initialize();
+            historyItem.setURLString(navigationController.entryAtIndex(index)->URL().spec().utf16());
+        }
+        result[index] = historyItem;
+    }
+    history->swap(result);
 }
