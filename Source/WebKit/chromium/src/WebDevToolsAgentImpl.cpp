@@ -55,6 +55,7 @@
 #include "WebDataSource.h"
 #include "WebDevToolsAgentClient.h"
 #include "WebFrameImpl.h"
+#include "WebMemoryUsageInfo.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include <public/Platform.h>
@@ -402,6 +403,7 @@ void WebDevToolsAgentImpl::reattach(const WebString& savedState)
 
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
     inspectorController()->reconnectFrontend(this, savedState);
+    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
     m_attached = true;
 }
 
@@ -420,6 +422,30 @@ void WebDevToolsAgentImpl::detach()
 void WebDevToolsAgentImpl::didNavigate()
 {
     ClientMessageLoopAdapter::didNavigate();
+}
+
+void WebDevToolsAgentImpl::didBeginFrame()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->didBeginFrame();
+}
+
+void WebDevToolsAgentImpl::didCancelFrame()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->didCancelFrame();
+}
+
+void WebDevToolsAgentImpl::willComposite()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->willComposite();
+}
+
+void WebDevToolsAgentImpl::didComposite()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->didComposite();
 }
 
 void WebDevToolsAgentImpl::didCreateScriptContext(WebFrameImpl* webframe, int worldId)
@@ -572,12 +598,23 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
     m_client->dumpUncountedAllocatedObjects(&provider);
 }
 
-bool WebDevToolsAgentImpl::captureScreenshot(WTF::String* data)
+bool WebDevToolsAgentImpl::captureScreenshot(String* data)
 {
-    // Value is going to be substituted with the actual data on the browser level.
+    // Value is going to be substituted with the actual data in the browser process.
     *data = "{screenshot-placeholder}";
     m_sendWithBrowserDataHint = BrowserDataHintScreenshot;
     return true;
+}
+
+bool WebDevToolsAgentImpl::handleJavaScriptDialog(bool accept)
+{
+    // Operation was already performed in the browser process.
+    return true;
+}
+
+void WebDevToolsAgentImpl::setTraceEventCallback(TraceEventCallback callback)
+{
+    m_client->setTraceEventCallback(callback);
 }
 
 void WebDevToolsAgentImpl::dispatchOnInspectorBackend(const WebString& message)
@@ -632,6 +669,16 @@ void WebDevToolsAgentImpl::paintPageOverlay(WebCanvas* canvas)
         context.platformContext()->setDrawingToImageBuffer(true);
         ic->drawHighlight(context);
     }
+}
+
+WebVector<WebMemoryUsageInfo> WebDevToolsAgentImpl::processMemoryDistribution() const
+{
+    HashMap<String, size_t> memoryInfo = m_webViewImpl->page()->inspectorController()->processMemoryDistribution();
+    WebVector<WebMemoryUsageInfo> memoryInfoVector((size_t)memoryInfo.size());
+    size_t i = 0;
+    for (HashMap<String, size_t>::const_iterator it = memoryInfo.begin(); it != memoryInfo.end(); ++it)
+        memoryInfoVector[i++] = WebMemoryUsageInfo(it->key, it->value);
+    return memoryInfoVector;
 }
 
 void WebDevToolsAgentImpl::highlight()
@@ -733,7 +780,7 @@ void WebDevToolsAgent::interruptAndDispatch(MessageDescriptor* rawDescriptor)
     // rawDescriptor can't be a PassOwnPtr because interruptAndDispatch is a WebKit API function.
     OwnPtr<MessageDescriptor> descriptor = adoptPtr(rawDescriptor);
     OwnPtr<DebuggerTask> task = adoptPtr(new DebuggerTask(descriptor.release()));
-    PageScriptDebugServer::interruptAndRun(task.release());
+    PageScriptDebugServer::interruptAndRun(task.release(), v8::Isolate::GetCurrent());
 }
 
 bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
@@ -748,7 +795,8 @@ bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kDebugger_setBreakpointsActiveCmd]
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_startCmd]
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_stopCmd]
-        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_getProfileCmd];
+        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_getCPUProfileCmd]
+        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kHeapProfiler_getHeapSnapshotCmd];
 }
 
 void WebDevToolsAgent::processPendingMessages()

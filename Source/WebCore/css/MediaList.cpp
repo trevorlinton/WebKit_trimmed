@@ -221,7 +221,7 @@ String MediaQuerySet::mediaText() const
 void MediaQuerySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_queries);
+    info.addMember(m_queries, "queries");
 }
     
 MediaList::MediaList(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
@@ -299,7 +299,9 @@ void MediaList::reattach(MediaQuerySet* mediaQueries)
 void MediaList::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_mediaQueries);
+    info.addMember(m_mediaQueries, "mediaQueries");
+    info.addMember(m_parentStyleSheet, "parentStyleSheet");
+    info.addMember(m_parentRule, "parentRule");
 }
 
 #if ENABLE(RESOLUTION_MEDIA_QUERY)
@@ -324,7 +326,7 @@ static void addResolutionWarningMessageToConsole(Document* document, const Strin
 
     message.append(serializedExpression);
 
-    document->addConsoleMessage(HTMLMessageSource, TipMessageLevel, message);
+    document->addConsoleMessage(HTMLMessageSource, DebugMessageLevel, message);
 }
 
 void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* mediaQuerySet)

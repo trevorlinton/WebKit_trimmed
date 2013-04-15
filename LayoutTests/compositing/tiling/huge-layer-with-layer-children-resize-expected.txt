@@ -6,19 +6,23 @@ First (small layer):
   (children 1
     (GraphicsLayer
       (bounds 785.00 611.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 68.00)
           (bounds 502.00 502.00)
+          (contentsOpaque 1)
           (drawsContent 1)
           (children 2
             (GraphicsLayer
               (position 51.00 101.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
             (GraphicsLayer
               (position 276.00 201.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
           )
         )
@@ -34,19 +38,23 @@ Second (huge layer):
   (children 1
     (GraphicsLayer
       (bounds 785.00 5111.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 68.00)
           (bounds 502.00 5002.00)
+          (contentsOpaque 1)
           (drawsContent 1)
           (children 2
             (GraphicsLayer
               (position 51.00 101.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
             (GraphicsLayer
               (position 276.00 4701.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
           )
         )
@@ -62,19 +70,23 @@ Third (small layer):
   (children 1
     (GraphicsLayer
       (bounds 785.00 611.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 68.00)
           (bounds 502.00 502.00)
+          (contentsOpaque 1)
           (drawsContent 1)
           (children 2
             (GraphicsLayer
               (position 51.00 101.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
             (GraphicsLayer
               (position 276.00 201.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
           )
         )

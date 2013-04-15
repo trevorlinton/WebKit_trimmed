@@ -4,6 +4,7 @@
   (children 1
     (GraphicsLayer
       (bounds 785.00 1500.00)
+      (contentsOpaque 1)
       (children 3
         (GraphicsLayer
           (position 20.00 120.00)
@@ -48,6 +49,7 @@
                                                         (GraphicsLayer
                                                           (position 18.00 10.00)
                                                           (bounds 210.00 210.00)
+                                                          (contentsOpaque 1)
                                                         )
                                                       )
                                                     )
@@ -116,6 +118,7 @@
                                                         (GraphicsLayer
                                                           (position 18.00 10.00)
                                                           (bounds 210.00 210.00)
+                                                          (contentsOpaque 1)
                                                         )
                                                       )
                                                     )
@@ -143,6 +146,7 @@
         )
         (GraphicsLayer
           (bounds 100.00 100.00)
+          (contentsOpaque 1)
         )
       )
     )

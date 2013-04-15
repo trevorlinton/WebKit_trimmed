@@ -108,6 +108,8 @@ WebInspector.ParsedURL.completeURL = function(baseURL, href)
 
     var parsedURL = baseURL.asParsedURL();
     if (parsedURL) {
+        if (parsedURL.isDataURL())
+            return href;
         var path = href;
         if (path.charAt(0) !== "/") {
             var basePath = parsedURL.path;
@@ -150,8 +152,8 @@ WebInspector.ParsedURL.prototype = {
             return this.url;
 
         this._displayName = this.lastPathComponent;
-        if (!this._displayName)
-            this._displayName = this.host;
+        if (!this._displayName && this.host)
+            this._displayName = this.host + "/";
         if (!this._displayName && this.url)
             this._displayName = this.url.trimURL(WebInspector.inspectedPageDomain ? WebInspector.inspectedPageDomain : "");
         if (this._displayName === "/")

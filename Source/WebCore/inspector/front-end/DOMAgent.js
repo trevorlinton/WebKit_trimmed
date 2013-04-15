@@ -75,6 +75,9 @@ WebInspector.DOMNode = function(domAgent, doc, isInShadowTree, payload) {
         }
     }
 
+    if (payload.templateContent)
+        this._templateContent = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, true, payload.templateContent);
+
     if (payload.children)
         this._setChildrenPayload(payload.children);
 
@@ -132,7 +135,7 @@ WebInspector.DOMNode.prototype = {
      */
     hasChildNodes: function()
     {
-        return this._childNodeCount > 0 || !!this._shadowRoots.length;
+        return this._childNodeCount > 0 || !!this._shadowRoots.length || !!this._templateContent;
     },
 
     /**
@@ -294,7 +297,26 @@ WebInspector.DOMNode.prototype = {
                 callback(this.children);
         }
 
-        DOMAgent.requestChildNodes(this.id, mycallback.bind(this));
+        DOMAgent.requestChildNodes(this.id, undefined, mycallback.bind(this));
+    },
+
+    /**
+     * @param {number} depth
+     * @param {function(Array.<WebInspector.DOMNode>)=} callback
+     */
+    getSubtree: function(depth, callback)
+    {
+        /**
+         * @this {WebInspector.DOMNode}
+         * @param {?Protocol.Error} error
+         */
+        function mycallback(error)
+        {
+            if (callback)
+                callback(error ? null : this.children);                
+        }
+
+        DOMAgent.requestChildNodes(this.id, depth, mycallback.bind(this));
     },
 
     /**
@@ -341,11 +363,12 @@ WebInspector.DOMNode.prototype = {
     },
 
     /**
+     * @param {string} objectGroupId
      * @param {function(?Protocol.Error)=} callback
      */
-    eventListeners: function(callback)
+    eventListeners: function(objectGroupId, callback)
     {
-        DOMAgent.getEventListenersForNode(this.id, callback);
+        DOMAgent.getEventListenersForNode(this.id, objectGroupId, callback);
     },
 
     /**
@@ -453,7 +476,11 @@ WebInspector.DOMNode.prototype = {
         if (!prev) {
             if (!this.children) {
                 // First node
-                this.children = this._shadowRoots.concat([ node ]);
+                this.children = this._shadowRoots.slice();
+                if (this._templateContent)
+                    this.children.push(this._templateContent);
+
+                this.children.push(node);
             } else
                 this.children.unshift(node);
         } else
@@ -483,6 +510,9 @@ WebInspector.DOMNode.prototype = {
             return;
 
         this.children = this._shadowRoots.slice();
+        if (this._templateContent)
+            this.children.push(this._templateContent);
+
         for (var i = 0; i < payloads.length; ++i) {
             var payload = payloads[i];
             var node = new WebInspector.DOMNode(this._domAgent, this.ownerDocument, this._isInShadowTree, payload);
@@ -864,7 +894,7 @@ WebInspector.DOMAgent.prototype = {
      */
     pushNodeToFrontend: function(objectId, callback)
     {
-        var callbackCast = /** @type {function(*)} */ callback;
+        var callbackCast = /** @type {function(*)} */(callback);
         this._dispatchWhenDocumentAvailable(DOMAgent.requestNode.bind(DOMAgent, objectId), callbackCast);
     },
 
@@ -874,7 +904,7 @@ WebInspector.DOMAgent.prototype = {
      */
     pushNodeByPathToFrontend: function(path, callback)
     {
-        var callbackCast = /** @type {function(*)} */ callback;
+        var callbackCast = /** @type {function(*)} */(callback);
         this._dispatchWhenDocumentAvailable(DOMAgent.pushNodeByPathToFrontend.bind(DOMAgent, path), callbackCast);
     },
 
@@ -903,7 +933,7 @@ WebInspector.DOMAgent.prototype = {
      */
     _dispatchWhenDocumentAvailable: function(func, callback)
     {
-        var callbackWrapper = /** @type {function(?Protocol.Error, *=)} */ this._wrapClientCallback(callback);
+        var callbackWrapper = /** @type {function(?Protocol.Error, *=)} */(this._wrapClientCallback(callback));
 
         function onDocumentAvailable()
         {
@@ -1180,7 +1210,7 @@ WebInspector.DOMAgent.prototype = {
      */
     querySelector: function(nodeId, selectors, callback)
     {
-        var callbackCast = /** @type {function(*)|undefined} */callback;
+        var callbackCast = /** @type {function(*)|undefined} */(callback);
         DOMAgent.querySelector(nodeId, selectors, this._wrapClientCallback(callbackCast));
     },
 
@@ -1191,7 +1221,7 @@ WebInspector.DOMAgent.prototype = {
      */
     querySelectorAll: function(nodeId, selectors, callback)
     {
-        var callbackCast = /** @type {function(*)|undefined} */callback;
+        var callbackCast = /** @type {function(*)|undefined} */(callback);
         DOMAgent.querySelectorAll(nodeId, selectors, this._wrapClientCallback(callbackCast));
     },
 

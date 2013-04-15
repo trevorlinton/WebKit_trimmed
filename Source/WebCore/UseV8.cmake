@@ -115,12 +115,10 @@ list(APPEND WebCore_SOURCES
     bindings/v8/custom/V8HTMLInputElementConstructor.cpp
     bindings/v8/custom/V8HTMLLinkElementCustom.cpp
     bindings/v8/custom/V8HTMLOptionsCollectionCustom.cpp
-    bindings/v8/custom/V8HTMLOutputElementCustom.cpp
     bindings/v8/custom/V8HTMLPlugInElementCustom.cpp
     bindings/v8/custom/V8HTMLSelectElementCustom.cpp
     bindings/v8/custom/V8HistoryCustom.cpp
     bindings/v8/custom/V8IDBAnyCustom.cpp
-    bindings/v8/custom/V8IDBKeyCustom.cpp
     bindings/v8/custom/V8ImageDataCustom.cpp
     bindings/v8/custom/V8InjectedScriptHostCustom.cpp
     bindings/v8/custom/V8InjectedScriptManager.cpp
@@ -136,8 +134,6 @@ list(APPEND WebCore_SOURCES
     bindings/v8/custom/V8NamedNodesCollection.cpp
     bindings/v8/custom/V8NodeCustom.cpp
     bindings/v8/custom/V8NodeListCustom.cpp
-    bindings/v8/custom/V8NotificationCustom.cpp
-    bindings/v8/custom/V8NotificationCenterCustom.cpp
     bindings/v8/custom/V8OscillatorNodeCustom.cpp
     bindings/v8/custom/V8PerformanceEntryCustom.cpp
     bindings/v8/custom/V8PannerNodeCustom.cpp
@@ -178,8 +174,6 @@ if (ENABLE_JAVASCRIPT_DEBUGGER)
         bindings/v8/ScriptProfiler.cpp
 
         bindings/v8/custom/V8JavaScriptCallFrameCustom.cpp
-        bindings/v8/custom/V8ScriptProfileCustom.cpp
-        bindings/v8/custom/V8ScriptProfileNodeCustom.cpp
     )
 endif ()
 
@@ -266,7 +260,7 @@ file(WRITE ${IDL_FILES_TMP} ${IDL_FILES_LIST})
 add_custom_command(
     OUTPUT ${SUPPLEMENTAL_DEPENDENCY_FILE}
     DEPENDS ${WEBCORE_DIR}/bindings/scripts/preprocess-idls.pl ${SCRIPTS_PREPROCESS_IDLS} ${WebCore_IDL_FILES} ${WebCoreTestSupport_IDL_FILES} ${IDL_ATTRIBUTES_FILE}
-    COMMAND ${PERL_EXECUTABLE} -I${WEBCORE_DIR}/bindings/scripts ${WEBCORE_DIR}/bindings/scripts/preprocess-idls.pl --defines "${FEATURE_DEFINES_JAVASCRIPT}" --idlFilesList ${IDL_FILES_TMP} --preprocessor "${CODE_GENERATOR_PREPROCESSOR}" --supplementalDependencyFile ${SUPPLEMENTAL_DEPENDENCY_FILE} --idlAttributesFile ${IDL_ATTRIBUTES_FILE}
+    COMMAND ${PERL_EXECUTABLE} -I${WEBCORE_DIR}/bindings/scripts ${WEBCORE_DIR}/bindings/scripts/preprocess-idls.pl --defines "${FEATURE_DEFINES_JAVASCRIPT}" --idlFilesList ${IDL_FILES_TMP} --supplementalDependencyFile ${SUPPLEMENTAL_DEPENDENCY_FILE}
     VERBATIM)
 
 GENERATE_BINDINGS(WebCore_SOURCES
@@ -275,6 +269,7 @@ GENERATE_BINDINGS(WebCore_SOURCES
     "${IDL_INCLUDES}"
     "${FEATURE_DEFINES_JAVASCRIPT}"
     ${DERIVED_SOURCES_WEBCORE_DIR} V8 V8
+    ${IDL_ATTRIBUTES_FILE}
     ${SUPPLEMENTAL_DEPENDENCY_FILE})
 
 GENERATE_BINDINGS(WebCoreTestSupport_SOURCES
@@ -283,4 +278,5 @@ GENERATE_BINDINGS(WebCoreTestSupport_SOURCES
     "${IDL_INCLUDES}"
     "${FEATURE_DEFINES_JAVASCRIPT}"
     ${DERIVED_SOURCES_WEBCORE_DIR} V8 V8
+    ${IDL_ATTRIBUTES_FILE}
     ${SUPPLEMENTAL_DEPENDENCY_FILE})

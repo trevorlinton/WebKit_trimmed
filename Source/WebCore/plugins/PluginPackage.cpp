@@ -67,10 +67,11 @@ void PluginPackage::freeLibrarySoon()
 void PluginPackage::freeLibraryTimerFired(Timer<PluginPackage>*)
 {
     ASSERT(m_module);
-    ASSERT(!m_loadCount);
-
-    unloadModule(m_module);
-    m_module = 0;
+    // Do nothing if the module got loaded again meanwhile
+    if (!m_loadCount) {
+        unloadModule(m_module);
+        m_module = 0;
+    }
 }
 
 
@@ -205,9 +206,7 @@ void PluginPackage::determineQuirks(const String& mimeType)
         }
 
 #if PLATFORM(QT)
-        // Flash will crash on repeated calls to SetWindow in windowed mode.
-        // Defer the setWindow, so we don't set it to the wrong size too early.
-        m_quirks.add(PluginQuirkDeferFirstSetWindowCall);
+        // Flash will crash on repeated calls to SetWindow in windowed mode
         m_quirks.add(PluginQuirkDontCallSetWindowMoreThanOnce);
 #endif
 

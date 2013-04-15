@@ -38,7 +38,9 @@
 #include "CSSStyleSheet.h"
 #include "ContentSecurityPolicy.h"
 #include "DOMWindow.h"
+#include "ExceptionCodePlaceholder.h"
 #include "HTMLHeadElement.h"
+#include "HTMLStyleElement.h"
 #include "InspectorDOMAgent.h"
 #include "InspectorHistory.h"
 #include "InspectorState.h"
@@ -317,18 +319,18 @@ public:
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode&)
+    virtual bool undo(ExceptionCode& ec)
     {
-        if (m_styleSheet->setText(m_oldText)) {
+        if (m_styleSheet->setText(m_oldText, ec)) {
             m_styleSheet->reparseStyleSheet(m_oldText);
             return true;
         }
         return false;
     }
 
-    virtual bool redo(ExceptionCode&)
+    virtual bool redo(ExceptionCode& ec)
     {
-        if (m_styleSheet->setText(m_text)) {
+        if (m_styleSheet->setText(m_text, ec)) {
             m_styleSheet->reparseStyleSheet(m_text);
             return true;
         }
@@ -958,8 +960,9 @@ PassRefPtr<TypeBuilder::CSS::SelectorProfile> InspectorCSSAgent::stopSelectorPro
 
 void InspectorCSSAgent::willMatchRule(StyleRule* rule, StyleResolver* styleResolver)
 {
+//    printf("InspectorCSSAgent::willMatchRule %s\n", rule->selectorList().selectorsText().utf8().data());
     if (m_currentSelectorProfile)
-        m_currentSelectorProfile->startSelector(styleResolver->ensureFullCSSOMWrapperForInspector(rule));
+        m_currentSelectorProfile->startSelector(styleResolver->inspectorCSSOMWrappers().getWrapperForRuleInSheets(rule, styleResolver->document()->styleSheetCollection()));
 }
 
 void InspectorCSSAgent::didMatchRule(bool matched)
@@ -971,7 +974,7 @@ void InspectorCSSAgent::didMatchRule(bool matched)
 void InspectorCSSAgent::willProcessRule(StyleRule* rule, StyleResolver* styleResolver)
 {
     if (m_currentSelectorProfile)
-        m_currentSelectorProfile->startSelector(styleResolver->ensureFullCSSOMWrapperForInspector(rule));
+        m_currentSelectorProfile->startSelector(styleResolver->inspectorCSSOMWrappers().getWrapperForRuleInSheets(rule, styleResolver->document()->styleSheetCollection()));
 }
 
 void InspectorCSSAgent::didProcessRule()
@@ -1078,11 +1081,16 @@ InspectorStyleSheet* InspectorCSSAgent::viaInspectorStyleSheet(Document* documen
     }
     if (ec)
         return 0;
-    StyleSheetList* styleSheets = document->styleSheets();
-    StyleSheet* styleSheet = styleSheets->item(styleSheets->length() - 1);
-    if (!styleSheet || !styleSheet->isCSSStyleSheet())
+
+    HTMLElement* htmlElement = toHTMLElement(styleElement.get());
+    if (!htmlElement || !htmlElement->hasTagName(HTMLNames::styleTag))
         return 0;
-    CSSStyleSheet* cssStyleSheet = static_cast<CSSStyleSheet*>(styleSheet);
+
+    HTMLStyleElement* htmlStyleElement = static_cast<HTMLStyleElement*>(htmlElement);
+    CSSStyleSheet* cssStyleSheet = htmlStyleElement->sheet();
+    if (!cssStyleSheet)
+        return 0;
+
     String id = String::number(m_lastStyleSheetId++);
     inspectorStyleSheet = InspectorStyleSheet::create(m_domAgent->pageAgent(), id, cssStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Inspector, InspectorDOMAgent::documentURLString(document), this);
     m_idToInspectorStyleSheet.set(id, inspectorStyleSheet);
@@ -1125,7 +1133,7 @@ PassRefPtr<TypeBuilder::CSS::CSSRule> InspectorCSSAgent::buildObjectForRule(CSSS
     // Since the inspector wants to walk the parent chain, we construct the full wrappers here.
     // FIXME: This could be factored better. StyleResolver::styleRulesForElement should return a StyleRule vector, not a CSSRuleList.
     if (!rule->parentStyleSheet()) {
-        rule = styleResolver->ensureFullCSSOMWrapperForInspector(rule->styleRule());
+        rule = styleResolver->inspectorCSSOMWrappers().getWrapperForRuleInSheets(rule->styleRule(), styleResolver->document()->styleSheetCollection());
         if (!rule)
             return 0;
     }
@@ -1163,9 +1171,8 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > InspectorCSSAgent::
         RefPtr<TypeBuilder::Array<int> > matchingSelectors = TypeBuilder::Array<int>::create();
         const CSSSelectorList& selectorList = rule->styleRule()->selectorList();
         long index = 0;
-        for (CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector)) {
-            ExceptionCode ec;
-            bool matched = element->webkitMatchesSelector(selector->selectorText(), ec);
+        for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector)) {
+            bool matched = element->webkitMatchesSelector(selector->selectorText(), IGNORE_EXCEPTION);
             if (matched)
                 matchingSelectors->addItem(index);
             ++index;

@@ -85,9 +85,14 @@ contains(QT_CONFIG, private_tests): CONFIG += qt_developer_build
 # Set some defaults for specific platforms
 CONFIG += include_webinspector
 
+# Make sure we process the PKGCONFIG variable if applicable
+!mac: CONFIG += link_pkgconfig
+
 # By default we enable "production build", and build-webkit, which is
 # used by bots and developers, will disable it, to enable warnings etc.
 CONFIG += production_build
+
+!debug_and_release:*-g++*: CONFIG += gnu_thin_archives
 
 # Pick up Qt's defaults for debug/release/debug_and_release
 if(win32|mac):!macx-xcode {

@@ -38,9 +38,10 @@ class DateTimeSymbolicFieldElement : public DateTimeFieldElement, public TypeAhe
     WTF_MAKE_NONCOPYABLE(DateTimeSymbolicFieldElement);
 
 protected:
-    DateTimeSymbolicFieldElement(Document*, FieldOwner&, const Vector<String>&);
+    DateTimeSymbolicFieldElement(Document*, FieldOwner&, const Vector<String>&, int minimum, int maximum);
     size_t symbolsSize() const { return m_symbols.size(); }
     virtual bool hasValue() const OVERRIDE FINAL;
+    void initialize(const AtomicString& pseudo, const String& axHelpText);
     virtual void setEmptyValue(EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual void setValueAsInteger(int, EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual int valueAsInteger() const OVERRIDE FINAL;
@@ -49,15 +50,15 @@ private:
     static const int invalidIndex = -1;
 
     String visibleEmptyValue() const;
+    bool indexIsInRange(int index) const { return index >= m_minimumIndex && index <= m_maximumIndex; }
 
     // DateTimeFieldElement functions.
     virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE FINAL;
-    virtual int maximum() const OVERRIDE FINAL;
     virtual float maximumWidth(const Font&) OVERRIDE;
-    virtual int minimum() const OVERRIDE FINAL;
     virtual void stepDown() OVERRIDE FINAL;
     virtual void stepUp() OVERRIDE FINAL;
     virtual String value() const OVERRIDE FINAL;
+    virtual int valueForARIAValueNow() const OVERRIDE FINAL;
     virtual String visibleValue() const OVERRIDE FINAL;
 
     // TypeAheadDataSource functions.
@@ -72,6 +73,8 @@ private:
     const AtomicString m_visibleEmptyValue;
     int m_selectedIndex;
     TypeAhead m_typeAhead;
+    const int m_minimumIndex;
+    const int m_maximumIndex;
 };
 
 } // namespace WebCore

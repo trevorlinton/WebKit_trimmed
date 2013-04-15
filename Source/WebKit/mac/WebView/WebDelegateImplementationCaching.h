@@ -29,6 +29,7 @@
 // This header contains WebView declarations that can be used anywhere in WebKit, but are neither SPI nor API.
 
 #import "WebTypesInternal.h"
+#import <JavaScriptCore/JSBase.h>
 
 @class WebView;
 
@@ -52,6 +53,9 @@ struct WebResourceDelegateImplementationCache {
 };
 
 struct WebFrameLoadDelegateImplementationCache {
+#if JSC_OBJC_API_ENABLED
+    IMP didCreateJavaScriptContextForFrameFunc;
+#endif
     IMP didClearWindowObjectForFrameFunc;
     IMP didClearWindowObjectForFrameInScriptWorldFunc;
     IMP didClearInspectorWindowObjectForFrameFunc;
@@ -79,6 +83,7 @@ struct WebFrameLoadDelegateImplementationCache {
     IMP didDisplayInsecureContentFunc;
     IMP didRunInsecureContentFunc;
     IMP didDetectXSSFunc;
+    IMP didRemoveFrameFromHierarchyFunc;
 };
 
 struct WebScriptDebugDelegateImplementationCache {

@@ -1,6 +1,6 @@
 /*      
     WebKitSystemInterface.h
-    Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012 Apple Inc. All rights reserved.
+    Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
 
     Public header file.
 */
@@ -90,6 +90,7 @@ AXUIElementRef WKCreateAXUIElementRef(id element);
 void WKUnregisterUniqueIdForElement(id element);
 
 BOOL WKShouldBlockPlugin(NSString *bundleIdentifier, NSString *bundleVersionString);
+BOOL WKIsPluginUpdateAvailable(NSString *bundleIdentifier);
 
 // Remote Accessibility API.
 void WKAXRegisterRemoteApp(void);
@@ -238,8 +239,8 @@ CFStringRef WKCopyFoundationCacheDirectory(void);
 
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 CFURLStorageSessionRef WKCreatePrivateStorageSession(CFStringRef);
-NSURLRequest *WKCopyRequestWithStorageSession(CFURLStorageSessionRef, NSURLRequest*);
-NSCachedURLResponse *WKCachedResponseForRequest(CFURLStorageSessionRef, NSURLRequest*);
+NSURLRequest *WKCopyRequestWithStorageSession(CFURLStorageSessionRef, NSURLRequest *);
+NSCachedURLResponse *WKCachedResponseForRequest(CFURLStorageSessionRef, NSURLRequest *);
 void WKSetRequestStorageSession(CFURLStorageSessionRef, CFMutableURLRequestRef);
 
 typedef struct OpaqueCFHTTPCookieStorage* CFHTTPCookieStorageRef;
@@ -340,14 +341,6 @@ WKSoftwareCARendererRef WKSoftwareCARendererCreate(uint32_t contextID);
 void WKSoftwareCARendererDestroy(WKSoftwareCARendererRef);
 void WKSoftwareCARendererRender(WKSoftwareCARendererRef, CGContextRef, CGRect);
 
-typedef struct __WKCARemoteLayerClientRef *WKCARemoteLayerClientRef;
-
-WKCARemoteLayerClientRef WKCARemoteLayerClientMakeWithServerPort(mach_port_t port);
-void WKCARemoteLayerClientInvalidate(WKCARemoteLayerClientRef);
-uint32_t WKCARemoteLayerClientGetClientId(WKCARemoteLayerClientRef);
-void WKCARemoteLayerClientSetLayer(WKCARemoteLayerClientRef, CALayer *);
-CALayer *WKCARemoteLayerClientGetLayer(WKCARemoteLayerClientRef);
-
 typedef struct __WKCAContextRef *WKCAContextRef;
 
 WKCAContextRef WKCAContextMakeRemoteWithServerPort(mach_port_t port);
@@ -358,6 +351,7 @@ void WKCAContextSetLayer(WKCAContextRef, CALayer *);
 CALayer *WKCAContextGetLayer(WKCAContextRef);
 void WKCAContextSetColorSpace(WKCAContextRef, CGColorSpaceRef);
 CGColorSpaceRef WKCAContextGetColorSpace(WKCAContextRef);
+void WKCABackingStoreCollectBlocking(void);
 
 void WKCALayerEnumerateRectsBeingDrawnWithBlock(CALayer *layer, CGContextRef context, void (^block)(CGRect rect));
 
@@ -425,7 +419,6 @@ CIFormat WKCIGetRGBA8Format(void);
 
 typedef enum {
     WKSandboxExtensionTypeReadOnly,
-    WKSandboxExtensionTypeWriteOnly,    
     WKSandboxExtensionTypeReadWrite,
 } WKSandboxExtensionType;
 typedef struct __WKSandboxExtension *WKSandboxExtensionRef;
@@ -440,8 +433,6 @@ const char* WKSandboxExtensionGetSerializedFormat(WKSandboxExtensionRef sandboxE
 WKSandboxExtensionRef WKSandboxExtensionCreateFromSerializedFormat(const char* serializationFormat, size_t length);
 
 OSStatus WKEnableSandboxStyleFileQuarantine(void);
-
-bool WKEnterPluginSandbox(const char* profile, const char* parameters[], const char* readOnlyPaths[], const char* readWritePaths[]);
 
 int WKRecommendedScrollerStyle(void);
 
@@ -474,61 +465,31 @@ void WKCFURLRequestAllowAllPostCaching(CFURLRequestRef);
 
 BOOL WKFilterIsManagedSession(void);
 WebFilterEvaluator *WKFilterCreateInstance(NSURLResponse *);
-void WKFilterRelease(WebFilterEvaluator *);
+BOOL WKFilterIsBuffering(WebFilterEvaluator *);
 BOOL WKFilterWasBlocked(WebFilterEvaluator *);
-const char* WKFilterAddData(WebFilterEvaluator *, const char* data, int* length);
-const char* WKFilterDataComplete(WebFilterEvaluator *, int* length);
+NSData *WKFilterAddData(WebFilterEvaluator *, NSData *);
+NSData *WKFilterDataComplete(WebFilterEvaluator *);
 
 CGFloat WKNSElasticDeltaForTimeDelta(CGFloat initialPosition, CGFloat initialVelocity, CGFloat elapsedTime);
 CGFloat WKNSElasticDeltaForReboundDelta(CGFloat delta);
 CGFloat WKNSReboundDeltaForElasticDelta(CGFloat delta);
 #endif
 
-typedef enum {
-    WKCaptionFontStyleDefault = 0,
-    WKCaptionFontStyleMonospacedWithSerif,
-    WKCaptionFontStyleProportionalWithSerif,
-    WKCaptionFontStyleMonospacedWithoutSerif,
-    WKCaptionFontStyleProportionalWithoutSerif,
-    WKCaptionFontStyleCasual,
-    WKCaptionFontStyleCursive,
-    WKCaptionFontStyleSmallCapital,
-    WKCaptionFontStyleMax
-} WKCaptionFontStyle;
-
-typedef enum {
-    WKCaptionTextEdgeStyleUndefined = 0,
-    WKCaptionTextEdgeStyleNone,
-    WKCaptionTextEdgeStyleRaised,
-    WKCaptionTextEdgeStyleDepressed,
-    WKCaptionTextEdgeStyleUniform,
-    WKCaptionTextEdgeStyleDropShadow,
-    WKCaptionTextEdgeStyleMax
-} WKCaptionTextEdgeStyle;
-
-bool WKCaptionAppearanceHasUserPreferences(void);
-bool WKCaptionAppearanceShowCaptionsWhenAvailable(void);
-CGColorRef WKCaptionAppearanceCopyForegroundColor(void);
-CGColorRef WKCaptionAppearanceCopyBackgroundColor(void);
-CGColorRef WKCaptionAppearanceCopyWindowColor(void);
-bool WKCaptionAppearanceGetForegroundOpacity(CGFloat*);
-bool WKCaptionAppearanceGetBackgroundOpacity(CGFloat*);
-bool WKCaptionAppearanceGetWindowOpacity(CGFloat*);
-CGFontRef WKCaptionAppearanceCopyFontForStyle(int fontStyle);
-bool WKCaptionAppearanceGetRelativeCharacterSize(CGFloat*);
-int WKCaptionAppearanceGetTextEdgeStyle(void);
-CFStringRef WKCaptionAppearanceGetSettingsChangedNotification(void);
-
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
 typedef enum {
     WKOcclusionNotificationTypeApplicationBecameVisible,
-    WKOcclusionNotificationTypeApplicationBecameOccluded
+    WKOcclusionNotificationTypeApplicationBecameOccluded,
+    WKOcclusionNotificationTypeWindowBecameVisible,
+    WKOcclusionNotificationTypeWindowBecameOccluded
 } WKOcclusionNotificationType;
 
-typedef void (*WKOcclusionNotificationHandler)(uint32_t, void*, uint32_t, void*, uint32_t);
+typedef uint32_t WKWindowID;
+
+typedef void (*WKOcclusionNotificationHandler)(uint32_t, void* data, uint32_t dataLength, void*, uint32_t);
 
 bool WKRegisterOcclusionNotificationHandler(WKOcclusionNotificationType, WKOcclusionNotificationHandler);
 bool WKUnregisterOcclusionNotificationHandler(WKOcclusionNotificationType, WKOcclusionNotificationHandler);
+bool WKEnableWindowOcclusionNotifications(NSInteger windowID, bool *outCurrentOcclusionState);
 
 enum {
     WKProcessAssertionTypeVisible = (1UL << 10)
@@ -540,6 +501,14 @@ id WKNSProcessInfoProcessAssertionWithTypes(WKProcessAssertionTypes);
 
 bool WKIsJavaPlugInActive(void);
 void WKActivateJavaPlugIn(void);
+
+void WKCFNetworkSetOverrideSystemProxySettings(CFDictionaryRef);
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
+bool WKIsPublicSuffix(NSString *domain);
+#endif
+
+CFStringRef WKCachePartitionKey(void);
 
 #ifdef __cplusplus
 }

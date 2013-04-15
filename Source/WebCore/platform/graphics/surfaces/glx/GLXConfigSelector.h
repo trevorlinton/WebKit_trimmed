@@ -26,22 +26,44 @@
 #ifndef GLXConfigSelector_h
 #define GLXConfigSelector_h
 
-#include "X11WindowResources.h"
-
 #if USE(ACCELERATED_COMPOSITING) && USE(GLX)
 
+#include "X11Helper.h"
+#include <opengl/GLDefs.h>
+#include <opengl/GLPlatformSurface.h>
+
 namespace WebCore {
+
+static int clientAttributes[] = {
+    // The specification is a set key value pairs stored in a simple array.
+    GLX_LEVEL,                          0,
+    static_cast<int>(GLX_VISUAL_ID),    0,
+    GLX_DRAWABLE_TYPE,                  GLX_PIXMAP_BIT,
+    GLX_BIND_TO_TEXTURE_TARGETS_EXT,    GLX_TEXTURE_2D_BIT_EXT,
+    GLX_BIND_TO_TEXTURE_RGBA_EXT,       TRUE,
+    0
+};
+
+static int glxSurfaceAttributes[] = {
+    GLX_LEVEL, 0,
+    GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
+    GLX_RENDER_TYPE,   0,
+    GLX_RED_SIZE,      1,
+    GLX_GREEN_SIZE,    1,
+    GLX_BLUE_SIZE,     1,
+    GLX_ALPHA_SIZE,    0,
+    GLX_DOUBLEBUFFER,  GL_FALSE,
+    None
+};
 
 class GLXConfigSelector {
     WTF_MAKE_NONCOPYABLE(GLXConfigSelector);
 
 public:
-    GLXConfigSelector(Display* xDisplay, bool supportsXRenderExtension)
-        : m_pbufferFBConfig(0)
-        , m_surfaceContextFBConfig(0)
-        , m_visualInfo(0)
-        , m_sharedDisplay(xDisplay)
-        , m_supportsXRenderExtension(supportsXRenderExtension)
+    GLXConfigSelector(GLPlatformSurface::SurfaceAttributes attr = GLPlatformSurface::Default)
+        : m_surfaceContextFBConfig(0)
+        , m_pixmapContextFBConfig(0)
+        , m_attributes(attr)
     {
     }
 
@@ -49,114 +71,136 @@ public:
     {
     }
 
-    XVisualInfo* visualInfo() const
+    XVisualInfo* visualInfo(const GLXFBConfig& config)
     {
-        return m_visualInfo;
+        return glXGetVisualFromFBConfig(X11Helper::nativeDisplay(), config);
     }
 
-    GLXFBConfig pBufferContextConfig()
+    GLXFBConfig pixmapContextConfig()
     {
-        if (!m_pbufferFBConfig) {
-            static const int attributes[] = {
-                GLX_LEVEL, 0,
-                GLX_DRAWABLE_TYPE, GLX_PBUFFER_BIT,
-                GLX_RENDER_TYPE,   GLX_RGBA_BIT,
-                GLX_RED_SIZE,      1,
-                GLX_GREEN_SIZE,    1,
-                GLX_BLUE_SIZE,     1,
-                GLX_DOUBLEBUFFER,  GL_FALSE,
-                None
-            };
-
-            int numAvailableConfigs;
-            GLXFBConfig* temp = glXChooseFBConfig(m_sharedDisplay, DefaultScreen(m_sharedDisplay), attributes, &numAvailableConfigs);
-            if (numAvailableConfigs)
-                m_pbufferFBConfig = temp[0];
-            XFree(temp);
+        if (!m_pixmapContextFBConfig) {
+            validateAttributes();
+            m_pixmapContextFBConfig = findMatchingConfig(glxSurfaceAttributes, m_attributes & GLPlatformSurface::SupportAlpha ? 32 : 24);
         }
 
-        return m_pbufferFBConfig;
+        return m_pixmapContextFBConfig;
     }
+
 
     GLXFBConfig surfaceContextConfig()
     {
         if (!m_surfaceContextFBConfig) {
-            static int attributes[] = {
-                GLX_LEVEL, 0,
-                GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-                GLX_RENDER_TYPE,   GLX_RGBA_BIT,
-                GLX_RED_SIZE,      1,
-                GLX_GREEN_SIZE,    1,
-                GLX_BLUE_SIZE,     1,
-                GLX_ALPHA_SIZE,    1,
-                GLX_DEPTH_SIZE,    1,
-                GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
-                GLX_DOUBLEBUFFER,  True,
-                None
-            };
-
-            m_surfaceContextFBConfig = createConfig(attributes);
+            glxSurfaceAttributes[3] = GLX_WINDOW_BIT;
+            glxSurfaceAttributes[7] = 8;
+            glxSurfaceAttributes[9] = 8;
+            glxSurfaceAttributes[11] = 8;
+            validateAttributes();
+            m_surfaceContextFBConfig = findMatchingConfig(glxSurfaceAttributes, m_attributes & GLPlatformSurface::SupportAlpha ? 32 : 24);
         }
 
         return m_surfaceContextFBConfig;
     }
 
+    GLXFBConfig surfaceClientConfig(int depth, VisualID id)
+    {
+        clientAttributes[3] = static_cast<int>(id);
+        clientAttributes[8] = depth == 32 ? GLX_BIND_TO_TEXTURE_RGBA_EXT : GLX_BIND_TO_TEXTURE_RGB_EXT;
+        // Prefer to match with Visual Id.
+        GLXFBConfig config = findMatchingConfigWithVisualId(clientAttributes, depth, id);
+
+        if (!config)
+            config = findMatchingConfig(clientAttributes, depth);
+
+        return config;
+    }
+
     void reset()
     {
-        m_pbufferFBConfig = 0;
         m_surfaceContextFBConfig = 0;
+        m_pixmapContextFBConfig = 0;
+    }
+
+    GLPlatformSurface::SurfaceAttributes attributes() const
+    {
+        return m_attributes;
     }
 
 private:
-    GLXFBConfig createConfig(const int attributes[])
+    void validateAttributes()
+    {
+        if (m_attributes & GLPlatformSurface::SupportAlpha) {
+            glxSurfaceAttributes[13] = 8;
+            glxSurfaceAttributes[5] = GLX_RGBA_BIT;
+        }
+
+        if (m_attributes & GLPlatformSurface::DoubleBuffered)
+            glxSurfaceAttributes[15] = GL_TRUE;
+    }
+
+    GLXFBConfig findMatchingConfig(const int attributes[], int depth = 32)
     {
         int numAvailableConfigs;
-        m_visualInfo = 0;
-        GLXFBConfig* temp = glXChooseFBConfig(m_sharedDisplay, DefaultScreen(m_sharedDisplay), attributes, &numAvailableConfigs);
+        OwnPtrX11<GLXFBConfig> temp(glXChooseFBConfig(X11Helper::nativeDisplay(), DefaultScreen(X11Helper::nativeDisplay()), attributes, &numAvailableConfigs));
 
-        if (!numAvailableConfigs)
+        if (!numAvailableConfigs || !temp.get())
             return 0;
 
-        GLXFBConfig selectedConfig = 0;
-        bool found = false;
-
+        OwnPtrX11<XVisualInfo> scopedVisualInfo;
         for (int i = 0; i < numAvailableConfigs; ++i) {
-            m_visualInfo = glXGetVisualFromFBConfig(m_sharedDisplay, temp[i]);
-            if (!m_visualInfo)
+            scopedVisualInfo = glXGetVisualFromFBConfig(X11Helper::nativeDisplay(), temp[i]);
+            if (!scopedVisualInfo.get())
                 continue;
-#if USE(GRAPHICS_SURFACE)
-            if (m_supportsXRenderExtension) {
-                XRenderPictFormat* format = XRenderFindVisualFormat(m_sharedDisplay, m_visualInfo->visual);
-                if (format && format->direct.alphaMask > 0) {
-                    selectedConfig = temp[i];
-                    found = true;
-                    break;
+
+#if USE(GRAPHICS_SURFACE) && USE(GLX)
+            if (X11Helper::isXRenderExtensionSupported()) {
+                XRenderPictFormat* format = XRenderFindVisualFormat(X11Helper::nativeDisplay(), scopedVisualInfo->visual);
+
+                if (format) {
+                    if (m_attributes & GLPlatformSurface::SupportAlpha) {
+                        if (scopedVisualInfo->depth == depth && format->direct.alphaMask > 0)
+                            return temp[i];
+                    } else if (!format->direct.alphaMask)
+                        return temp[i];
                 }
-            } else if (m_visualInfo->depth == 32) {
-#else
-            if (m_visualInfo->depth == 32) {
-#endif
-                selectedConfig = temp[i];
-                found = true;
             }
+#endif
+            if (scopedVisualInfo->depth == depth)
+                return temp[i];
         }
 
         // Did not find any visual supporting alpha, select the first available config.
-        if (!found) {
-            selectedConfig = temp[0];
-            m_visualInfo = glXGetVisualFromFBConfig(m_sharedDisplay, temp[0]);
-        }
+        scopedVisualInfo = glXGetVisualFromFBConfig(X11Helper::nativeDisplay(), temp[0]);
 
-        XFree(temp);
+        if ((m_attributes & GLPlatformSurface::SupportAlpha) && (scopedVisualInfo->depth != 32))
+            m_attributes &= ~GLPlatformSurface::SupportAlpha;
 
-        return selectedConfig;
+        return temp[0];
     }
 
-    GLXFBConfig m_pbufferFBConfig;
+    GLXFBConfig findMatchingConfigWithVisualId(const int attributes[], int depth, VisualID id)
+    {
+        int numAvailableConfigs;
+        OwnPtrX11<GLXFBConfig> temp(glXChooseFBConfig(X11Helper::nativeDisplay(), DefaultScreen(X11Helper::nativeDisplay()), attributes, &numAvailableConfigs));
+
+        if (!numAvailableConfigs || !temp.get())
+            return 0;
+
+        OwnPtrX11<XVisualInfo> scopedVisualInfo;
+        for (int i = 0; i < numAvailableConfigs; ++i) {
+            scopedVisualInfo = glXGetVisualFromFBConfig(X11Helper::nativeDisplay(), temp[i]);
+            if (!scopedVisualInfo.get())
+                continue;
+
+            if (id && scopedVisualInfo->depth == depth && scopedVisualInfo->visualid == id)
+                return temp[i];
+        }
+
+        return 0;
+    }
+
     GLXFBConfig m_surfaceContextFBConfig;
-    XVisualInfo* m_visualInfo;
-    Display* m_sharedDisplay;
-    bool m_supportsXRenderExtension;
+    GLXFBConfig m_pixmapContextFBConfig;
+    GLPlatformSurface::SurfaceAttributes m_attributes : 3;
 };
 
 }
@@ -164,3 +208,4 @@ private:
 #endif
 
 #endif
+

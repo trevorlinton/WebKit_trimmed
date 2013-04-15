@@ -33,9 +33,10 @@
 #include "IDBKey.h"
 #include "IDBKeyPath.h"
 #include "IDBTracing.h"
-#include "JSIDBKey.h"
+#include "SharedBuffer.h"
 
 #include <runtime/DateInstance.h>
+#include <runtime/ObjectConstructor.h>
 
 using namespace JSC;
 
@@ -70,15 +71,51 @@ static bool set(ExecState* exec, JSValue& object, const String& keyPathElement, 
     return true;
 }
 
+static JSValue idbKeyToJSValue(ExecState* exec, JSDOMGlobalObject* globalObject, IDBKey* key)
+{
+    if (!key) {
+        // This should be undefined, not null.
+        // Spec: http://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#idl-def-IDBKeyRange
+        return jsUndefined();
+    }
+
+    switch (key->type()) {
+    case IDBKey::ArrayType:
+        {
+            const IDBKey::KeyArray& inArray = key->array();
+            size_t size = inArray.size();
+            JSArray* outArray = constructEmptyArray(exec, 0, globalObject, size);
+            for (size_t i = 0; i < size; ++i) {
+                IDBKey* arrayKey = inArray.at(i).get();
+                outArray->putDirectIndex(exec, i, idbKeyToJSValue(exec, globalObject, arrayKey));
+            }
+            return JSValue(outArray);
+        }
+    case IDBKey::StringType:
+        return jsStringWithCache(exec, key->string());
+    case IDBKey::DateType:
+        return jsDateOrNull(exec, key->date());
+    case IDBKey::NumberType:
+        return jsNumber(key->number());
+    case IDBKey::MinType:
+    case IDBKey::InvalidType:
+        ASSERT_NOT_REACHED();
+        return jsUndefined();
+    }
+
+    ASSERT_NOT_REACHED();
+    return jsUndefined();
+}
+
 static const size_t maximumDepth = 2000;
 
 static PassRefPtr<IDBKey> createIDBKeyFromValue(ExecState* exec, JSValue value, Vector<JSArray*>& stack)
 {
-    if (value.isNumber() && !isnan(value.toNumber(exec)))
+    if (value.isNumber() && !std::isnan(value.toNumber(exec)))
         return IDBKey::createNumber(value.toNumber(exec));
     if (value.isString())
         return IDBKey::createString(value.toString(exec)->value(exec));
-    if (value.inherits(&DateInstance::s_info) && !isnan(valueToDate(exec, value)))
+    if (value.inherits(&DateInstance::s_info) && !std::isnan(valueToDate(exec, value)))
         return IDBKey::createDate(valueToDate(exec, value));
     if (value.isObject()) {
         JSObject* object = asObject(value);
@@ -210,7 +247,7 @@ bool injectIDBKeyIntoScriptValue(DOMRequestState* requestState, PassRefPtr<IDBKe
     if (parent.isUndefined())
         return false;
 
-    if (!set(exec, parent, keyPathElements.last(), toJS(exec, jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()), key.get())))
+    if (!set(exec, parent, keyPathElements.last(), idbKeyToJSValue(exec, jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()), key.get())))
         return false;
 
     return true;
@@ -265,10 +302,30 @@ ScriptValue deserializeIDBValue(DOMRequestState* requestState, PassRefPtr<Serial
     return ScriptValue(exec->globalData(), jsNull());
 }
 
+ScriptValue deserializeIDBValueBuffer(DOMRequestState* requestState, PassRefPtr<SharedBuffer> prpBuffer)
+{
+    ExecState* exec = requestState->exec();
+    RefPtr<SharedBuffer> buffer = prpBuffer;
+    if (buffer) {
+        // FIXME: The extra copy here can be eliminated by allowing SerializedScriptValue to take a raw const char* or const uint8_t*.
+        Vector<uint8_t> value;
+        value.append(buffer->data(), buffer->size());
+        RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::createFromWireBytes(value);
+        return ScriptValue::deserialize(exec, serializedValue.get(), NonThrowing);
+    }
+    return ScriptValue(exec->globalData(), jsNull());
+}
+
 ScriptValue idbKeyToScriptValue(DOMRequestState* requestState, PassRefPtr<IDBKey> key)
 {
     ExecState* exec = requestState->exec();
-    return ScriptValue(exec->globalData(), toJS(exec, jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()), key.get()));
+    return ScriptValue(exec->globalData(), idbKeyToJSValue(exec, jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()), key.get()));
+}
+
+PassRefPtr<IDBKey> scriptValueToIDBKey(DOMRequestState* requestState, const ScriptValue& scriptValue)
+{
+    ExecState* exec = requestState->exec();
+    return createIDBKeyFromValue(exec, scriptValue.jsValue());
 }
 
 } // namespace WebCore

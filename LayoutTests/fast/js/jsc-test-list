@@ -67,6 +67,7 @@ fast/js/debugger
 fast/js/declaration-in-block
 fast/js/delete-getters-setters
 fast/js/delete-then-put
+fast/js/dfg-abs-backwards-propagation
 fast/js/dfg-add-not-number
 fast/js/dfg-arguments-alias-escape
 fast/js/dfg-arguments-alias-one-block-osr-exit
@@ -88,13 +89,17 @@ fast/js/dfg-array-pop-value-clearing
 fast/js/dfg-array-push-bad-time
 fast/js/dfg-array-push-slow-put
 fast/js/dfg-bool-to-int32-reuse
+fast/js/dfg-branch-logical-not-peephole-around-osr-exit
 fast/js/dfg-branch-not-fail
+fast/js/dfg-cfa-merge-with-dead-use-at-tail
 fast/js/dfg-cfg-simplify-phantom-get-local-on-same-block-set-local
 fast/js/dfg-cfg-simplify-redundant-dead-get-local
 fast/js/dfg-check-two-structures
 fast/js/dfg-check-structure-elimination-for-non-cell
 fast/js/dfg-constant-fold-first-local-read-after-block-merge
+fast/js/dfg-constant-fold-uncaptured-variable-that-is-later-captured
 fast/js/dfg-convert-this-dom-window
+fast/js/dfg-create-inlined-arguments-in-closure-inline
 fast/js/dfg-cse-cfa-discrepancy
 fast/js/dfg-cse-dead-get-scoped-var
 fast/js/dfg-dead-min-one-arg
@@ -129,6 +134,7 @@ fast/js/dfg-inline-arguments-use-from-all-the-places
 fast/js/dfg-inline-arguments-use-from-getter
 fast/js/dfg-inline-arguments-use-from-uninlined-code
 fast/js/dfg-inline-constant
+fast/js/dfg-inline-constructor-that-uses-arguments
 fast/js/dfg-inline-early-return
 fast/js/dfg-inline-function-dot-caller
 fast/js/dfg-inline-many-blocks
@@ -148,6 +154,8 @@ fast/js/dfg-intrinsic-osr-exit
 fast/js/dfg-intrinsic-side-effect-assignment-osr-exit
 fast/js/dfg-intrinsic-unused-this-method-check
 fast/js/dfg-intrinsic-unused-this
+fast/js/dfg-max-backwards-propagation
+fast/js/dfg-min-backwards-propagation
 fast/js/dfg-min-max
 fast/js/dfg-multi-basic-block-structure-clobber
 fast/js/dfg-multiply
@@ -159,13 +167,16 @@ fast/js/dfg-negative-array-index
 fast/js/dfg-obvious-constant-cfa
 fast/js/dfg-osr-entry-hoisted-clobbered-structure-check
 fast/js/dfg-other-branch
-fast/js/dfg-poison-fuzz
+fast/js/dfg-phantom-get-local
+fast/js/dfg-post-inc-then-exit
 fast/js/dfg-proto-access-inline-osr-exit
+fast/js/dfg-proven-sqrt-backwards-propagation
 fast/js/dfg-put-by-id-prototype-check
 fast/js/dfg-put-scoped-var-backward-flow
 fast/js/dfg-putbyval-cfa-clobber
 fast/js/dfg-redundant-load-of-captured-variable-proven-constant
 fast/js/dfg-side-effect-assignment-osr-exit
+fast/js/dfg-sqrt-backwards-propagation
 fast/js/dfg-string-stricteq
 fast/js/dfg-tear-off-arguments-not-activation
 fast/js/dfg-uint16array
@@ -177,6 +188,7 @@ fast/js/dfg-uint32array-overflow-values
 fast/js/dfg-uint32array
 fast/js/dfg-uint8array
 fast/js/dfg-uint8clampedarray
+fast/js/dfg-value-to-int32-with-side-effects
 fast/js/dfg-weak-js-constant-silent-fill
 fast/js/dictionary-no-cache
 fast/js/dictionary-prototype-caching
@@ -196,6 +208,7 @@ fast/js/exception-try-finally-scope-error
 fast/js/exception-with-handler-inside-eval-with-dynamic-scope
 fast/js/excessive-comma-usage
 fast/js/finally-codegen-failure
+fast/js/flatten-dictionary-structure-from-which-all-properties-were-deleted
 fast/js/for-in-avoid-duplicates
 fast/js/for-in-cached
 fast/js/for-in-exeception
@@ -248,6 +261,7 @@ fast/js/modify-non-references
 fast/js/multiline-comment-newline
 fast/js/named-function-expression
 fast/js/nested-functions
+fast/js/new-array-double-with-holes
 fast/js/no-semi-insertion-at-end-of-script
 fast/js/number-cell-reuse
 fast/js/number-toExponential

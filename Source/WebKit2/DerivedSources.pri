@@ -39,18 +39,17 @@ defineReplace(message_receiver_generator_output) {
 VPATH = \
     PluginProcess \
     WebProcess/ApplicationCache \
-    WebProcess/Authentication \
     WebProcess/Battery \
     WebProcess/Cookies \
     WebProcess/FullScreen \
     WebProcess/Geolocation \
     WebProcess/IconDatabase \
-    WebProcess/KeyValueStorage \
     WebProcess/MediaCache \
     WebProcess/NetworkInfo \
     WebProcess/Notifications \
     WebProcess/Plugins \
     WebProcess/ResourceCache \
+    WebProcess/Storage \
     WebProcess/WebCoreSupport \
     WebProcess/WebPage \
     WebProcess/WebPage/CoordinatedGraphics \
@@ -60,7 +59,9 @@ VPATH = \
     UIProcess/Downloads \
     UIProcess/Notifications \
     UIProcess/Plugins \
+    UIProcess/Storage \
     Shared \
+    Shared/Authentication \
     Shared/Plugins
 
 MESSAGE_RECEIVERS = \
@@ -72,8 +73,11 @@ MESSAGE_RECEIVERS = \
     PluginControllerProxy.messages.in \
     PluginProcess.messages.in \
     PluginProcessConnection.messages.in \
+    PluginProcessConnectionManager.messages.in \
     PluginProcessProxy.messages.in \
     PluginProxy.messages.in \
+    StorageAreaProxy.messages.in \
+    StorageManager.messages.in \
     WebApplicationCacheManager.messages.in \
     WebApplicationCacheManagerProxy.messages.in \
     WebBatteryManager.messages.in \

@@ -122,7 +122,7 @@ bool SVGStyledElement::rendererIsNeeded(const NodeRenderingContext& context)
     // Spec: SVG allows inclusion of elements from foreign namespaces anywhere
     // with the SVG content. In general, the SVG user agent will include the unknown
     // elements in the DOM but will otherwise ignore unknown elements. 
-    if (!parentOrHostElement() || parentOrHostElement()->isSVGElement())
+    if (!parentOrShadowHostElement() || parentOrShadowHostElement()->isSVGElement())
         return StyledElement::rendererIsNeeded(context);
 
     return false;
@@ -292,11 +292,11 @@ bool SVGStyledElement::isPresentationAttribute(const QualifiedName& name) const
     return SVGElement::isPresentationAttribute(name);
 }
 
-void SVGStyledElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void SVGStyledElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    CSSPropertyID propertyID = SVGStyledElement::cssPropertyIdForSVGAttributeName(attribute.name());
+    CSSPropertyID propertyID = SVGStyledElement::cssPropertyIdForSVGAttributeName(name);
     if (propertyID > 0)
-        addPropertyToPresentationAttributeStyle(style, propertyID, attribute.value());
+        addPropertyToPresentationAttributeStyle(style, propertyID, value);
 }
 
 void SVGStyledElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -356,7 +356,7 @@ Node::InsertionNotificationRequest SVGStyledElement::insertedInto(ContainerNode*
 void SVGStyledElement::buildPendingResourcesIfNeeded()
 {
     Document* document = this->document();
-    if (!needsPendingResourceHandling() || !document)
+    if (!needsPendingResourceHandling() || !document || !inDocument() || isInShadowTree())
         return;
 
     SVGDocumentExtensions* extensions = document->accessSVGExtensions();
@@ -400,7 +400,7 @@ PassRefPtr<CSSValue> SVGStyledElement::getPresentationAttribute(const String& na
         return 0;
 
     QualifiedName attributeName(nullAtom, name, nullAtom);
-    Attribute* attr = getAttributeItem(attributeName);
+    const Attribute* attr = getAttributeItem(attributeName);
     if (!attr)
         return 0;
 

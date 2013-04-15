@@ -30,16 +30,14 @@
 
 namespace WebCore {
 
-EGLWindowTransportSurface::EGLWindowTransportSurface()
-    : GLPlatformSurface()
+EGLWindowTransportSurface::EGLWindowTransportSurface(SurfaceAttributes attributes)
+    : GLTransportSurface(attributes)
 {
-    m_nativeResource = adoptPtr(new NativeOffScreenWindow());
-    m_configSelector = adoptPtr(new EGLConfigSelector(m_nativeResource->nativeSharedDisplay()));
+    m_configSelector = adoptPtr(new EGLConfigSelector(attributes, NativeWrapper::nativeDisplay()));
     m_sharedDisplay = m_configSelector->display();
 
     if (m_sharedDisplay == EGL_NO_DISPLAY) {
         m_configSelector = nullptr;
-        m_nativeResource = nullptr;
         return;
     }
 
@@ -57,12 +55,7 @@ EGLWindowTransportSurface::EGLWindowTransportSurface()
         return;
     }
 
-    if (!m_nativeResource->setVisualId(visualId)) {
-        destroy();
-        return;
-    }
-
-    m_nativeResource->createOffscreenWindow(&m_bufferHandle);
+    NativeWrapper::createOffScreenWindow(&m_bufferHandle, (attributes & GLPlatformSurface::SupportAlpha), visualId);
 
     if (!m_bufferHandle) {
         destroy();
@@ -75,6 +68,11 @@ EGLWindowTransportSurface::EGLWindowTransportSurface()
         LOG_ERROR("Failed to create EGL surface(%d).", eglGetError());
         destroy();
     }
+}
+
+GLPlatformSurface::SurfaceAttributes EGLWindowTransportSurface::attributes() const
+{
+    return m_configSelector->attributes();
 }
 
 EGLWindowTransportSurface::~EGLWindowTransportSurface()
@@ -108,10 +106,9 @@ void EGLWindowTransportSurface::swapBuffers()
 
 void EGLWindowTransportSurface::destroy()
 {
-    m_nativeResource->destroyWindow(m_bufferHandle);
+    GLTransportSurface::destroy();
+    NativeWrapper::destroyWindow(m_bufferHandle);
     freeEGLResources();
-    m_nativeResource = nullptr;
-    m_configSelector = nullptr;
     m_bufferHandle = 0;
 }
 
@@ -133,8 +130,8 @@ void EGLWindowTransportSurface::freeEGLResources()
 
 void EGLWindowTransportSurface::setGeometry(const IntRect& newRect)
 {
-    GLPlatformSurface::setGeometry(newRect);
-    m_nativeResource->reSizeWindow(newRect, m_bufferHandle);
+    GLTransportSurface::setGeometry(newRect);
+    NativeWrapper::resizeWindow(newRect, m_bufferHandle);
 }
 
 }

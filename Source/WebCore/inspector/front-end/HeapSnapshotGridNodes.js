@@ -350,6 +350,7 @@ WebInspector.HeapSnapshotGenericObjectNode = function(tree, node)
     if (!node)
         return;
     this._name = node.name;
+    this._displayName = node.displayName;
     this._type = node.type;
     this._distance = node.distance;
     this._shallowSize = node.selfSize;
@@ -358,7 +359,7 @@ WebInspector.HeapSnapshotGenericObjectNode = function(tree, node)
     this.snapshotNodeIndex = node.nodeIndex;
     if (this._type === "string")
         this._reachableFromWindow = true;
-    else if (this._type === "object" && this.isWindow(this._name)) {
+    else if (this._type === "object" && this._name.startsWith("Window")) {
         this._name = this.shortenWindowURL(this._name, false);
         this._reachableFromWindow = true;
     } else if (node.canBeQueried)
@@ -383,19 +384,31 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
         var div = document.createElement("div");
         div.className = "source-code event-properties";
         div.style.overflow = "visible";
+
         var data = this.data["object"];
         if (this._prefixObjectCell)
             this._prefixObjectCell(div, data);
+
         var valueSpan = document.createElement("span");
         valueSpan.className = "value console-formatted-" + data.valueStyle;
         valueSpan.textContent = data.value;
         div.appendChild(valueSpan);
+
+        if (this.data.displayName) {
+            var nameSpan = document.createElement("span");
+            nameSpan.className = "name console-formatted-name";
+            nameSpan.textContent = " " + this.data.displayName;
+            div.appendChild(nameSpan);
+        }
+
         var idSpan = document.createElement("span");
         idSpan.className = "console-formatted-id";
         idSpan.textContent = " @" + data["nodeId"];
         div.appendChild(idSpan);
+
         if (this._postfixObjectCell)
             this._postfixObjectCell(div, data);
+
         cell.appendChild(div);
         cell.addStyleClass("disclosure");
         if (this.depth)
@@ -444,6 +457,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
             valueStyle += " detached-dom-tree-node";
         data["object"] = { valueStyle: valueStyle, value: value, nodeId: this.snapshotNodeId };
 
+        data["displayName"] = this._displayName;
         data["distance"] =  this._distance;
         data["shallowSize"] = Number.withThousandsSeparator(this._shallowSize);
         data["retainedSize"] = Number.withThousandsSeparator(this._retainedSize);
@@ -465,7 +479,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
                 else
                     callback(WebInspector.RemoteObject.fromPrimitiveValue(WebInspector.UIString("Not available")));
             }
-            ProfilerAgent.getObjectByHeapObjectId(String(this.snapshotNodeId), objectGroupName, formatResult);
+            HeapProfilerAgent.getObjectByHeapObjectId(String(this.snapshotNodeId), objectGroupName, formatResult);
         }
     },
 
@@ -486,11 +500,6 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
             this.hasChildren = !isEmpty;
         }
         this._provider().isEmpty(isEmptyCallback.bind(this));
-    },
-
-    isWindow: function(fullName)
-    {
-        return fullName.substr(0, 9) === "Window";
     },
 
     shortenWindowURL: function(fullName, hasObjectId)
@@ -539,16 +548,11 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
     {
         var tree = this._dataGrid;
         var showHiddenData = WebInspector.settings.showHeapSnapshotObjectsHiddenProperties.get();
-        var filter = "function(edge) {\n" +
-                     "    return !edge.isInvisible()\n" +
-                     "        && (" + !tree.showRetainingEdges + " || (edge.node().id() !== 1 && !edge.node().isSynthetic() && !edge.isWeak()))\n" +
-                     "        && (" + showHiddenData + " || (!edge.isHidden() && !edge.node().isHidden()));\n" +
-                     "}\n";
         var snapshot = this._isFromBaseSnapshot ? tree.baseSnapshot : tree.snapshot;
         if (this.showRetainingEdges)
-            return snapshot.createRetainingEdgesProvider(this.snapshotNodeIndex, filter);
+            return snapshot.createRetainingEdgesProvider(this.snapshotNodeIndex, showHiddenData);
         else
-            return snapshot.createEdgesProvider(this.snapshotNodeIndex, filter);
+            return snapshot.createEdgesProvider(this.snapshotNodeIndex, showHiddenData);
     },
 
     _findAncestorWithSameSnapshotNodeId: function()
@@ -658,10 +662,7 @@ WebInspector.HeapSnapshotInstanceNode.prototype = {
         var showHiddenData = WebInspector.settings.showHeapSnapshotObjectsHiddenProperties.get();
         return this._baseSnapshotOrSnapshot.createEdgesProvider(
             this.snapshotNodeIndex,
-            "function(edge) {" +
-            "    return !edge.isInvisible()" +
-            "        && (" + showHiddenData + " || (!edge.isHidden() && !edge.node().isHidden()));" +
-            "}");
+            showHiddenData);
     },
 
     _createChildNode: function(item)

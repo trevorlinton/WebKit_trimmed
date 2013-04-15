@@ -36,6 +36,7 @@
 #include "JSArray.h"
 #include "JSFunction.h"
 #include "Interpreter.h"
+#include "Operations.h"
 #include "ResultType.h"
 #include "SamplingTool.h"
 
@@ -466,6 +467,8 @@ void JIT::emit_op_post_inc(Instruction* currentInstruction)
     emitStoreInt32(srcDst, regT2, true);
 
     emitStoreAndMapInt32(dst, regT1, regT0, false, OPCODE_LENGTH(op_post_inc));
+    if (canBeOptimizedOrInlined())
+        unmap();
 }
 
 void JIT::emitSlow_op_post_inc(Instruction* currentInstruction, Vector<SlowCaseEntry>::iterator& iter)
@@ -501,6 +504,8 @@ void JIT::emit_op_post_dec(Instruction* currentInstruction)
     emitStoreInt32(srcDst, regT2, true);
 
     emitStoreAndMapInt32(dst, regT1, regT0, false, OPCODE_LENGTH(op_post_dec));
+    if (canBeOptimizedOrInlined())
+        unmap();
 }
 
 void JIT::emitSlow_op_post_dec(Instruction* currentInstruction, Vector<SlowCaseEntry>::iterator& iter)
@@ -907,7 +912,7 @@ void JIT::emitBinaryDoubleOp(OpcodeID opcodeID, unsigned dst, unsigned op1, unsi
                 addJump(branchDouble(DoubleGreaterThanOrUnordered, fpRegT0, fpRegT2), dst);
                 break;
             default:
-                ASSERT_NOT_REACHED();
+                RELEASE_ASSERT_NOT_REACHED();
         }
 
         if (!notInt32Op2.empty())
@@ -1011,7 +1016,7 @@ void JIT::emitBinaryDoubleOp(OpcodeID opcodeID, unsigned dst, unsigned op1, unsi
                 addJump(branchDouble(DoubleGreaterThanOrUnordered, fpRegT1, fpRegT0), dst);
                 break;
             default:
-                ASSERT_NOT_REACHED();
+                RELEASE_ASSERT_NOT_REACHED();
         }
     }
 
@@ -1252,7 +1257,7 @@ void JIT::emitSlow_op_mod(Instruction* currentInstruction, Vector<SlowCaseEntry>
     UNUSED_PARAM(iter);
     // We would have really useful assertions here if it wasn't for the compiler's
     // insistence on attribute noreturn.
-    // ASSERT_NOT_REACHED();
+    // RELEASE_ASSERT_NOT_REACHED();
 #endif
 }
 

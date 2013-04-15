@@ -63,6 +63,14 @@ public:
     static bool webkitIndexedDBEnabled() { return isIndexedDBEnabled; }
     static bool indexedDBEnabled() { return isIndexedDBEnabled; }
 
+#if ENABLE(CANVAS_PATH)
+    static void setCanvasPathEnabled(bool isEnabled) { isCanvasPathEnabled = isEnabled; }
+    static bool canvasPathEnabled() { return isCanvasPathEnabled; }
+#else
+    static void setCanvasPathEnabled(bool) { }
+    static bool canvasPathEnabled() { return false; }
+#endif
+
 #if ENABLE(CSS_EXCLUSIONS)
     static void setCSSExclusionsEnabled(bool isEnabled) { isCSSExclusionsEnabled = isEnabled; }
     static bool cssExclusionsEnabled() { return isCSSExclusionsEnabled; }
@@ -210,6 +218,11 @@ public:
     static void setAuthorShadowDOMForAnyElementEnabled(bool isEnabled) { isAuthorShadowDOMForAnyElementEnabled = isEnabled; }
 #endif
 
+#if ENABLE(CUSTOM_ELEMENTS)
+    static bool customDOMElementsEnabled() { return isCustomDOMElementsEnabled; }
+    static void setCustomDOMElements(bool isEnabled) { isCustomDOMElementsEnabled = isEnabled; }
+#endif
+
 #if ENABLE(STYLE_SCOPED)
     static bool styleScopedEnabled() { return isStyleScopedEnabled; }
     static void setStyleScopedEnabled(bool isEnabled) { isStyleScopedEnabled = isEnabled; }
@@ -255,6 +268,11 @@ public:
     static void setExperimentalContentSecurityPolicyFeaturesEnabled(bool isEnabled) { areExperimentalContentSecurityPolicyFeaturesEnabled = isEnabled; }
 #endif
 
+#if ENABLE(IFRAME_SEAMLESS)
+    static bool seamlessIFramesEnabled() { return areSeamlessIFramesEnabled; }
+    static void setSeamlessIFramesEnabled(bool isEnabled) { areSeamlessIFramesEnabled = isEnabled; }
+#endif
+
     static bool langAttributeAwareFormControlUIEnabled() { return isLangAttributeAwareFormControlUIEnabled; }
     // The lang attribute support is incomplete and should only be turned on for tests.
     static void setLangAttributeAwareFormControlUIEnabled(bool isEnabled) { isLangAttributeAwareFormControlUIEnabled = isEnabled; }
@@ -262,13 +280,6 @@ public:
 #if ENABLE(REQUEST_AUTOCOMPLETE)
     static bool requestAutocompleteEnabled() { return isRequestAutocompleteEnabled; }
     static void setRequestAutocompleteEnabled(bool isEnabled) { isRequestAutocompleteEnabled = isEnabled; }
-#endif
-
-#if ENABLE(WEB_INTENTS)
-    static bool webkitStartActivityEnabled() { return isWebIntentsEnabled; }
-    static bool webkitIntentEnabled() { return isWebIntentsEnabled; }
-    static bool webKitIntentEnabled() { return isWebIntentsEnabled; }
-    static void setWebIntentsEnabled(bool isEnabled) { isWebIntentsEnabled = isEnabled; }
 #endif
 
 private:
@@ -287,6 +298,7 @@ private:
     static bool isDeviceMotionEnabled;
     static bool isDeviceOrientationEnabled;
     static bool isSpeechInputEnabled;
+    static bool isCanvasPathEnabled;
     static bool isCSSExclusionsEnabled;
     static bool isCSSRegionsEnabled;
     WEBCORE_TESTING static bool isLangAttributeAwareFormControlUIEnabled;
@@ -336,6 +348,10 @@ private:
     static bool isAuthorShadowDOMForAnyElementEnabled;
 #endif
 
+#if ENABLE(CUSTOM_ELEMENTS)
+    static bool isCustomDOMElementsEnabled;
+#endif
+
 #if ENABLE(STYLE_SCOPED)
     static bool isStyleScopedEnabled;
 #endif
@@ -376,8 +392,8 @@ private:
     static bool areExperimentalContentSecurityPolicyFeaturesEnabled;
 #endif
 
-#if ENABLE(WEB_INTENTS)
-    static bool isWebIntentsEnabled;
+#if ENABLE(IFRAME_SEAMLESS)
+    static bool areSeamlessIFramesEnabled;
 #endif
 
 };

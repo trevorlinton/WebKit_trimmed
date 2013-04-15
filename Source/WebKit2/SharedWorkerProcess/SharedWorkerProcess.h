@@ -48,25 +48,21 @@ private:
     ~SharedWorkerProcess();
 
     // ChildProcess
+    virtual void initializeProcessName(const ChildProcessInitializationParameters&) OVERRIDE;
     virtual bool shouldTerminate() OVERRIDE;
 
     // CoreIPC::Connection::Client
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
+    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
     virtual void didClose(CoreIPC::Connection*);
     virtual void didReceiveInvalidMessage(CoreIPC::Connection*, CoreIPC::StringReference messageReceiverName, CoreIPC::StringReference messageName) OVERRIDE;
 
     // Message handlers.
-    void didReceiveSharedWorkerProcessMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
+    void didReceiveSharedWorkerProcessMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
     void initializeSharedWorkerProcess(const SharedWorkerProcessCreationParameters&);
     void createWebProcessConnection();
 
-    void platformInitializeSharedWorkerProcess(const SharedWorkerProcessCreationParameters&);
-    
     void setMinimumLifetime(double);
     void minimumLifetimeTimerFired();
-
-    // The connection to the UI process.
-    RefPtr<CoreIPC::Connection> m_connection;
 
     // Our web process connections.
     Vector<RefPtr<WebProcessConnection> > m_webProcessConnections;

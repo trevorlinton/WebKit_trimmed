@@ -78,12 +78,12 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGSVGElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_LOCAL_ANIMATED_PROPERTY(viewBox)
     REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledLocatableElement)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledTransformableElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGSVGElement::SVGSVGElement(const QualifiedName& tagName, Document* doc)
-    : SVGStyledLocatableElement(tagName, doc)
+    : SVGStyledTransformableElement(tagName, doc)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
     , m_width(LengthModeWidth, "100%")
@@ -117,7 +117,7 @@ void SVGSVGElement::didMoveToNewDocument(Document* oldDocument)
     if (oldDocument)
         oldDocument->unregisterForPageCacheSuspensionCallbacks(this);
     document()->registerForPageCacheSuspensionCallbacks(this);
-    SVGStyledLocatableElement::didMoveToNewDocument(oldDocument);
+    SVGStyledTransformableElement::didMoveToNewDocument(oldDocument);
 }
 
 const AtomicString& SVGSVGElement::contentScriptType() const
@@ -275,7 +275,7 @@ void SVGSVGElement::parseAttribute(const QualifiedName& name, const AtomicString
                || SVGFitToViewBox::parseAttribute(this, name, value)
                || SVGZoomAndPan::parseAttribute(this, name, value)) {
     } else
-        SVGStyledLocatableElement::parseAttribute(name, value);
+        SVGStyledTransformableElement::parseAttribute(name, value);
 
     reportAttributeParsingError(parseError, name, value);
 }
@@ -510,14 +510,14 @@ Node::InsertionNotificationRequest SVGSVGElement::insertedInto(ContainerNode* ro
         if (!document()->parsing() && !document()->processingLoadEvent() && document()->loadEventFinished() && !timeContainer()->isStarted())
             timeContainer()->begin();
     }
-    return SVGStyledLocatableElement::insertedInto(rootParent);
+    return SVGStyledTransformableElement::insertedInto(rootParent);
 }
 
 void SVGSVGElement::removedFrom(ContainerNode* rootParent)
 {
     if (rootParent->inDocument())
         document()->accessSVGExtensions()->removeTimeContainer(this);
-    SVGStyledLocatableElement::removedFrom(rootParent);
+    SVGStyledTransformableElement::removedFrom(rootParent);
 }
 
 void SVGSVGElement::pauseAnimations()
@@ -544,7 +544,7 @@ float SVGSVGElement::getCurrentTime() const
 
 void SVGSVGElement::setCurrentTime(float seconds)
 {
-    if (isnan(seconds))
+    if (std::isnan(seconds))
         return;
     seconds = max(seconds, 0.0f);
     m_timeContainer->setElapsed(seconds);
@@ -598,7 +598,7 @@ FloatSize SVGSVGElement::currentViewportSize() const
     }
 
     FloatRect viewportRect = toRenderSVGViewportContainer(renderer())->viewport();
-    return FloatSize(viewportRect.width() / renderer()->style()->effectiveZoom(), viewportRect.height() / renderer()->style()->effectiveZoom());
+    return FloatSize(viewportRect.width(), viewportRect.height());
 }
 
 bool SVGSVGElement::widthAttributeEstablishesViewport() const

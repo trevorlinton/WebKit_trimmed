@@ -1,4 +1,5 @@
 list(APPEND WebCore_INCLUDE_DIRECTORIES
+    "${WEBCORE_DIR}/editing/atk"
     "${WEBCORE_DIR}/page/efl"
     "${WEBCORE_DIR}/platform/cairo"
     "${WEBCORE_DIR}/platform/efl"
@@ -33,6 +34,8 @@ list(APPEND WebCore_SOURCES
     accessibility/atk/WebKitAccessibleWrapperAtk.cpp
 
     editing/SmartReplaceICU.cpp
+
+    editing/atk/FrameSelectionAtk.cpp
 
     page/efl/DragControllerEfl.cpp
     page/efl/EventHandlerEfl.cpp
@@ -121,18 +124,16 @@ list(APPEND WebCore_SOURCES
     platform/graphics/gstreamer/GStreamerUtilities.cpp
     platform/graphics/gstreamer/GStreamerVersioning.cpp
     platform/graphics/gstreamer/ImageGStreamerCairo.cpp
+    platform/graphics/gstreamer/MediaPlayerPrivateGStreamerBase.cpp
     platform/graphics/gstreamer/MediaPlayerPrivateGStreamer.cpp
     platform/graphics/gstreamer/PlatformVideoWindowEfl.cpp
     platform/graphics/gstreamer/VideoSinkGStreamer.cpp
     platform/graphics/gstreamer/WebKitWebSourceGStreamer.cpp
 
     platform/graphics/harfbuzz/HarfBuzzShaperBase.cpp
-    platform/graphics/harfbuzz/ng/HarfBuzzNGFaceCairo.cpp
-    platform/graphics/harfbuzz/ng/HarfBuzzNGFace.cpp
-    platform/graphics/harfbuzz/ng/HarfBuzzShaper.cpp
-
-    platform/graphics/surfaces/glx/GLXContext.cpp
-    platform/graphics/surfaces/glx/GLXSurface.cpp
+    platform/graphics/harfbuzz/HarfBuzzFaceCairo.cpp
+    platform/graphics/harfbuzz/HarfBuzzFace.cpp
+    platform/graphics/harfbuzz/HarfBuzzShaper.cpp
 
     platform/graphics/WOFFFileFormat.cpp
 
@@ -150,6 +151,7 @@ list(APPEND WebCore_SOURCES
     platform/network/soup/CredentialStorageSoup.cpp
     platform/network/soup/DNSSoup.cpp
     platform/network/soup/GOwnPtrSoup.cpp
+    platform/network/soup/NetworkStorageSessionSoup.cpp
     platform/network/soup/ProxyResolverSoup.cpp
     platform/network/soup/ProxyServerSoup.cpp
     platform/network/soup/ResourceErrorSoup.cpp
@@ -166,6 +168,7 @@ list(APPEND WebCore_SOURCES
 
     platform/text/efl/TextBreakIteratorInternalICUEfl.cpp
     platform/text/enchant/TextCheckerEnchant.cpp
+    platform/text/LocaleICU.cpp
     platform/text/TextBreakIteratorICU.cpp
     platform/text/TextCodecICU.cpp
     platform/text/TextEncodingDetectorICU.cpp
@@ -265,7 +268,6 @@ if (ENABLE_VIDEO OR ENABLE_WEB_AUDIO)
         ${GSTREAMER_INCLUDE_DIRS}
         ${GSTREAMER_BASE_INCLUDE_DIRS}
         ${GSTREAMER_APP_INCLUDE_DIRS}
-        ${GSTREAMER_INTERFACES_INCLUDE_DIRS}
         ${GSTREAMER_PBUTILS_INCLUDE_DIRS}
     )
 
@@ -273,7 +275,6 @@ if (ENABLE_VIDEO OR ENABLE_WEB_AUDIO)
         ${GSTREAMER_LIBRARIES}
         ${GSTREAMER_BASE_LIBRARIES}
         ${GSTREAMER_APP_LIBRARIES}
-        ${GSTREAMER_INTERFACES_LIBRARIES}
         ${GSTREAMER_PBUTILS_LIBRARIES}
     )
     # Avoiding a GLib deprecation warning due to GStreamer API using deprecated classes.
@@ -315,11 +316,11 @@ if (WTF_USE_3D_GRAPHICS)
         platform/graphics/opengl/GLPlatformContext.cpp
         platform/graphics/opengl/GLPlatformSurface.cpp
         platform/graphics/opengl/GraphicsContext3DOpenGLCommon.cpp
+        platform/graphics/surfaces/GLTransportSurface.cpp
         platform/graphics/surfaces/GraphicsSurface.cpp
-        platform/graphics/surfaces/glx/GraphicsSurfaceGLX.cpp
-        platform/graphics/surfaces/glx/X11WindowResources.cpp
+        platform/graphics/surfaces/glx/X11Helper.cpp
         platform/graphics/texmap/TextureMapperGL.cpp
-        platform/graphics/texmap/TextureMapperShaderManager.cpp
+        platform/graphics/texmap/TextureMapperShaderProgram.cpp
     )
 
     if (WTF_USE_EGL)
@@ -327,6 +328,12 @@ if (WTF_USE_3D_GRAPHICS)
             platform/graphics/surfaces/egl/EGLConfigSelector.cpp
             platform/graphics/surfaces/egl/EGLContext.cpp
             platform/graphics/surfaces/egl/EGLSurface.cpp
+        )
+    else ()
+        list(APPEND WebCore_SOURCES
+            platform/graphics/surfaces/glx/GLXContext.cpp
+            platform/graphics/surfaces/glx/GLXSurface.cpp
+            platform/graphics/surfaces/glx/GraphicsSurfaceGLX.cpp
         )
     endif ()
 

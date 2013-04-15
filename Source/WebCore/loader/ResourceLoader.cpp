@@ -155,7 +155,7 @@ void ResourceLoader::start()
     ASSERT(m_deferredRequest.isNull());
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
-    if (m_documentLoader->scheduleArchiveLoad(this, m_request, m_request.url()))
+    if (m_documentLoader->scheduleArchiveLoad(this, m_request))
         return;
 #endif
 
@@ -235,14 +235,23 @@ void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceRes
 
     ASSERT(!m_reachedTerminalState);
 
+    // We need a resource identifier for all requests, even if FrameLoader is never going to see it (such as with CORS preflight requests).
+    bool createdResourceIdentifier = false;
+    if (!m_identifier) {
+        m_identifier = m_frame->page()->progress()->createUniqueIdentifier();
+        createdResourceIdentifier = true;
+    }
+
     if (m_options.sendLoadCallbacks == SendCallbacks) {
-        if (!m_identifier) {
-            m_identifier = m_frame->page()->progress()->createUniqueIdentifier();
+        if (createdResourceIdentifier)
             frameLoader()->notifier()->assignIdentifierToInitialRequest(m_identifier, documentLoader(), request);
-        }
 
         frameLoader()->notifier()->willSendRequest(this, request, redirectResponse);
     }
+#if ENABLE(INSPECTOR)
+    else
+        InspectorInstrumentation::willSendRequest(m_frame.get(), m_identifier, m_frame->loader()->documentLoader(), request, redirectResponse);
+#endif
 
     if (!redirectResponse.isNull()) {
 #if USE(PLATFORM_STRATEGIES)
@@ -353,6 +362,14 @@ void ResourceLoader::didFail(const ResourceError& error)
     }
 
     releaseResources();
+}
+
+void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority)
+{
+    if (handle()) {
+        frameLoader()->client()->dispatchDidChangeResourcePriority(identifier(), loadPriority);
+        handle()->didChangePriority(loadPriority);
+    }
 }
 
 void ResourceLoader::cancel()
@@ -485,7 +502,7 @@ bool ResourceLoader::shouldUseCredentialStorage()
 
 void ResourceLoader::didReceiveAuthenticationChallenge(const AuthenticationChallenge& challenge)
 {
-    ASSERT(!handle() || handle()->hasAuthenticationChallenge());
+    ASSERT(handle()->hasAuthenticationChallenge());
 
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
@@ -539,24 +556,14 @@ AsyncFileStream* ResourceLoader::createAsyncFileStream(FileStreamClient* client)
 void ResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
-    info.addMember(m_handle.get());
-    info.addMember(m_frame);
-    info.addMember(m_documentLoader);
-    info.addMember(m_request);
-    info.addMember(m_originalRequest);
-    info.addMember(m_resourceData);
-    info.addMember(m_deferredRequest);
-    info.addMember(m_options);
+    info.addMember(m_handle, "handle");
+    info.addMember(m_frame, "frame");
+    info.addMember(m_documentLoader, "documentLoader");
+    info.addMember(m_request, "request");
+    info.addMember(m_originalRequest, "originalRequest");
+    info.addMember(m_resourceData, "resourceData");
+    info.addMember(m_deferredRequest, "deferredRequest");
+    info.addMember(m_options, "options");
 }
-
-#if PLATFORM(MAC)
-void ResourceLoader::setIdentifier(unsigned long identifier)
-{
-    // FIXME (NetworkProcess): This is temporary to allow WebKit to directly set the identifier on a ResourceLoader.
-    // More permanently we'll want the identifier to be piped through ResourceLoader::init/start so
-    // it always has it, especially in willSendRequest.
-    m_identifier = identifier;
-}
-#endif
 
 }

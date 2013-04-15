@@ -25,11 +25,13 @@
 
 #include "RenderStyle.h"
 #include <wtf/OwnPtr.h>
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
 class HTMLImageLoader;
 class FrameLoader;
+class Image;
 class MouseEvent;
 class Widget;
 
@@ -37,18 +39,20 @@ enum PluginCreationOption {
     CreateAnyWidgetType,
     CreateOnlyNonNetscapePlugins,
 };
-    
+
 enum PreferPlugInsForImagesOption {
     ShouldPreferPlugInsForImages,
     ShouldNotPreferPlugInsForImages
 };
 
 // Base class for HTMLObjectElement and HTMLEmbedElement
-class HTMLPlugInImageElement : public HTMLPlugInElement, public ImageLoaderClientBase<HTMLPlugInImageElement> {
+class HTMLPlugInImageElement : public HTMLPlugInElement {
 public:
     virtual ~HTMLPlugInImageElement();
 
     RenderEmbeddedObject* renderEmbeddedObject() const;
+
+    virtual void setDisplayState(DisplayState) OVERRIDE;
 
     virtual void updateWidget(PluginCreationOption) = 0;
 
@@ -61,6 +65,8 @@ public:
     void setNeedsWidgetUpdate(bool needsWidgetUpdate) { m_needsWidgetUpdate = needsWidgetUpdate; }
 
     void userDidClickSnapshot(PassRefPtr<MouseEvent>);
+    void updateSnapshotInfo();
+    Image* snapshotImage() const { return m_snapshotImage.get(); }
 
     // Plug-in URL might not be the same as url() with overriding parameters.
     void subframeLoaderWillCreatePlugIn(const KURL& plugInURL);
@@ -92,15 +98,21 @@ protected:
 private:
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool willRecalcStyle(StyleChange);
-    
+
+    void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+
     virtual void finishParsingChildren();
 
     void updateWidgetIfNecessary();
     virtual bool useFallbackContent() const { return false; }
-    
+
     virtual void updateSnapshot(PassRefPtr<Image>) OVERRIDE;
     virtual void dispatchPendingMouseClick() OVERRIDE;
     void simulatedMouseClickTimerFired(DeferrableOneShotTimer<HTMLPlugInImageElement>*);
+
+    void swapRendererTimerFired(Timer<HTMLPlugInImageElement>*);
+
+    virtual bool isPlugInImageElement() const OVERRIDE { return true; }
 
     bool m_needsWidgetUpdate;
     bool m_shouldPreferPlugInsForImages;
@@ -108,6 +120,8 @@ private:
     RefPtr<RenderStyle> m_customStyleForPageCache;
     RefPtr<MouseEvent> m_pendingClickEventFromSnapshot;
     DeferrableOneShotTimer<HTMLPlugInImageElement> m_simulatedMouseClickTimer;
+    Timer<HTMLPlugInImageElement> m_swapRendererTimer;
+    RefPtr<Image> m_snapshotImage;
 };
 
 } // namespace WebCore

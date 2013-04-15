@@ -37,6 +37,7 @@
 #include "Page.h"
 #include "PasteboardHelper.h"
 #include "PlatformKeyboardEvent.h"
+#include "StylePropertySet.h"
 #include "UndoStep.h"
 #include "WebKitDOMBinding.h"
 #include "WebKitDOMCSSStyleDeclarationPrivate.h"
@@ -91,14 +92,6 @@ bool EditorClient::shouldDeleteRange(Range* range)
     gboolean accept = TRUE;
     GRefPtr<WebKitDOMRange> kitRange(adoptGRef(kit(range)));
     g_signal_emit_by_name(m_webView, "should-delete-range", kitRange.get(), &accept);
-    return accept;
-}
-
-bool EditorClient::shouldShowDeleteInterface(HTMLElement* element)
-{
-    gboolean accept = FALSE;
-    GRefPtr<WebKitDOMHTMLElement> kitElement(adoptGRef(kit(element)));
-    g_signal_emit_by_name(m_webView, "should-show-delete-interface-for-element", kitElement.get(), &accept);
     return accept;
 }
 
@@ -262,12 +255,7 @@ void EditorClient::respondToChangedSelection(Frame* frame)
     setSelectionPrimaryClipboardIfNeeded(m_webView);
 #endif
 
-    if (!frame->editor()->hasComposition() || frame->editor()->ignoreCompositionSelectionChange())
-        return;
-
-    unsigned start;
-    unsigned end;
-    if (!frame->editor()->getCompositionSelection(start, end))
+    if (frame->editor()->cancelCompositionIfSelectionIsInvalid())
         m_webView->priv->imFilter.resetContext();
 }
 
@@ -279,6 +267,14 @@ void EditorClient::didEndEditing()
 void EditorClient::didWriteSelectionToPasteboard()
 {
     notImplemented();
+}
+
+void EditorClient::willWriteSelectionToPasteboard(WebCore::Range*)
+{
+}
+
+void EditorClient::getClientPasteboardDataForRange(WebCore::Range*, Vector<String>&, Vector<RefPtr<WebCore::SharedBuffer> >&)
+{
 }
 
 void EditorClient::didSetSelectionTypesForPasteboard()
@@ -464,6 +460,7 @@ void EditorClient::handleKeyboardEvent(KeyboardEvent* event)
             event->setDefaultHandled();
             return;
         }
+        m_pendingEditorCommands.clear();
     }
 
     // Don't allow text insertion for nodes that cannot edit.

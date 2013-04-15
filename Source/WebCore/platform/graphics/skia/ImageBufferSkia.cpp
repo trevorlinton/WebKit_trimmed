@@ -129,6 +129,11 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, ColorSpace,
     }
 
     SkAutoTUnref<SkDevice> device(compatibleContext->platformContext()->createCompatibleDevice(size, hasAlpha));
+    if (!device.get()) {
+        success = false;
+        return;
+    }
+
     SkPixelRef* pixelRef = device->accessBitmap(false).pixelRef();
     if (!pixelRef) {
         success = false;
@@ -138,7 +143,7 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, ColorSpace,
     m_data.m_canvas = adoptPtr(new SkCanvas(device));
     m_data.m_platformContext.setCanvas(m_data.m_canvas.get());
     m_context = adoptPtr(new GraphicsContext(&m_data.m_platformContext));
-    m_context->platformContext()->setDrawingToImageBuffer(true);
+    m_context->setShouldSmoothFonts(false);
     m_context->scale(FloatSize(m_resolutionScale, m_resolutionScale));
 
     success = true;
@@ -168,7 +173,7 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, ColorSpace,
     m_data.m_canvas = canvas.release();
     m_data.m_platformContext.setCanvas(m_data.m_canvas.get());
     m_context = adoptPtr(new GraphicsContext(&m_data.m_platformContext));
-    m_context->platformContext()->setDrawingToImageBuffer(true);
+    m_context->setShouldSmoothFonts(false);
     m_context->scale(FloatSize(m_resolutionScale, m_resolutionScale));
 
     // Make the background transparent. It would be nice if this wasn't
@@ -417,10 +422,10 @@ String ImageBuffer::toDataURL(const String& mimeType, const double* quality, Coo
 void ImageBufferData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_canvas);
-    info.addMember(m_platformContext);
+    info.addMember(m_canvas, "canvas");
+    info.addMember(m_platformContext, "platformContext");
 #if USE(ACCELERATED_COMPOSITING)
-    info.addMember(m_layerBridge);
+    info.addMember(m_layerBridge, "layerBridge");
 #endif
 }
 

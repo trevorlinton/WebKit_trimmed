@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import StringIO
-import unittest
+import unittest2 as unittest
 
 from webkitpy.common.system.executive import ScriptError
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
@@ -105,5 +105,5 @@ class WinPortTest(port_testcase.PortTestCase):
         self.assertEqual(port._runtime_feature_list(), ['foo', 'bar'])
 
     def test_expectations_files(self):
-        self.assertEqual(len(self.make_port().expectations_files()), 2)
-        self.assertEqual(len(self.make_port(options=MockOptions(webkit_test_runner=True, configuration='Release')).expectations_files()), 4)
+        self.assertEqual(len(self.make_port().expectations_files()), 3)
+        self.assertEqual(len(self.make_port(options=MockOptions(webkit_test_runner=True, configuration='Release')).expectations_files()), 5)

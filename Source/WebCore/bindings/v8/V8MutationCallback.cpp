@@ -35,13 +35,13 @@
 
 namespace WebCore {
 
-V8MutationCallback::V8MutationCallback(v8::Handle<v8::Object> callback, ScriptExecutionContext* context, v8::Handle<v8::Object> owner)
+V8MutationCallback::V8MutationCallback(v8::Handle<v8::Object> callback, ScriptExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
     : ActiveDOMCallback(context)
     , m_callback(callback)
-    , m_worldContext(UseCurrentWorld)
+    , m_world(DOMWrapperWorld::isolatedWorld(v8::Context::GetCurrent()))
 {
     owner->SetHiddenValue(V8HiddenPropertyName::callback(), callback);
-    m_callback.get().MakeWeak(this, &V8MutationCallback::weakCallback);
+    m_callback.get().MakeWeak(isolate, this, &V8MutationCallback::weakCallback);
 }
 
 bool V8MutationCallback::handleEvent(MutationRecordArray* mutations, MutationObserver* observer)
@@ -55,7 +55,7 @@ bool V8MutationCallback::handleEvent(MutationRecordArray* mutations, MutationObs
 
     v8::HandleScope handleScope;
 
-    v8::Handle<v8::Context> v8Context = toV8Context(scriptExecutionContext(), m_worldContext);
+    v8::Handle<v8::Context> v8Context = toV8Context(scriptExecutionContext(), m_world.get());
     if (v8Context.IsEmpty())
         return true;
 
@@ -63,9 +63,9 @@ bool V8MutationCallback::handleEvent(MutationRecordArray* mutations, MutationObs
 
     v8::Local<v8::Array> mutationsArray = v8::Array::New(mutations->size());
     for (size_t i = 0; i < mutations->size(); ++i)
-        mutationsArray->Set(deprecatedV8Integer(i), toV8(mutations->at(i).get()));
+        mutationsArray->Set(v8Integer(i, v8Context->GetIsolate()), toV8(mutations->at(i).get(), v8::Handle<v8::Object>(), v8Context->GetIsolate()));
 
-    v8::Handle<v8::Value> observerHandle = toV8(observer);
+    v8::Handle<v8::Value> observerHandle = toV8(observer, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (observerHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();

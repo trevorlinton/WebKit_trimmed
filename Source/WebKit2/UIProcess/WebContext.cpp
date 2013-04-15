@@ -61,6 +61,7 @@
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/RunLoop.h>
 #include <runtime/InitializeThreading.h>
+#include <runtime/Operations.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/MainThread.h>
 
@@ -105,9 +106,6 @@ PassRefPtr<WebContext> WebContext::create(const String& injectedBundlePath)
     JSC::initializeThreading();
     WTF::initializeMainThread();
     RunLoop::initializeMainRunLoop();
-#if PLATFORM(MAC)
-    WebContext::initializeProcessSuppressionSupport();
-#endif
     return adoptRef(new WebContext(ProcessModelSharedSecondaryProcess, injectedBundlePath));
 }
 
@@ -136,16 +134,16 @@ WebContext::WebContext(ProcessModel processModel, const String& injectedBundlePa
     , m_cacheModel(CacheModelDocumentViewer)
     , m_memorySamplerEnabled(false)
     , m_memorySamplerInterval(1400.0)
-#if PLATFORM(WIN)
-    , m_shouldPaintNativeControls(true)
-    , m_initialHTTPCookieAcceptPolicy(HTTPCookieAcceptPolicyAlways)
-#endif
+    , m_storageManager(StorageManager::create())
 #if USE(SOUP)
     , m_initialHTTPCookieAcceptPolicy(HTTPCookieAcceptPolicyOnlyFromMainDocumentDomain)
 #endif
     , m_processTerminationEnabled(true)
 #if ENABLE(NETWORK_PROCESS)
     , m_usesNetworkProcess(false)
+#endif
+#if PLATFORM(MAC)
+    , m_processSuppressionEnabled(true)
 #endif
 #if USE(SOUP)
     , m_ignoreTLSErrors(true)
@@ -154,7 +152,7 @@ WebContext::WebContext(ProcessModel processModel, const String& injectedBundlePa
     platformInitialize();
 
     addMessageReceiver(Messages::WebContext::messageReceiverName(), this);
-    addMessageReceiver(CoreIPC::MessageKindTraits<WebContextLegacyMessage::Kind>::messageReceiverName(), this);
+    addMessageReceiver(WebContextLegacyMessages::messageReceiverName(), this);
 
     // NOTE: These sub-objects must be initialized after m_messageReceiverMap..
 #if ENABLE(BATTERY_STATUS)
@@ -190,6 +188,8 @@ WebContext::WebContext(ProcessModel processModel, const String& injectedBundlePa
     WebCore::initializeLoggingChannelsIfNecessary();
     WebKit::initializeLogChannelsIfNecessary();
 #endif // !LOG_DISABLED
+
+    m_pluginInfoStore.setClient(this);
 
 #ifndef NDEBUG
     webContextCounter.increment();
@@ -239,7 +239,9 @@ WebContext::~WebContext()
     invalidateCallbackMap(m_dictionaryCallbacks);
 
     platformInvalidateContext();
-    
+
+    m_pluginInfoStore.setClient(0);
+
 #ifndef NDEBUG
     webContextCounter.decrement();
 #endif
@@ -305,9 +307,14 @@ CoreIPC::Connection* WebContext::networkingProcessConnection()
 {
     switch (m_processModel) {
     case ProcessModelSharedSecondaryProcess:
+#if ENABLE(NETWORK_PROCESS)
+        if (m_usesNetworkProcess)
+            return m_networkProcess->connection();
+#endif
         return m_processes[0]->connection();
     case ProcessModelMultipleSecondaryProcesses:
 #if ENABLE(NETWORK_PROCESS)
+        ASSERT(m_usesNetworkProcess);
         return m_networkProcess->connection();
 #else
         break;
@@ -378,7 +385,7 @@ void WebContext::ensureNetworkProcess()
     m_networkProcess->send(Messages::NetworkProcess::InitializeNetworkProcess(parameters), 0);
 }
 
-void WebContext::removeNetworkProcessProxy(NetworkProcessProxy* networkProcessProxy)
+void WebContext::networkProcessCrashed(NetworkProcessProxy* networkProcessProxy)
 {
     ASSERT(m_networkProcess);
     ASSERT(networkProcessProxy == m_networkProcess.get());
@@ -389,6 +396,8 @@ void WebContext::removeNetworkProcessProxy(NetworkProcessProxy* networkProcessPr
         it->value->processDidClose(networkProcessProxy);
 
     m_networkProcess = nullptr;
+
+    m_client.networkProcessDidCrash(this);
 }
 
 void WebContext::getNetworkProcessConnection(PassRefPtr<Messages::WebProcessProxy::GetNetworkProcessConnection::DelayedReply> reply)
@@ -477,7 +486,7 @@ WebProcessProxy* WebContext::createNewWebProcess()
 
     parameters.cookieStorageDirectory = cookieStorageDirectory();
     if (!parameters.cookieStorageDirectory.isEmpty())
-        SandboxExtension::createHandle(parameters.cookieStorageDirectory, SandboxExtension::ReadWrite, parameters.cookieStorageDirectoryExtensionHandle);
+        SandboxExtension::createHandleForReadWriteDirectory(parameters.cookieStorageDirectory, parameters.cookieStorageDirectoryExtensionHandle);
 
     parameters.shouldTrackVisitedLinks = m_historyClient.shouldTrackVisitedLinks();
     parameters.cacheModel = m_cacheModel;
@@ -588,6 +597,16 @@ bool WebContext::shouldTerminate(WebProcessProxy* process)
     return true;
 }
 
+void WebContext::processWillOpenConnection(WebProcessProxy* process)
+{
+    m_storageManager->processWillOpenConnection(process);
+}
+
+void WebContext::processWillCloseConnection(WebProcessProxy* process)
+{
+    m_storageManager->processWillCloseConnection(process);
+}
+
 void WebContext::processDidFinishLaunching(WebProcessProxy* process)
 {
     ASSERT(m_processes.contains(process));
@@ -600,7 +619,7 @@ void WebContext::processDidFinishLaunching(WebProcessProxy* process)
         SandboxExtension::Handle sampleLogSandboxHandle;        
         double now = WTF::currentTime();
         String sampleLogFilePath = String::format("WebProcess%llupid%d", static_cast<unsigned long long>(now), process->processIdentifier());
-        sampleLogFilePath = SandboxExtension::createHandleForTemporaryFile(sampleLogFilePath, SandboxExtension::WriteOnly, sampleLogSandboxHandle);
+        sampleLogFilePath = SandboxExtension::createHandleForTemporaryFile(sampleLogFilePath, SandboxExtension::ReadWrite, sampleLogSandboxHandle);
         
         process->send(Messages::WebProcess::StartMemorySampler(sampleLogSandboxHandle, sampleLogFilePath, m_memorySamplerInterval), 0);
     }
@@ -882,70 +901,66 @@ void WebContext::removeMessageReceiver(CoreIPC::StringReference messageReceiverN
     m_messageReceiverMap.removeMessageReceiver(messageReceiverName, destinationID);
 }
 
-bool WebContext::dispatchMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
+bool WebContext::dispatchMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
 {
-    return m_messageReceiverMap.dispatchMessage(connection, messageID, decoder);
+    return m_messageReceiverMap.dispatchMessage(connection, decoder);
 }
 
-bool WebContext::dispatchSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
+bool WebContext::dispatchSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
 {
-    return m_messageReceiverMap.dispatchSyncMessage(connection, messageID, decoder, replyEncoder);
+    return m_messageReceiverMap.dispatchSyncMessage(connection, decoder, replyEncoder);
 }
 
-void WebContext::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
+void WebContext::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
 {
-    if (messageID.is<CoreIPC::MessageClassWebContext>()) {
-        didReceiveWebContextMessage(connection, messageID, decoder);
+    if (decoder.messageReceiverName() == Messages::WebContext::messageReceiverName()) {
+        didReceiveWebContextMessage(connection, decoder);
         return;
     }
 
-    switch (messageID.get<WebContextLegacyMessage::Kind>()) {
-        case WebContextLegacyMessage::PostMessage: {
-            String messageName;
-            RefPtr<APIObject> messageBody;
-            WebContextUserMessageDecoder messageBodyDecoder(messageBody, WebProcessProxy::fromConnection(connection));
-            if (!decoder.decode(messageName))
-                return;
-            if (!decoder.decode(messageBodyDecoder))
-                return;
-            
-            didReceiveMessageFromInjectedBundle(messageName, messageBody.get());
+    if (decoder.messageReceiverName() == WebContextLegacyMessages::messageReceiverName()
+        && decoder.messageName() == WebContextLegacyMessages::postMessageMessageName()) {
+        String messageName;
+        RefPtr<APIObject> messageBody;
+        WebContextUserMessageDecoder messageBodyDecoder(messageBody, WebProcessProxy::fromConnection(connection));
+        if (!decoder.decode(messageName))
             return;
-        }
-        case WebContextLegacyMessage::PostSynchronousMessage:
-            ASSERT_NOT_REACHED();
+        if (!decoder.decode(messageBodyDecoder))
+            return;
+
+        didReceiveMessageFromInjectedBundle(messageName, messageBody.get());
+        return;
     }
 
     ASSERT_NOT_REACHED();
 }
 
-void WebContext::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
+void WebContext::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
 {
-    if (messageID.is<CoreIPC::MessageClassWebContext>()) {
-        didReceiveSyncWebContextMessage(connection, messageID, decoder, replyEncoder);
+    if (decoder.messageReceiverName() == Messages::WebContext::messageReceiverName()) {
+        didReceiveSyncWebContextMessage(connection, decoder, replyEncoder);
         return;
     }
 
-    switch (messageID.get<WebContextLegacyMessage::Kind>()) {
-        case WebContextLegacyMessage::PostSynchronousMessage: {
-            // FIXME: We should probably encode something in the case that the arguments do not decode correctly.
+    if (decoder.messageReceiverName() == WebContextLegacyMessages::messageReceiverName()
+        && decoder.messageName() == WebContextLegacyMessages::postSynchronousMessageMessageName()) {
+        // FIXME: We should probably encode something in the case that the arguments do not decode correctly.
 
-            String messageName;
-            RefPtr<APIObject> messageBody;
-            WebContextUserMessageDecoder messageBodyDecoder(messageBody, WebProcessProxy::fromConnection(connection));
-            if (!decoder.decode(messageName))
-                return;
-            if (!decoder.decode(messageBodyDecoder))
-                return;
-
-            RefPtr<APIObject> returnData;
-            didReceiveSynchronousMessageFromInjectedBundle(messageName, messageBody.get(), returnData);
-            replyEncoder->encode(WebContextUserMessageEncoder(returnData.get()));
+        String messageName;
+        RefPtr<APIObject> messageBody;
+        WebContextUserMessageDecoder messageBodyDecoder(messageBody, WebProcessProxy::fromConnection(connection));
+        if (!decoder.decode(messageName))
             return;
-        }
-        case WebContextLegacyMessage::PostMessage:
-            ASSERT_NOT_REACHED();
+        if (!decoder.decode(messageBodyDecoder))
+            return;
+
+        RefPtr<APIObject> returnData;
+        didReceiveSynchronousMessageFromInjectedBundle(messageName, messageBody.get(), returnData);
+        replyEncoder->encode(WebContextUserMessageEncoder(returnData.get()));
+        return;
     }
+
+    ASSERT_NOT_REACHED();
 }
 
 void WebContext::setEnhancedAccessibility(bool flag)
@@ -968,7 +983,7 @@ void WebContext::startMemorySampler(const double interval)
     SandboxExtension::Handle sampleLogSandboxHandle;    
     double now = WTF::currentTime();
     String sampleLogFilePath = String::format("WebProcess%llu", static_cast<unsigned long long>(now));
-    sampleLogFilePath = SandboxExtension::createHandleForTemporaryFile(sampleLogFilePath, SandboxExtension::WriteOnly, sampleLogSandboxHandle);
+    sampleLogFilePath = SandboxExtension::createHandleForTemporaryFile(sampleLogFilePath, SandboxExtension::ReadWrite, sampleLogSandboxHandle);
     
     sendToAllProcesses(Messages::WebProcess::StartMemorySampler(sampleLogSandboxHandle, sampleLogFilePath, interval));
 }
@@ -1065,32 +1080,56 @@ bool WebContext::httpPipeliningEnabled() const
 #endif
 }
 
-void WebContext::getWebCoreStatistics(PassRefPtr<DictionaryCallback> callback)
+void WebContext::getStatistics(uint32_t statisticsMask, PassRefPtr<DictionaryCallback> callback)
+{
+    if (!statisticsMask) {
+        callback->invalidate();
+        return;
+    }
+
+    RefPtr<StatisticsRequest> request = StatisticsRequest::create(callback);
+
+    if (statisticsMask & StatisticsRequestTypeWebContent)
+        requestWebContentStatistics(request.get());
+    
+    if (statisticsMask & StatisticsRequestTypeNetworking)
+        requestNetworkingStatistics(request.get());
+}
+
+void WebContext::requestWebContentStatistics(StatisticsRequest* request)
 {
     if (m_processModel == ProcessModelSharedSecondaryProcess) {
-        if (m_processes.isEmpty()) {
-            callback->invalidate();
+        if (m_processes.isEmpty())
             return;
-        }
         
-        uint64_t callbackID = callback->callbackID();
-        m_dictionaryCallbacks.set(callbackID, callback.get());
-        m_processes[0]->send(Messages::WebProcess::GetWebCoreStatistics(callbackID), 0);
+        uint64_t requestID = request->addOutstandingRequest();
+        m_statisticsRequests.set(requestID, request);
+        m_processes[0]->send(Messages::WebProcess::GetWebCoreStatistics(requestID), 0);
 
     } else {
-        // FIXME (Multi-WebProcess): <rdar://problem/12239483> Make downloading work.
-        callback->invalidate();
+        // FIXME (Multi-WebProcess) <rdar://problem/13200059>: Make getting statistics from multiple WebProcesses work.
     }
 }
 
-static PassRefPtr<MutableDictionary> createDictionaryFromHashMap(const HashMap<String, uint64_t>& map)
+void WebContext::requestNetworkingStatistics(StatisticsRequest* request)
 {
-    RefPtr<MutableDictionary> result = MutableDictionary::create();
-    HashMap<String, uint64_t>::const_iterator end = map.end();
-    for (HashMap<String, uint64_t>::const_iterator it = map.begin(); it != end; ++it)
-        result->set(it->key, RefPtr<WebUInt64>(WebUInt64::create(it->value)).get());
-    
-    return result;
+    bool networkProcessUnavailable;
+#if ENABLE(NETWORK_PROCESS)
+    networkProcessUnavailable = !m_usesNetworkProcess || !m_networkProcess;
+#else
+    networkProcessUnavailable = true;
+#endif
+
+    if (networkProcessUnavailable) {
+        LOG_ERROR("Attempt to get NetworkProcess statistics but the NetworkProcess is unavailable");
+        return;
+    }
+
+#if ENABLE(NETWORK_PROCESS)
+    uint64_t requestID = request->addOutstandingRequest();
+    m_statisticsRequests.set(requestID, request);
+    m_networkProcess->send(Messages::NetworkProcess::GetNetworkProcessStatistics(requestID), 0);
+#endif
 }
 
 #if !PLATFORM(MAC)
@@ -1099,25 +1138,15 @@ void WebContext::dummy(bool&)
 }
 #endif
 
-void WebContext::didGetWebCoreStatistics(const StatisticsData& statisticsData, uint64_t callbackID)
+void WebContext::didGetStatistics(const StatisticsData& statisticsData, uint64_t requestID)
 {
-    RefPtr<DictionaryCallback> callback = m_dictionaryCallbacks.take(callbackID);
-    if (!callback) {
-        // FIXME: Log error or assert.
+    RefPtr<StatisticsRequest> request = m_statisticsRequests.take(requestID);
+    if (!request) {
+        LOG_ERROR("Cannot report networking statistics.");
         return;
     }
 
-    RefPtr<MutableDictionary> statistics = createDictionaryFromHashMap(statisticsData.statisticsNumbers);
-    statistics->set("JavaScriptProtectedObjectTypeCounts", createDictionaryFromHashMap(statisticsData.javaScriptProtectedObjectTypeCounts).get());
-    statistics->set("JavaScriptObjectTypeCounts", createDictionaryFromHashMap(statisticsData.javaScriptObjectTypeCounts).get());
-    
-    size_t cacheStatisticsCount = statisticsData.webCoreCacheStatistics.size();
-    Vector<RefPtr<APIObject> > cacheStatisticsVector(cacheStatisticsCount);
-    for (size_t i = 0; i < cacheStatisticsCount; ++i)
-        cacheStatisticsVector[i] = createDictionaryFromHashMap(statisticsData.webCoreCacheStatistics[i]);
-    statistics->set("WebCoreCacheStatistics", ImmutableArray::adopt(cacheStatisticsVector).get());
-    
-    callback->performCallbackWithReturnValue(statistics.get());
+    request->completedRequest(requestID, statisticsData);
 }
     
 void WebContext::garbageCollectJavaScriptObjects()
@@ -1161,5 +1190,34 @@ void WebContext::unregisterSchemeForCustomProtocol(const String& scheme)
     sendToNetworkingProcess(Messages::CustomProtocolManager::UnregisterScheme(scheme));
 }
 #endif
+
+void WebContext::pluginInfoStoreDidLoadPlugins(PluginInfoStore* store)
+{
+    ASSERT(store == &m_pluginInfoStore);
+
+    Vector<RefPtr<APIObject> > pluginArray;
+
+    Vector<PluginModuleInfo> plugins = m_pluginInfoStore.plugins();
+    for (size_t i = 0; i < plugins.size(); ++i) {
+        PluginModuleInfo& plugin = plugins[i];
+        ImmutableDictionary::MapType map;
+        map.set(ASCIILiteral("path"), WebString::create(plugin.path));
+        map.set(ASCIILiteral("name"), WebString::create(plugin.info.name));
+        map.set(ASCIILiteral("file"), WebString::create(plugin.info.file));
+        map.set(ASCIILiteral("desc"), WebString::create(plugin.info.desc));
+        Vector<RefPtr<APIObject> > mimeArray;
+        for (size_t j = 0; j <  plugin.info.mimes.size(); ++j)
+            mimeArray.append(WebString::create(plugin.info.mimes[j].type));
+        map.set(ASCIILiteral("mimes"), ImmutableArray::adopt(mimeArray));
+#if PLATFORM(MAC)
+        map.set(ASCIILiteral("bundleId"), WebString::create(plugin.bundleIdentifier));
+        map.set(ASCIILiteral("version"), WebString::create(plugin.versionString));
+#endif
+
+        pluginArray.append(ImmutableDictionary::adopt(map));
+    }
+
+    m_client.plugInInformationBecameAvailable(this, ImmutableArray::adopt(pluginArray).leakRef());
+}
 
 } // namespace WebKit

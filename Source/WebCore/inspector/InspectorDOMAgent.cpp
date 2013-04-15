@@ -59,13 +59,19 @@
 #include "EventListener.h"
 #include "EventNames.h"
 #include "EventTarget.h"
+#include "File.h"
+#include "FileList.h"
 #include "Frame.h"
 #include "FrameTree.h"
 #include "HTMLElement.h"
 #include "HTMLFrameOwnerElement.h"
+#include "HTMLInputElement.h"
+#include "HTMLNames.h"
+#include "HTMLTemplateElement.h"
 #include "HitTestResult.h"
 #include "IdentifiersFactory.h"
 #include "InjectedScriptManager.h"
+#include "InspectorClient.h"
 #include "InspectorFrontend.h"
 #include "InspectorHistory.h"
 #include "InspectorOverlay.h"
@@ -192,11 +198,12 @@ String InspectorDOMAgent::toErrorString(const ExceptionCode& ec)
     return "";
 }
 
-InspectorDOMAgent::InspectorDOMAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+InspectorDOMAgent::InspectorDOMAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, InspectorClient* client)
     : InspectorBaseAgent<InspectorDOMAgent>("DOM", instrumentingAgents, inspectorState)
     , m_pageAgent(pageAgent)
     , m_injectedScriptManager(injectedScriptManager)
     , m_overlay(overlay)
+    , m_client(client)
     , m_frontend(0)
     , m_domListener(0)
     , m_lastNodeId(1)
@@ -431,16 +438,30 @@ void InspectorDOMAgent::getDocument(ErrorString* errorString, RefPtr<TypeBuilder
     root = buildObjectForNode(m_document.get(), 2, &m_documentNodeToIdMap);
 }
 
-void InspectorDOMAgent::pushChildNodesToFrontend(int nodeId)
+void InspectorDOMAgent::pushChildNodesToFrontend(int nodeId, int depth)
 {
     Node* node = nodeForId(nodeId);
     if (!node || (node->nodeType() != Node::ELEMENT_NODE && node->nodeType() != Node::DOCUMENT_NODE && node->nodeType() != Node::DOCUMENT_FRAGMENT_NODE))
         return;
-    if (m_childrenRequested.contains(nodeId))
-        return;
 
     NodeToIdMap* nodeMap = m_idToNodesMap.get(nodeId);
-    RefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > children = buildArrayForContainerChildren(node, 1, nodeMap);
+
+    if (m_childrenRequested.contains(nodeId)) {
+        if (depth <= 1)
+            return;
+
+        depth--;
+
+        for (node = innerFirstChild(node); node; node = innerNextSibling(node)) {
+            int childNodeId = nodeMap->get(node);
+            ASSERT(childNodeId);
+            pushChildNodesToFrontend(childNodeId, depth);
+        }
+
+        return;
+    }
+
+    RefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > children = buildArrayForContainerChildren(node, depth, nodeMap);
     m_frontend->setChildNodes(nodeId, children.release());
 }
 
@@ -476,9 +497,22 @@ Node* InspectorDOMAgent::nodeForId(int id)
     return 0;
 }
 
-void InspectorDOMAgent::requestChildNodes(ErrorString*, int nodeId)
+void InspectorDOMAgent::requestChildNodes(ErrorString* errorString, int nodeId, const int* depth)
 {
-    pushChildNodesToFrontend(nodeId);
+    int sanitizedDepth;
+
+    if (!depth)
+        sanitizedDepth = 1;
+    else if (*depth == -1)
+        sanitizedDepth = INT_MAX;
+    else if (*depth > 0)
+        sanitizedDepth = *depth;
+    else {
+        *errorString = "Please provide a positive integer as a depth or -1 for entire subtree";
+        return;
+    }
+
+    pushChildNodesToFrontend(nodeId, sanitizedDepth);
 }
 
 void InspectorDOMAgent::querySelector(ErrorString* errorString, int nodeId, const String& selectors, int* elementId)
@@ -563,18 +597,6 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
         pushChildNodesToFrontend(nodeId);
     }
     return map->get(nodeToPush);
-}
-
-int InspectorDOMAgent::pushNodePathForRenderLayerToFrontend(const RenderLayer* renderLayer)
-{
-    Node* node = renderLayer->renderer()->node();
-
-    // RenderLayers may not be associated with a Node, for instance
-    // in the case of CSS generated content.
-    if (!node)
-        return 0;
-
-    return pushNodePathToFrontend(node);
 }
 
 int InspectorDOMAgent::boundNodeId(Node* node)
@@ -747,7 +769,7 @@ void InspectorDOMAgent::setNodeValue(ErrorString* errorString, int nodeId, const
     m_domEditor->replaceWholeText(toText(node), value, errorString);
 }
 
-void InspectorDOMAgent::getEventListenersForNode(ErrorString* errorString, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray)
+void InspectorDOMAgent::getEventListenersForNode(ErrorString* errorString, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray)
 {
     listenersArray = TypeBuilder::Array<TypeBuilder::DOM::EventListener>::create();
     Node* node = assertNode(errorString, nodeId);
@@ -764,7 +786,7 @@ void InspectorDOMAgent::getEventListenersForNode(ErrorString* errorString, int n
         for (size_t j = 0; j < vector.size(); ++j) {
             const RegisteredEventListener& listener = vector[j];
             if (listener.useCapture)
-                listenersArray->addItem(buildObjectForEventListener(listener, info.eventType, info.node));
+                listenersArray->addItem(buildObjectForEventListener(listener, info.eventType, info.node, objectGroup));
         }
     }
 
@@ -775,7 +797,7 @@ void InspectorDOMAgent::getEventListenersForNode(ErrorString* errorString, int n
         for (size_t j = 0; j < vector.size(); ++j) {
             const RegisteredEventListener& listener = vector[j];
             if (!listener.useCapture)
-                listenersArray->addItem(buildObjectForEventListener(listener, info.eventType, info.node));
+                listenersArray->addItem(buildObjectForEventListener(listener, info.eventType, info.node, objectGroup));
         }
     }
 }
@@ -787,7 +809,7 @@ void InspectorDOMAgent::getEventListeners(Node* node, Vector<EventListenerInfo>&
     // Push this node as the firs element.
     ancestors.append(node);
     if (includeAncestors) {
-        for (ContainerNode* ancestor = node->parentOrHostNode(); ancestor; ancestor = ancestor->parentOrHostNode())
+        for (ContainerNode* ancestor = node->parentOrShadowHostNode(); ancestor; ancestor = ancestor->parentOrShadowHostNode())
             ancestors.append(ancestor);
     }
 
@@ -860,7 +882,10 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
                 break;
             }
             case Node::ELEMENT_NODE: {
-                if (node->nodeName().findIgnoringCase(tagNameQuery) != notFound) {
+                if ((!startTagFound && !endTagFound && (node->nodeName().findIgnoringCase(tagNameQuery) != notFound))
+                    || (startTagFound && endTagFound && equalIgnoringCase(node->nodeName(), tagNameQuery))
+                    || (startTagFound && !endTagFound && node->nodeName().startsWith(tagNameQuery, false))
+                    || (!startTagFound && endTagFound && node->nodeName().endsWith(tagNameQuery, false))) {
                     resultCollector.add(node);
                     break;
                 }
@@ -1182,6 +1207,34 @@ void InspectorDOMAgent::focus(ErrorString* errorString, int nodeId)
     element->focus();
 }
 
+void InspectorDOMAgent::setFileInputFiles(ErrorString* errorString, int nodeId, const RefPtr<InspectorArray>& files)
+{
+    if (!m_client->canSetFileInputFiles()) {
+        *errorString = "Cannot set file input files";
+        return;
+    }
+
+    Node* node = assertNode(errorString, nodeId);
+    if (!node)
+        return;
+    HTMLInputElement* element = node->toInputElement();
+    if (!element || !element->isFileUpload()) {
+        *errorString = "Node is not a file input element";
+        return;
+    }
+
+    RefPtr<FileList> fileList = FileList::create();
+    for (InspectorArray::const_iterator iter = files->begin(); iter != files->end(); ++iter) {
+        String path;
+        if (!(*iter)->asString(&path)) {
+            *errorString = "Files must be strings";
+            return;
+        }
+        fileList->append(File::create(path));
+    }
+    element->setFiles(fileList);
+}
+
 void InspectorDOMAgent::resolveNode(ErrorString* errorString, int nodeId, const String* const objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result)
 {
     String objectGroupName = objectGroup ? *objectGroup : "";
@@ -1294,6 +1347,12 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
                 shadowRoots->addItem(buildObjectForNode(root, 0, nodesMap));
             value->setShadowRoots(shadowRoots);
         }
+
+#if ENABLE(TEMPLATE_ELEMENT)
+        if (element->hasTagName(HTMLNames::templateTag))
+            value->setTemplateContent(buildObjectForNode(static_cast<HTMLTemplateElement*>(element)->content(), 0, nodesMap));
+#endif
+
     } else if (node->isDocumentNode()) {
         Document* document = static_cast<Document*>(node);
         value->setDocumentURL(documentURLString(document));
@@ -1352,15 +1411,32 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > InspectorDOMAgent::build
     return children.release();
 }
 
-PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEventListener(const RegisteredEventListener& registeredEventListener, const AtomicString& eventType, Node* node)
+PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEventListener(const RegisteredEventListener& registeredEventListener, const AtomicString& eventType, Node* node, const String* objectGroupId)
 {
     RefPtr<EventListener> eventListener = registeredEventListener.listener;
+    Document* document = node->document();
     RefPtr<TypeBuilder::DOM::EventListener> value = TypeBuilder::DOM::EventListener::create()
         .setType(eventType)
         .setUseCapture(registeredEventListener.useCapture)
         .setIsAttribute(eventListener->isAttribute())
         .setNodeId(pushNodePathToFrontend(node))
-        .setHandlerBody(eventListenerHandlerBody(node->document(), eventListener.get()));
+        .setHandlerBody(eventListenerHandlerBody(document, eventListener.get()));
+    if (objectGroupId) {
+        ScriptValue functionValue = eventListenerHandler(document, eventListener.get());
+        if (!functionValue.hasNoValue()) {
+            Frame* frame = document->frame();
+            if (frame) {
+                ScriptState* scriptState = eventListenerHandlerScriptState(frame, eventListener.get());
+                if (scriptState) {
+                    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(scriptState);
+                    if (!injectedScript.hasNoValue()) {
+                        RefPtr<TypeBuilder::Runtime::RemoteObject> valueJson = injectedScript.wrapObject(functionValue, *objectGroupId);
+                        value->setHandler(valueJson);
+                    }
+                }
+            }
+        }
+    }
     String sourceName;
     String scriptId;
     int lineNumber;

@@ -336,53 +336,28 @@ extern void (*wkCGPathAddRoundedRect)(CGMutablePathRef path, const CGAffineTrans
 extern void (*wkCFURLRequestAllowAllPostCaching)(CFURLRequestRef);
 #endif
 
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080 && !PLATFORM(IOS)
+#if USE(CONTENT_FILTERING)
 extern BOOL (*wkFilterIsManagedSession)(void);
 extern WebFilterEvaluator *(*wkFilterCreateInstance)(NSURLResponse *);
-extern void (*wkFilterRelease)(WebFilterEvaluator *);
 extern BOOL (*wkFilterWasBlocked)(WebFilterEvaluator *);
-extern const char* (*wkFilterAddData)(WebFilterEvaluator *, const char* data, int* length);
-extern const char* (*wkFilterDataComplete)(WebFilterEvaluator *, int* length);
+extern BOOL (*wkFilterIsBuffering)(WebFilterEvaluator *);
+extern NSData *(*wkFilterAddData)(WebFilterEvaluator *, NSData *);
+extern NSData *(*wkFilterDataComplete)(WebFilterEvaluator *);
+#endif
 
+#if !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
 extern CGFloat (*wkNSElasticDeltaForTimeDelta)(CGFloat initialPosition, CGFloat initialVelocity, CGFloat elapsedTime);
 extern CGFloat (*wkNSElasticDeltaForReboundDelta)(CGFloat delta);
 extern CGFloat (*wkNSReboundDeltaForElasticDelta)(CGFloat delta);
 #endif
 
-typedef enum {
-    wkCaptionFontStyleDefault = 0,
-    wkCaptionFontStyleMonospacedWithSerif,
-    wkCaptionFontStyleProportionalWithSerif,
-    wkCaptionFontStyleMonospacedWithoutSerif,
-    wkCaptionFontStyleProportionalWithoutSerif,
-    wkCaptionFontStyleCasual,
-    wkCaptionFontStyleCursive,
-    wkCaptionFontStyleSmallCapital,
-    wkCaptionFontStyleMax
-} wkCaptionFontStyle;
+#if ENABLE(PUBLIC_SUFFIX_LIST)
+extern bool (*wkIsPublicSuffix)(NSString *host);
+#endif
 
-typedef enum {
-    wkCaptionTextEdgeStyleUndefined = 0,
-    wkCaptionTextEdgeStyleNone,
-    wkCaptionTextEdgeStyleRaised,
-    wkCaptionTextEdgeStyleDepressed,
-    wkCaptionTextEdgeStyleUniform,
-    wkCaptionTextEdgeStyleDropShadow,
-    wkCaptionTextEdgeStyleMax
-} wkCaptionTextEdgeStyle;
-
-extern bool (*wkCaptionAppearanceHasUserPreferences)(void);
-extern bool (*wkCaptionAppearanceShowCaptionsWhenAvailable)(void);
-extern CGColorRef(*wkCaptionAppearanceCopyForegroundColor)(void);
-extern CGColorRef(*wkCaptionAppearanceCopyBackgroundColor)(void);
-extern CGColorRef(*wkCaptionAppearanceCopyWindowColor)(void);
-extern bool(*wkCaptionAppearanceGetForegroundOpacity)(CGFloat*);
-extern bool(*wkCaptionAppearanceGetBackgroundOpacity)(CGFloat*);
-extern bool(*wkCaptionAppearanceGetWindowOpacity)(CGFloat*);
-extern CGFontRef(*wkCaptionAppearanceCopyFontForStyle)(int);
-extern bool(*wkCaptionAppearanceGetRelativeCharacterSize)(CGFloat*);
-extern int(*wkCaptionAppearanceGetTextEdgeStyle)(void);
-extern CFStringRef(*wkCaptionAppearanceGetSettingsChangedNotification)(void);
+#if ENABLE(CACHE_PARTITIONING)
+extern CFStringRef (*wkCachePartitionKey)(void);
+#endif
 }
 
 #endif

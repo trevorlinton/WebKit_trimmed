@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2010, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,10 +32,11 @@
 #include "HandlerInfo.h"
 #include "JSFunction.h"
 #include "Interpreter.h"
+#include "JITCode.h"
 #include "JSGlobalObject.h"
 #include "LLIntCLoop.h"
-#include "Nodes.h"
 #include "SamplingTool.h"
+#include "SourceCode.h"
 #include "UnlinkedCodeBlock.h"
 #include <wtf/PassOwnPtr.h>
 
@@ -176,16 +177,6 @@ namespace JSC {
             return hasJITCodeForConstruct();
         }
 
-        // Intrinsics are only for calls, currently.
-        Intrinsic intrinsic() const;
-        
-        Intrinsic intrinsicFor(CodeSpecializationKind kind) const
-        {
-            if (isCall(kind))
-                return intrinsic();
-            return NoIntrinsic;
-        }
-        
         static ptrdiff_t offsetOfJITCodeFor(CodeSpecializationKind kind)
         {
             if (kind == CodeForCall)
@@ -211,6 +202,16 @@ namespace JSC {
         }
 #endif // ENABLE(JIT)
 
+        // Intrinsics are only for calls, currently.
+        Intrinsic intrinsic() const;
+        
+        Intrinsic intrinsicFor(CodeSpecializationKind kind) const
+        {
+            if (isCall(kind))
+                return intrinsic();
+            return NoIntrinsic;
+        }
+        
 #if ENABLE(JIT) || ENABLE(LLINT_C_LOOP)
         MacroAssemblerCodePtr hostCodeEntryFor(CodeSpecializationKind kind)
         {
@@ -429,7 +430,7 @@ namespace JSC {
 
         JSObject* compile(ExecState* exec, JSScope* scope)
         {
-            ASSERT(exec->globalData().dynamicGlobalObject);
+            RELEASE_ASSERT(exec->globalData().dynamicGlobalObject);
             JSObject* error = 0;
             if (!m_evalCodeBlock)
                 error = compileInternal(exec, scope, JITCode::bottomTierJIT());
@@ -500,13 +501,13 @@ namespace JSC {
         }
 
 
-        JSObject* initalizeGlobalProperties(JSGlobalData&, CallFrame*, JSScope*);
+        JSObject* initializeGlobalProperties(JSGlobalData&, CallFrame*, JSScope*);
 
         static void destroy(JSCell*);
 
         JSObject* compile(ExecState* exec, JSScope* scope)
         {
-            ASSERT(exec->globalData().dynamicGlobalObject);
+            RELEASE_ASSERT(exec->globalData().dynamicGlobalObject);
             JSObject* error = 0;
             if (!m_programCodeBlock)
                 error = compileInternal(exec, scope, JITCode::bottomTierJIT());
@@ -601,7 +602,7 @@ namespace JSC {
 
         JSObject* compileForCall(ExecState* exec, JSScope* scope)
         {
-            ASSERT(exec->globalData().dynamicGlobalObject);
+            RELEASE_ASSERT(exec->globalData().dynamicGlobalObject);
             JSObject* error = 0;
             if (!m_codeBlockForCall)
                 error = compileForCallInternal(exec, scope, JITCode::bottomTierJIT());
@@ -629,7 +630,7 @@ namespace JSC {
 
         JSObject* compileForConstruct(ExecState* exec, JSScope* scope)
         {
-            ASSERT(exec->globalData().dynamicGlobalObject);
+            RELEASE_ASSERT(exec->globalData().dynamicGlobalObject);
             JSObject* error = 0;
             if (!m_codeBlockForConstruct)
                 error = compileForConstructInternal(exec, scope, JITCode::bottomTierJIT());
@@ -778,7 +779,7 @@ namespace JSC {
         : Base(globalData, scope->globalObject()->functionStructure())
         , m_executable(globalData, this, executable)
         , m_scope(globalData, this, scope)
-        , m_inheritorIDWatchpoint(InitializedBlind) // See comment in JSFunction.cpp concerning the reason for using InitializedBlind as opposed to InitializedWatching.
+        , m_allocationProfileWatchpoint(InitializedBlind) // See comment in JSFunction.cpp concerning the reason for using InitializedBlind as opposed to InitializedWatching.
     {
     }
 
@@ -838,7 +839,7 @@ namespace JSC {
         case FunctionExecutableType:
             return jsCast<FunctionExecutable*>(this)->unlinkCalls();
         default:
-            ASSERT_NOT_REACHED();
+            RELEASE_ASSERT_NOT_REACHED();
         }
     }
 

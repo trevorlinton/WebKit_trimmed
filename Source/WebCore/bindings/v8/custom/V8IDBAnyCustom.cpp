@@ -39,11 +39,27 @@
 #include "V8IDBDatabase.h"
 #include "V8IDBFactory.h"
 #include "V8IDBIndex.h"
-#include "V8IDBKey.h"
 #include "V8IDBObjectStore.h"
 #include "V8IDBTransaction.h"
 
 namespace WebCore {
+
+static v8::Handle<v8::Value> toV8(const IDBKeyPath& value, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    switch (value.type()) {
+    case IDBKeyPath::NullType:
+        return v8NullWithCheck(isolate);
+    case IDBKeyPath::StringType:
+        return v8String(value.string(), isolate);
+    case IDBKeyPath::ArrayType:
+        RefPtr<DOMStringList> keyPaths = DOMStringList::create();
+        for (Vector<String>::const_iterator it = value.array().begin(); it != value.array().end(); ++it)
+            keyPaths->append(*it);
+        return toV8(keyPaths.release(), creationContext, isolate);
+    }
+    ASSERT_NOT_REACHED();
+    return v8::Undefined();
+}
 
 v8::Handle<v8::Value> toV8(IDBAny* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
@@ -67,8 +83,6 @@ v8::Handle<v8::Value> toV8(IDBAny* impl, v8::Handle<v8::Object> creationContext,
         return toV8(impl->idbFactory(), creationContext, isolate);
     case IDBAny::IDBIndexType:
         return toV8(impl->idbIndex(), creationContext, isolate);
-    case IDBAny::IDBKeyType:
-        return toV8(impl->idbKey(), creationContext, isolate);
     case IDBAny::IDBObjectStoreType:
         return toV8(impl->idbObjectStore(), creationContext, isolate);
     case IDBAny::IDBTransactionType:
@@ -79,6 +93,8 @@ v8::Handle<v8::Value> toV8(IDBAny* impl, v8::Handle<v8::Object> creationContext,
         return v8String(impl->string(), isolate);
     case IDBAny::IntegerType:
         return v8::Number::New(impl->integer());
+    case IDBAny::KeyPathType:
+        return toV8(impl->keyPath(), creationContext, isolate);
     }
 
     ASSERT_NOT_REACHED();

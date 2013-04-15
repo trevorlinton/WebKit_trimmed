@@ -66,6 +66,7 @@ class DeprecatedPort(object):
             "chromium-xvfb": ChromiumXVFBPort,
             "gtk": GtkPort,
             "mac": MacPort,
+            "mac-wk2": MacWK2Port,
             "win": WinPort,
             "qt": QtPort,
             "efl": EflPort,
@@ -121,6 +122,15 @@ class MacPort(DeprecatedPort):
     port_flag_name = "mac"
 
 
+class MacWK2Port(DeprecatedPort):
+    port_flag_name = "mac-wk2"
+
+    def run_webkit_tests_command(self):
+        command = super(MacWK2Port, self).run_webkit_tests_command()
+        command.append("-2")
+        return command
+
+
 class WinPort(DeprecatedPort):
     port_flag_name = "win"
 
@@ -132,6 +142,7 @@ class GtkPort(DeprecatedPort):
         command = super(GtkPort, self).build_webkit_command(build_style=build_style)
         command.append("--gtk")
         command.append("--update-gtk")
+        command.append("--no-webkit2")
         command.append(super(GtkPort, self).makeArgs())
         return command
 

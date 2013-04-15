@@ -82,8 +82,6 @@ public:
     static unsigned buttonState();
 #endif
 
-#elif PLATFORM(WIN)
-    HWND containingWindow();
 #endif
 
     PluginQuirks quirks() const { return m_pluginModule->pluginQuirks(); }
@@ -154,6 +152,7 @@ private:
 
     const char* userAgent();
 
+    void platformPreInitialize();
     bool platformPostInitialize();
     void platformDestroy();
     bool platformInvalidate(const WebCore::IntRect&);
@@ -248,6 +247,12 @@ private:
     // Convert the given point from root view coordinates to plug-in coordinates. Returns false if the point can't be
     // converted (if the transformation matrix isn't invertible).
     bool convertFromRootView(const WebCore::IntPoint& pointInRootViewCoordinates, WebCore::IntPoint& pointInPluginCoordinates);
+
+    virtual bool getResourceData(const unsigned char*& /* bytes */, unsigned& /* length */) const OVERRIDE { return false; }
+
+    virtual bool performDictionaryLookupAtLocation(const WebCore::FloatPoint&) OVERRIDE { return false; }
+
+    virtual String getSelectionString() const OVERRIDE { return String(); }
 
     void updateNPNPrivateMode();
 

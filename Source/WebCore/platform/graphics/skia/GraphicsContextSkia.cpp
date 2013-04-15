@@ -49,6 +49,7 @@
 #include "SkCornerPathEffect.h"
 #include "SkData.h"
 #include "SkLayerDrawLooper.h"
+#include "SkRRect.h"
 #include "SkShader.h"
 #include "SkiaUtils.h"
 #include "skia/ext/platform_canvas.h"
@@ -67,6 +68,7 @@ using namespace std;
 namespace WebCore {
 
 namespace {
+// Local helper functions ------------------------------------------------------
 
 // Return value % max, but account for value possibly being negative.
 inline int fastMod(int value, int max)
@@ -82,10 +84,6 @@ inline int fastMod(int value, int max)
         value = -value;
     return value;
 }
-
-}  // namespace
-
-// Local helper functions ------------------------------------------------------
 
 void addCornerArc(SkPath* path, const SkRect& rect, const IntSize& size, int startAngle)
 {
@@ -199,6 +197,20 @@ void draw1xMarker(SkBitmap* bitmap, int index)
     }
 }
 
+inline void setRadii(SkVector* radii, IntSize topLeft, IntSize topRight, IntSize bottomRight, IntSize bottomLeft)
+{
+    radii[SkRRect::kUpperLeft_Corner].set(SkIntToScalar(topLeft.width()),
+        SkIntToScalar(topLeft.height()));
+    radii[SkRRect::kUpperRight_Corner].set(SkIntToScalar(topRight.width()),
+        SkIntToScalar(topRight.height()));
+    radii[SkRRect::kLowerRight_Corner].set(SkIntToScalar(bottomRight.width()),
+        SkIntToScalar(bottomRight.height()));
+    radii[SkRRect::kLowerLeft_Corner].set(SkIntToScalar(bottomLeft.width()),
+        SkIntToScalar(bottomLeft.height()));
+}
+
+} // namespace
+
 // -----------------------------------------------------------------------------
 
 // This may be called with a NULL pointer to create a graphics context that has
@@ -275,25 +287,6 @@ bool GraphicsContext::supportsTransparencyLayers()
 
 // Graphics primitives ---------------------------------------------------------
 
-void GraphicsContext::addInnerRoundedRectClip(const IntRect& rect, int thickness)
-{
-    if (paintingDisabled())
-        return;
-
-    SkRect r(rect);
-    SkPath path;
-    path.addOval(r, SkPath::kCW_Direction);
-    // only perform the inset if we won't invert r
-    if (2 * thickness < rect.width() && 2 * thickness < rect.height()) {
-        // Adding one to the thickness doesn't make the border too thick as
-        // it's painted over afterwards. But without this adjustment the
-        // border appears a little anemic after anti-aliasing.
-        r.inset(SkIntToScalar(thickness + 1), SkIntToScalar(thickness + 1));
-        path.addOval(r, SkPath::kCCW_Direction);
-    }
-    platformContext()->clipPath(path, PlatformContextSkia::AntiAliased);
-}
-
 void GraphicsContext::clearPlatformShadow()
 {
     if (paintingDisabled())
@@ -321,20 +314,45 @@ void GraphicsContext::clip(const FloatRect& rect)
     platformContext()->clipRect(rect);
 }
 
-void GraphicsContext::clip(const Path& path)
+void GraphicsContext::clip(const Path& path, WindRule clipRule)
 {
     if (paintingDisabled() || path.isEmpty())
         return;
 
-    platformContext()->clipPath(*path.platformPath(), PlatformContextSkia::AntiAliased);
+    clipPath(path, clipRule);
 }
 
-void GraphicsContext::canvasClip(const Path& path)
+void GraphicsContext::clipRoundedRect(const RoundedRect& rect)
 {
     if (paintingDisabled())
         return;
 
-    platformContext()->clipPath(path.isNull() ? SkPath() : *path.platformPath());
+    SkVector radii[4];
+    RoundedRect::Radii wkRadii = rect.radii();
+    setRadii(radii, wkRadii.topLeft(), wkRadii.topRight(), wkRadii.bottomRight(), wkRadii.bottomLeft());
+
+    SkRRect r;
+    r.setRectRadii(rect.rect(), radii);
+
+    platformContext()->clipRRect(r, PlatformContextSkia::AntiAliased);
+}
+
+void GraphicsContext::canvasClip(const Path& pathToClip, WindRule clipRule)
+{
+    if (paintingDisabled())
+        return;
+
+    const SkPath* path = pathToClip.platformPath();
+    SkPath::FillType ftype = (clipRule == RULE_EVENODD) ? SkPath::kEvenOdd_FillType : SkPath::kWinding_FillType;
+    SkPath storage;
+
+    if (path && (path->getFillType() != ftype)) {
+        storage = *path;
+        storage.setFillType(ftype);
+        path = &storage;
+    }
+
+    platformContext()->clipPath(path ? *path : SkPath());
 }
 
 void GraphicsContext::clipOut(const IntRect& rect)
@@ -732,7 +750,8 @@ void GraphicsContext::drawLineForText(const FloatPoint& pt,
     SkRect r;
     r.fLeft = WebCoreFloatToSkScalar(pt.x());
     // Avoid anti-aliasing lines. Currently, these are always horizontal.
-    r.fTop = WebCoreFloatToSkScalar(floorf(pt.y()));
+    // Round to nearest pixel to match text and other content.
+    r.fTop = WebCoreFloatToSkScalar(floorf(pt.y() + 0.5f));
     r.fRight = r.fLeft + WebCoreFloatToSkScalar(width);
     r.fBottom = r.fTop + SkIntToScalar(thickness);
 
@@ -825,17 +844,17 @@ void GraphicsContext::fillRoundedRect(const IntRect& rect,
         return;
     }
 
-    SkRect r = rect;
-    SkPath path;
-    addCornerArc(&path, r, topRight, 270);
-    addCornerArc(&path, r, bottomRight, 0);
-    addCornerArc(&path, r, bottomLeft, 90);
-    addCornerArc(&path, r, topLeft, 180);
+    SkVector radii[4];
+    setRadii(radii, topLeft, topRight, bottomRight, bottomLeft);
+
+    SkRRect rr;
+    rr.setRectRadii(rect, radii);
 
     SkPaint paint;
     platformContext()->setupPaintForFilling(&paint);
     paint.setColor(color.rgb());
-    platformContext()->drawPath(path, paint);
+
+    platformContext()->drawRRect(rr, paint);
 }
 
 AffineTransform GraphicsContext::getCTM(IncludeDeviceScale) const
@@ -993,7 +1012,6 @@ void GraphicsContext::setPlatformShadow(const FloatSize& size,
     double blur = blurFloat;
 
     uint32_t mfFlags = SkBlurMaskFilter::kHighQuality_BlurFlag;
-    SkXfermode::Mode colorMode = SkXfermode::kSrc_Mode;
 
     if (m_state.shadowsIgnoreTransforms)  {
         // Currently only the GraphicsContext associated with the
@@ -1001,12 +1019,6 @@ void GraphicsContext::setPlatformShadow(const FloatSize& size,
         // Transforms. So with this flag set, we know this state is associated
         // with a CanvasRenderingContext.
         mfFlags |= SkBlurMaskFilter::kIgnoreTransform_BlurFlag;
-
-        // CSS wants us to ignore the original's alpha, but Canvas wants us to
-        // modulate with it. Using shadowsIgnoreTransforms to tell us that we're
-        // in a Canvas, we change the colormode to kDst_Mode, so we don't overwrite
-        // it with our layer's (default opaque-black) color.
-        colorMode = SkXfermode::kDst_Mode;
 
         // CG uses natural orientation for Y axis, but the HTML5 canvas spec
         // does not.
@@ -1033,9 +1045,13 @@ void GraphicsContext::setPlatformShadow(const FloatSize& size,
     // lower layer contains our offset, blur, and colorfilter
     SkLayerDrawLooper::LayerInfo info;
 
+    // Since CSS box-shadow ignores the original alpha, we used to default to kSrc_Mode here and
+    // only switch to kDst_Mode for Canvas. But that precaution is not really necessary because
+    // RenderBoxModelObject performs a dedicated shadow fill with opaque black to ensure
+    // cross-platform consistent results.
+    info.fColorMode = SkXfermode::kDst_Mode;
     info.fPaintBits |= SkLayerDrawLooper::kMaskFilter_Bit; // our blur
     info.fPaintBits |= SkLayerDrawLooper::kColorFilter_Bit;
-    info.fColorMode = colorMode;
     info.fOffset.set(width, height);
     info.fPostTranslate = m_state.shadowsIgnoreTransforms;
 

@@ -31,13 +31,12 @@
 #include "config.h"
 #include "AccessibilityUIElementChromium.h"
 
+#include "TestCommon.h"
 #include "WebAccessibilityObject.h"
-#include "platform/WebCString.h"
-#include "platform/WebPoint.h"
-#include "platform/WebRect.h"
-#include "platform/WebString.h"
-#include <wtf/Assertions.h>
-#include <wtf/StringExtras.h>
+#include <public/WebCString.h>
+#include <public/WebPoint.h>
+#include <public/WebRect.h>
+#include <public/WebString.h>
 
 using namespace WebKit;
 using namespace std;
@@ -169,10 +168,12 @@ string roleToString(WebAccessibilityRole role)
         return result.append("ListBoxOption");
     case WebAccessibilityRoleTableHeaderContainer:
         return result.append("TableHeaderContainer");
-    case WebAccessibilityRoleDefinitionListTerm:
-        return result.append("DefinitionListTerm");
-    case WebAccessibilityRoleDefinitionListDefinition:
-        return result.append("DefinitionListDefinition");
+    case WebAccessibilityRoleDefinition:
+        return result.append("Definition");
+    case WebAccessibilityRoleDescriptionListTerm:
+        return result.append("DescriptionListTerm");
+    case WebAccessibilityRoleDescriptionListDetail:
+        return result.append("DescriptionListDetail");
     case WebAccessibilityRoleAnnotation:
         return result.append("Annotation");
     case WebAccessibilityRoleSliderThumb:
@@ -285,7 +286,15 @@ string getHelpText(const WebAccessibilityObject& object)
 
 string getStringValue(const WebAccessibilityObject& object)
 {
-    string value = object.stringValue().utf8();
+    string value;
+    if (object.roleValue() == WebAccessibilityRoleColorWell) {
+        int r, g, b;
+        char buffer[100];
+        object.colorValue(r, g, b);
+        snprintf(buffer, sizeof(buffer), "rgb %7.5f %7.5f %7.5f 1", r / 255., g / 255., b / 255.);
+        value = buffer;
+    } else
+        value = object.stringValue().utf8();
     return value.insert(0, "AXValue: ");
 }
 
@@ -358,7 +367,7 @@ AccessibilityUIElement::AccessibilityUIElement(const WebAccessibilityObject& obj
     , m_factory(factory)
 {
 
-    ASSERT(factory);
+    WEBKIT_ASSERT(factory);
 
     //
     // Properties
@@ -518,7 +527,12 @@ void AccessibilityUIElement::heightGetterCallback(CppVariant* result)
 
 void AccessibilityUIElement::intValueGetterCallback(CppVariant* result)
 {
-    result->set(accessibilityObject().valueForRange());
+    if (accessibilityObject().supportsRangeValue())
+        result->set(accessibilityObject().valueForRange());
+    else if (accessibilityObject().roleValue() == WebAccessibilityRoleHeading)
+        result->set(accessibilityObject().headingLevel());
+    else
+        result->set(atoi(accessibilityObject().stringValue().utf8().data()));
 }
 
 void AccessibilityUIElement::minValueGetterCallback(CppVariant* result)
@@ -862,7 +876,13 @@ void AccessibilityUIElement::isDecrementActionSupportedCallback(const CppArgumen
 
 void AccessibilityUIElement::parentElementCallback(const CppArgumentList&, CppVariant* result)
 {
-    result->setNull();
+    AccessibilityUIElement* parent = m_factory->getOrCreate(accessibilityObject().parentObject());
+    if (!parent) {
+        result->setNull();
+        return;
+    }
+
+    result->set(*(parent->getAsCppVariant()));
 }
 
 void AccessibilityUIElement::incrementCallback(const CppArgumentList&, CppVariant* result)
@@ -1004,14 +1024,14 @@ AccessibilityUIElement* AccessibilityUIElementList::getOrCreate(const WebAccessi
     }
 
     AccessibilityUIElement* element = new AccessibilityUIElement(object, this);
-    m_elements.append(element);
+    m_elements.push_back(element);
     return element;
 }
 
 AccessibilityUIElement* AccessibilityUIElementList::createRoot(const WebAccessibilityObject& object)
 {
     AccessibilityUIElement* element = new RootAccessibilityUIElement(object, this);
-    m_elements.append(element);
+    m_elements.push_back(element);
     return element;
 }
 

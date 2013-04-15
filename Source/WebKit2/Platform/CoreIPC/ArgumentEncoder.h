@@ -45,15 +45,6 @@ public:
     void encodeFixedLengthData(const uint8_t*, size_t, unsigned alignment);
     void encodeVariableLengthByteArray(const DataReference&);
 
-    void encode(bool);
-    void encode(uint16_t);
-    void encode(uint32_t);
-    void encode(uint64_t);
-    void encode(int32_t);
-    void encode(int64_t);
-    void encode(float);
-    void encode(double);
-
     template<typename T> void encodeEnum(T t)
     {
         COMPILE_ASSERT(sizeof(T) <= sizeof(uint64_t), enum_type_must_not_be_larger_than_64_bits);
@@ -61,33 +52,7 @@ public:
         encode(static_cast<uint64_t>(t));
     }
 
-    template<bool B, typename T = void>
-    struct EnableIf { };
-
-    template<typename T>
-    struct EnableIf<true, T> { typedef T Type; };
-    
-    template<typename T> class UsesDeprecatedEncodeFunction {
-        typedef char YesType;
-        struct NoType {
-            char padding[8];
-        };
-
-        static YesType checkEncode(void (*)(ArgumentEncoder*, const T&));
-        static NoType checkEncode(...);
-
-    public:
-        static const bool value = sizeof(checkEncode(ArgumentCoder<T>::encode)) == sizeof(YesType);
-    };
-
-    // FIXME: This is the function that gets chosen if the argument coder takes the ArgumentEncoder as a pointer.
-    // This is the deprecated form - get rid of it.
-    template<typename T> void encode(const T& t, typename EnableIf<UsesDeprecatedEncodeFunction<T>::value>::Type* = 0)
-    {
-        ArgumentCoder<T>::encode(this, t);
-    }
-
-    template<typename T> void encode(const T& t, typename EnableIf<!UsesDeprecatedEncodeFunction<T>::value>::Type* = 0)
+    template<typename T> void encode(const T& t)
     {
         ArgumentCoder<T>::encode(*this, t);
     }
@@ -98,7 +63,7 @@ public:
         return *this;
     }
 
-    uint8_t* buffer() { return usesInlineBuffer() ? m_inlineBuffer : m_buffer; }
+    uint8_t* buffer() const { return m_buffer; }
     size_t bufferSize() const { return m_bufferSize; }
 
     void addAttachment(const Attachment&);
@@ -108,18 +73,25 @@ protected:
     ArgumentEncoder();
 
 private:
-    static const size_t inlineBufferSize = 4096;
-    bool usesInlineBuffer() const { return m_bufferCapacity <= inlineBufferSize; }
+    void encode(bool);
+    void encode(uint8_t);
+    void encode(uint16_t);
+    void encode(uint32_t);
+    void encode(uint64_t);
+    void encode(int32_t);
+    void encode(int64_t);
+    void encode(float);
+    void encode(double);
+
     uint8_t* grow(unsigned alignment, size_t size);
     
     uint8_t* m_buffer;
+    uint8_t* m_bufferPointer;
     
     size_t m_bufferSize;
     size_t m_bufferCapacity;
 
     Vector<Attachment> m_attachments;
-
-    uint8_t m_inlineBuffer[inlineBufferSize];
 };
 
 } // namespace CoreIPC

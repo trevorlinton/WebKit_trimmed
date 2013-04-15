@@ -35,6 +35,8 @@
 #include "Local.h"
 #include "LocalScope.h"
 #include "Lookup.h"
+#include "ObjectConstructor.h"
+#include "Operations.h"
 #include "PropertyNameArray.h"
 #include <wtf/MathExtras.h>
 #include <wtf/text/StringBuilder.h>
@@ -385,7 +387,7 @@ Stringifier::StringifyResult Stringifier::appendStringifiedValue(StringBuilder& 
 
     if (value.isNumber()) {
         double number = value.asNumber();
-        if (!isfinite(number))
+        if (!std::isfinite(number))
             builder.appendLiteral("null");
         else
             builder.append(String::numberToStringECMAScript(number));

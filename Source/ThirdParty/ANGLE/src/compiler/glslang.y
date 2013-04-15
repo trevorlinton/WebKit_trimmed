@@ -340,18 +340,10 @@ postfix_expression
                 else
                     $$->setType(TType($1->getBasicType(), $1->getPrecision(), EvqConst, (int) (*$3.string).size()));
             } else {
-                if (fields.num == 1) {
-                    ConstantUnion *unionArray = new ConstantUnion[1];
-                    unionArray->setIConst(fields.offsets[0]);
-                    TIntermTyped* index = context->intermediate.addConstantUnion(unionArray, TType(EbtInt, EbpUndefined, EvqConst), $3.line);
-                    $$ = context->intermediate.addIndex(EOpIndexDirect, $1, index, $2.line);
-                    $$->setType(TType($1->getBasicType(), $1->getPrecision()));
-                } else {
-                    TString vectorString = *$3.string;
-                    TIntermTyped* index = context->intermediate.addSwizzle(fields, $3.line);
-                    $$ = context->intermediate.addIndex(EOpVectorSwizzle, $1, index, $2.line);
-                    $$->setType(TType($1->getBasicType(), $1->getPrecision(), EvqTemporary, (int) vectorString.size()));
-                }
+                TString vectorString = *$3.string;
+                TIntermTyped* index = context->intermediate.addSwizzle(fields, $3.line);
+                $$ = context->intermediate.addIndex(EOpVectorSwizzle, $1, index, $2.line);
+                $$->setType(TType($1->getBasicType(), $1->getPrecision(), EvqTemporary, (int) vectorString.size()));
             }
         } else if ($1->isMatrix()) {
             TMatrixFields fields;
@@ -532,7 +524,7 @@ function_call
                     $$->getAsAggregate()->setName(fnCandidate->getMangledName());
 
                     TQualifier qual;
-                    for (int i = 0; i < fnCandidate->getParamCount(); ++i) {
+                    for (size_t i = 0; i < fnCandidate->getParamCount(); ++i) {
                         qual = fnCandidate->getParam(i).type->getQualifier();
                         if (qual == EvqOut || qual == EvqInOut) {
                             if (context->lValueErrorCheck($$->getLine(), "assign", $$->getAsAggregate()->getSequence()[i]->getAsTyped())) {
@@ -973,7 +965,7 @@ declaration
         prototype->setType(function.getReturnType());
         prototype->setName(function.getName());
         
-        for (int i = 0; i < function.getParamCount(); i++)
+        for (size_t i = 0; i < function.getParamCount(); i++)
         {
             const TParameter &param = function.getParam(i);
             if (param.name != 0)
@@ -999,7 +991,10 @@ declaration
         $$ = $1.intermAggregate;
     }
     | PRECISION precision_qualifier type_specifier_no_prec SEMICOLON {
-        context->symbolTable.setDefaultPrecision( $3.type, $2 );
+        if (!context->symbolTable.setDefaultPrecision( $3, $2 )) {
+            context->error($1.line, "illegal type argument for default precision qualifier", getBasicString($3.type));
+            context->recover();
+        }
         $$ = 0;
     }
     ;
@@ -1020,7 +1015,7 @@ function_prototype
                 context->error($2.line, "overloaded functions must have the same return type", $1->getReturnType().getBasicString());
                 context->recover();
             }
-            for (int i = 0; i < prevDec->getParamCount(); ++i) {
+            for (size_t i = 0; i < prevDec->getParamCount(); ++i) {
                 if (prevDec->getParam(i).type->getQualifier() != $1->getParam(i).type->getQualifier()) {
                     context->error($2.line, "overloaded functions must have the same parameter qualifiers", $1->getParam(i).type->getQualifierString());
                     context->recover();
@@ -1211,7 +1206,7 @@ init_declarator_list
         if (context->structQualifierErrorCheck($3.line, $$.type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck($3.line, *$3.string, $$.type))
+        if (context->nonInitConstErrorCheck($3.line, *$3.string, $$.type, false))
             context->recover();
 
         TVariable* variable = 0;
@@ -1224,7 +1219,7 @@ init_declarator_list
         if (context->structQualifierErrorCheck($3.line, $1.type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck($3.line, *$3.string, $1.type))
+        if (context->nonInitConstErrorCheck($3.line, *$3.string, $1.type, true))
             context->recover();
 
         $$ = $1;
@@ -1242,7 +1237,7 @@ init_declarator_list
         if (context->structQualifierErrorCheck($3.line, $1.type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck($3.line, *$3.string, $1.type))
+        if (context->nonInitConstErrorCheck($3.line, *$3.string, $1.type, true))
             context->recover();
 
         $$ = $1;
@@ -1296,7 +1291,7 @@ single_declaration
         if (context->structQualifierErrorCheck($2.line, $$.type))
             context->recover();
 
-        if (context->nonInitConstErrorCheck($2.line, *$2.string, $$.type))
+        if (context->nonInitConstErrorCheck($2.line, *$2.string, $$.type, false))
             context->recover();
             
             $$.type = $1;
@@ -1327,7 +1322,7 @@ single_declaration
         if (context->structQualifierErrorCheck($2.line, $1))
             context->recover();
 
-        if (context->nonInitConstErrorCheck($2.line, *$2.string, $1))
+        if (context->nonInitConstErrorCheck($2.line, *$2.string, $1, true))
             context->recover();
 
         $$.type = $1;
@@ -2037,6 +2032,15 @@ external_declaration
 function_definition
     : function_prototype {
         TFunction* function = $1.function;
+        
+        const TSymbol *builtIn = context->symbolTable.findBuiltIn(function->getMangledName());
+        
+        if (builtIn)
+        {
+            context->error($1.line, "built-in functions cannot be redefined", function->getName().c_str());
+            context->recover();
+        }
+        
         TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find(function->getMangledName()));
         //
         // Note:  'prevDec' could be 'function' if this is the first time we've seen function
@@ -2081,7 +2085,7 @@ function_definition
         // knows where to find parameters.
         //
         TIntermAggregate* paramNodes = new TIntermAggregate;
-        for (int i = 0; i < function->getParamCount(); i++) {
+        for (size_t i = 0; i < function->getParamCount(); i++) {
             const TParameter& param = function->getParam(i);
             if (param.name != 0) {
                 TVariable *variable = new TVariable(param.name, *param.type);

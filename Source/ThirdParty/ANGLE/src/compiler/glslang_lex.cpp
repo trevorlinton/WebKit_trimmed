@@ -68,6 +68,7 @@ typedef int16_t flex_int16_t;
 typedef uint16_t flex_uint16_t;
 typedef int32_t flex_int32_t;
 typedef uint32_t flex_uint32_t;
+typedef uint64_t flex_uint64_t;
 #else
 typedef signed char flex_int8_t;
 typedef short int flex_int16_t;
@@ -378,7 +379,7 @@ static void yy_fatal_error (yyconst char msg[] ,yyscan_t yyscanner );
  */
 #define YY_DO_BEFORE_ACTION \
 	yyg->yytext_ptr = yy_bp; \
-	yyleng = (size_t) (yy_cp - yy_bp); \
+	yyleng = (yy_size_t) (yy_cp - yy_bp); \
 	yyg->yy_hold_char = *yy_cp; \
 	*yy_cp = '\0'; \
 	yyg->yy_c_buf_p = yy_cp;
@@ -807,7 +808,7 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 
 #include "compiler/glslang.h"
 #include "compiler/ParseHelper.h"
-#include "compiler/preprocessor/new/Token.h"
+#include "compiler/preprocessor/Token.h"
 #include "compiler/util.h"
 #include "glslang_tab.h"
 
@@ -820,7 +821,7 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 #define YY_INPUT(buf, result, max_size) \
     result = string_input(buf, max_size, yyscanner);
 
-static int string_input(char* buf, int max_size, yyscan_t yyscanner);
+static yy_size_t string_input(char* buf, yy_size_t max_size, yyscan_t yyscanner);
 static int check_type(yyscan_t yyscanner);
 static int reserved_word(yyscan_t yyscanner);
 
@@ -1542,11 +1543,11 @@ YY_RULE_SETUP
 	YY_BREAK
 case 99:
 YY_RULE_SETUP
-{ yylval->lex.i = strtol(yytext, 0, 0); return(INTCONSTANT); }
+{ yylval->lex.i = static_cast<int>(strtol(yytext, 0, 0)); return(INTCONSTANT); }
 	YY_BREAK
 case 100:
 YY_RULE_SETUP
-{ yylval->lex.i = strtol(yytext, 0, 0); return(INTCONSTANT); }
+{ yylval->lex.i = static_cast<int>(strtol(yytext, 0, 0)); return(INTCONSTANT); }
 	YY_BREAK
 case 101:
 YY_RULE_SETUP
@@ -1554,7 +1555,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 102:
 YY_RULE_SETUP
-{ yylval->lex.i = strtol(yytext, 0, 0); return(INTCONSTANT); }
+{ yylval->lex.i = static_cast<int>(strtol(yytext, 0, 0)); return(INTCONSTANT); }
 	YY_BREAK
 case 103:
 YY_RULE_SETUP
@@ -2947,148 +2948,13 @@ void yyfree (void * ptr , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#if !ANGLE_USE_NEW_PREPROCESSOR
-extern "C" {
-// Preprocessor interface.
-#include "compiler/preprocessor/preprocess.h"
-
-extern int InitPreprocessor();
-extern int FinalizePreprocessor();
-extern void PredefineIntMacro(const char *name, int value);
-
-#define SETUP_CONTEXT(pp) \
-    TParseContext* context = (TParseContext*) pp->pC; \
-    struct yyguts_t* yyg = (struct yyguts_t*) context->scanner;
-
-// Preprocessor callbacks.
-void CPPDebugLogMsg(const char *msg)
-{
-    SETUP_CONTEXT(cpp);
-    context->trace(msg);
-}
-
-void CPPWarningToInfoLog(const char *msg)
-{
-    SETUP_CONTEXT(cpp);
-    context->warning(yylineno, msg, "");
-}
-
-void CPPShInfoLogMsg(const char *msg)
-{
-    SETUP_CONTEXT(cpp);
-    context->error(yylineno, msg, "");
-    context->recover();
-}
-
-void CPPErrorToInfoLog(const char *msg)
-{
-    SETUP_CONTEXT(cpp);
-    context->error(yylineno, msg, "");
-    context->recover();
-}
-
-void SetLineNumber(int line)
-{
-    SETUP_CONTEXT(cpp);
-    int string = 0;
-    DecodeSourceLoc(yylineno, &string, NULL);
-    yylineno = EncodeSourceLoc(string, line);
-}
-
-void SetStringNumber(int string)
-{
-    SETUP_CONTEXT(cpp);
-    int line = 0;
-    DecodeSourceLoc(yylineno, NULL, &line);
-    yylineno = EncodeSourceLoc(string, line);
-}
-
-int GetStringNumber()
-{
-    SETUP_CONTEXT(cpp);
-    int string = 0;
-    DecodeSourceLoc(yylineno, &string, NULL);
-    return string;
-}
-
-int GetLineNumber()
-{
-    SETUP_CONTEXT(cpp);
-    int line = 0;
-    DecodeSourceLoc(yylineno, NULL, &line);
-    return line;
-}
-
-void IncLineNumber()
-{
-    SETUP_CONTEXT(cpp);
-    int string = 0, line = 0;
-    DecodeSourceLoc(yylineno, &string, &line);
-    yylineno = EncodeSourceLoc(string, ++line);
-}
-
-void DecLineNumber()
-{
-    SETUP_CONTEXT(cpp);
-    int string = 0, line = 0;
-    DecodeSourceLoc(yylineno, &string, &line);
-    yylineno = EncodeSourceLoc(string, --line);
-}
-
-void HandlePragma(const char **tokens, int numTokens)
-{
-    SETUP_CONTEXT(cpp);
-
-    if (numTokens != 4) return;
-    if (strcmp(tokens[1], "(") != 0) return;
-    if (strcmp(tokens[3], ")") != 0) return;
-
-    context->handlePragmaDirective(yylineno, tokens[0], tokens[2]);
-}
-
-void StoreStr(const char *string)
-{
-    SETUP_CONTEXT(cpp);
-    TString strSrc;
-    strSrc = TString(string);
-
-    context->HashErrMsg = context->HashErrMsg + " " + strSrc;
-}
-
-const char* GetStrfromTStr(void)
-{
-    SETUP_CONTEXT(cpp);
-    cpp->ErrMsg = context->HashErrMsg.c_str();
-    return cpp->ErrMsg;
-}
-
-void ResetTString(void)
-{
-    SETUP_CONTEXT(cpp);
-    context->HashErrMsg = "";
-}
-
-void updateExtensionBehavior(const char* extName, const char* behavior)
-{
-    SETUP_CONTEXT(cpp);
-    context->handleExtensionDirective(yylineno, extName, behavior);
-}
-}  // extern "C"
-#endif  // !ANGLE_USE_NEW_PREPROCESSOR
-
-int string_input(char* buf, int max_size, yyscan_t yyscanner) {
-    int len = 0;
-
-#if ANGLE_USE_NEW_PREPROCESSOR
+yy_size_t string_input(char* buf, yy_size_t max_size, yyscan_t yyscanner) {
     pp::Token token;
     yyget_extra(yyscanner)->preprocessor.lex(&token);
-    len = token.type == pp::Token::LAST ? 0 : token.value.size();
-    if ((len > 0) && (len < max_size))
-        memcpy(buf, token.value.c_str(), len);
+    yy_size_t len = token.type == pp::Token::LAST ? 0 : token.text.size();
+    if (len < max_size)
+        memcpy(buf, token.text.c_str(), len);
     yyset_lineno(EncodeSourceLoc(token.location.file, token.location.line),yyscanner);
-#else
-    len = yylex_CPP(buf, max_size);
-#endif  // ANGLE_USE_NEW_PREPROCESSOR
 
     if (len >= max_size)
         YY_FATAL_ERROR("Input buffer overflow");
@@ -3148,40 +3014,24 @@ int glslang_finalize(TParseContext* context) {
     context->scanner = NULL;
     yylex_destroy(scanner);
 
-#if !ANGLE_USE_NEW_PREPROCESSOR
-    FinalizePreprocessor();
-#endif
     return 0;
 }
 
-int glslang_scan(int count, const char* const string[], const int length[],
+int glslang_scan(size_t count, const char* const string[], const int length[],
                  TParseContext* context) {
     yyrestart(NULL,context->scanner);
     yyset_lineno(EncodeSourceLoc(0, 1),context->scanner);
     context->AfterEOF = false;
 
     // Initialize preprocessor.
-#if ANGLE_USE_NEW_PREPROCESSOR
     if (!context->preprocessor.init(count, string, length))
         return 1;
-#else
-    if (InitPreprocessor())
-        return 1;
-    cpp->pC = context;
-    cpp->pastFirstStatement = 0;
-    if (InitScannerInput(cpp, count, string, length))
-        return 1;
-#endif  // ANGLE_USE_NEW_PREPROCESSOR
 
     // Define extension macros.
     const TExtensionBehavior& extBehavior = context->extensionBehavior();
     for (TExtensionBehavior::const_iterator iter = extBehavior.begin();
          iter != extBehavior.end(); ++iter) {
-#if ANGLE_USE_NEW_PREPROCESSOR
         context->preprocessor.predefineMacro(iter->first.c_str(), 1);
-#else
-        PredefineIntMacro(iter->first.c_str(), 1);
-#endif
     }
     return 0;
 }

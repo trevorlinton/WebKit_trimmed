@@ -1003,3 +1003,53 @@ bool WKPreferencesGetAggressiveTileRetentionEnabled(WKPreferencesRef preferences
 {
     return toImpl(preferencesRef)->aggressiveTileRetentionEnabled();
 }
+
+void WKPreferencesSetQTKitEnabled(WKPreferencesRef preferencesRef, bool enabled)
+{
+    toImpl(preferencesRef)->setQTKitEnabled(enabled);
+}
+
+bool WKPreferencesGetQTKitEnabled(WKPreferencesRef preferencesRef)
+{
+    return toImpl(preferencesRef)->isQTKitEnabled();
+}
+
+void WKPreferencesSetLogsPageMessagesToSystemConsoleEnabled(WKPreferencesRef preferencesRef, bool enabled)
+{
+    toImpl(preferencesRef)->setLogsPageMessagesToSystemConsoleEnabled(enabled);
+}
+
+bool WKPreferencesGetLogsPageMessagesToSystemConsoleEnabled(WKPreferencesRef preferencesRef)
+{
+    return toImpl(preferencesRef)->logsPageMessagesToSystemConsoleEnabled();
+}
+
+void WKPreferencesSetPageVisibilityBasedProcessSuppressionEnabled(WKPreferencesRef preferencesRef, bool enabled)
+{
+    toImpl(preferencesRef)->setPageVisibilityBasedProcessSuppressionEnabled(enabled);
+}
+
+bool WKPreferencesGetPageVisibilityBasedProcessSuppressionEnabled(WKPreferencesRef preferencesRef)
+{
+    return toImpl(preferencesRef)->pageVisibilityBasedProcessSuppressionEnabled();
+}
+
+void WKPreferencesSetSmartInsertDeleteEnabled(WKPreferencesRef preferencesRef, bool enabled)
+{
+    toImpl(preferencesRef)->setSmartInsertDeleteEnabled(enabled);
+}
+
+bool WKPreferencesGetSmartInsertDeleteEnabled(WKPreferencesRef preferencesRef)
+{
+    return toImpl(preferencesRef)->smartInsertDeleteEnabled();
+}
+
+void WKPreferencesSetShowsURLsInToolTipsEnabled(WKPreferencesRef preferencesRef, bool enabled)
+{
+    toImpl(preferencesRef)->setShowsURLsInToolTipsEnabled(enabled);
+}
+
+bool WKPreferencesGetShowsURLsInToolTipsEnabled(WKPreferencesRef preferencesRef)
+{
+    return toImpl(preferencesRef)->showsURLsInToolTipsEnabled();
+}

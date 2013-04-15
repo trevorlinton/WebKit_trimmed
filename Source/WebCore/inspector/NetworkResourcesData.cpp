@@ -32,7 +32,9 @@
 
 #include "NetworkResourcesData.h"
 
+#include "CachedResource.h"
 #include "DOMImplementation.h"
+#include "ResourceResponse.h"
 #include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
 #include <wtf/MemoryInstrumentationHashMap.h>
@@ -70,10 +72,10 @@ XHRReplayData::XHRReplayData(const String &method, const KURL& url, bool async, 
 void XHRReplayData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_method);
-    info.addMember(m_url);
-    info.addMember(m_formData);
-    info.addMember(m_headers);
+    info.addMember(m_method, "method");
+    info.addMember(m_url, "url");
+    info.addMember(m_formData, "formData");
+    info.addMember(m_headers, "headers");
 }
 
 // ResourceData
@@ -150,17 +152,17 @@ size_t NetworkResourcesData::ResourceData::decodeDataToContent()
 void NetworkResourcesData::ResourceData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_requestId);
-    info.addMember(m_loaderId);
-    info.addMember(m_frameId);
-    info.addMember(m_url);
-    info.addMember(m_content);
-    info.addMember(m_xhrReplayData);
-    info.addMember(m_dataBuffer);
-    info.addMember(m_textEncodingName);
-    info.addMember(m_decoder);
-    info.addMember(m_buffer);
-    info.addMember(m_cachedResource);
+    info.addMember(m_requestId, "requestId");
+    info.addMember(m_loaderId, "loaderId");
+    info.addMember(m_frameId, "frameId");
+    info.addMember(m_url, "url");
+    info.addMember(m_content, "content");
+    info.addMember(m_xhrReplayData, "xhrReplayData");
+    info.addMember(m_dataBuffer, "dataBuffer");
+    info.addMember(m_textEncodingName, "textEncodingName");
+    info.addMember(m_decoder, "decoder");
+    info.addMember(m_buffer, "buffer");
+    info.addMember(m_cachedResource, "cachedResource");
 }
 
 // NetworkResourcesData
@@ -199,7 +201,7 @@ static PassRefPtr<TextResourceDecoder> createOtherResourceTextDecoder(const Stri
 
 void NetworkResourcesData::responseReceived(const String& requestId, const String& frameId, const ResourceResponse& response)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     resourceData->setFrameId(frameId);
@@ -210,7 +212,7 @@ void NetworkResourcesData::responseReceived(const String& requestId, const Strin
 
 void NetworkResourcesData::setResourceType(const String& requestId, InspectorPageAgent::ResourceType type)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     resourceData->setType(type);
@@ -218,7 +220,7 @@ void NetworkResourcesData::setResourceType(const String& requestId, InspectorPag
 
 InspectorPageAgent::ResourceType NetworkResourcesData::resourceType(const String& requestId)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return InspectorPageAgent::OtherResource;
     return resourceData->type();
@@ -226,7 +228,7 @@ InspectorPageAgent::ResourceType NetworkResourcesData::resourceType(const String
 
 void NetworkResourcesData::setResourceContent(const String& requestId, const String& content, bool base64Encoded)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     size_t dataLength = contentSizeInBytes(content);
@@ -246,7 +248,7 @@ void NetworkResourcesData::setResourceContent(const String& requestId, const Str
 
 void NetworkResourcesData::maybeAddResourceData(const String& requestId, const char* data, size_t dataLength)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     if (!resourceData->decoder())
@@ -264,7 +266,7 @@ void NetworkResourcesData::maybeAddResourceData(const String& requestId, const c
 
 void NetworkResourcesData::maybeDecodeDataToContent(const String& requestId)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     if (!resourceData->hasData())
@@ -277,16 +279,15 @@ void NetworkResourcesData::maybeDecodeDataToContent(const String& requestId)
 
 void NetworkResourcesData::addCachedResource(const String& requestId, CachedResource* cachedResource)
 {
-    if (!m_requestIdToResourceDataMap.contains(requestId))
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
+    if (!resourceData)
         return;
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
-
     resourceData->setCachedResource(cachedResource);
 }
 
 void NetworkResourcesData::addResourceSharedBuffer(const String& requestId, PassRefPtr<SharedBuffer> buffer, const String& textEncodingName)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
     resourceData->setBuffer(buffer);
@@ -295,7 +296,7 @@ void NetworkResourcesData::addResourceSharedBuffer(const String& requestId, Pass
 
 NetworkResourcesData::ResourceData const* NetworkResourcesData::data(const String& requestId)
 {
-    return m_requestIdToResourceDataMap.get(requestId);
+    return resourceDataForRequestId(requestId);
 }
 
 XHRReplayData* NetworkResourcesData::xhrReplayData(const String& requestId)
@@ -303,7 +304,7 @@ XHRReplayData* NetworkResourcesData::xhrReplayData(const String& requestId)
     if (m_reusedXHRReplayDataRequestIds.contains(requestId))
         return xhrReplayData(m_reusedXHRReplayDataRequestIds.get(requestId));
 
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return 0;
     return resourceData->xhrReplayData();
@@ -311,7 +312,7 @@ XHRReplayData* NetworkResourcesData::xhrReplayData(const String& requestId)
 
 void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayData* xhrReplayData)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData) {
         Vector<String> result;
         ReusedRequestIds::iterator it;
@@ -328,8 +329,8 @@ void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayDa
 
 void NetworkResourcesData::reuseXHRReplayData(const String& requestId, const String& reusedRequestId)
 {
-    ResourceData* reusedResourceData = m_requestIdToResourceDataMap.get(reusedRequestId);
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+    ResourceData* reusedResourceData = resourceDataForRequestId(reusedRequestId);
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!reusedResourceData || !resourceData) {
         m_reusedXHRReplayDataRequestIds.set(requestId, reusedRequestId);
         return;
@@ -382,16 +383,22 @@ void NetworkResourcesData::setResourcesDataSizeLimits(size_t maximumResourcesCon
     m_maximumSingleResourceContentSize = maximumSingleResourceContentSize;
 }
 
+NetworkResourcesData::ResourceData* NetworkResourcesData::resourceDataForRequestId(const String& requestId)
+{
+    if (requestId.isNull())
+        return 0;
+    return m_requestIdToResourceDataMap.get(requestId);
+}
 
 void NetworkResourcesData::ensureNoDataForRequestId(const String& requestId)
 {
-    ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
-    if (resourceData) {
-        if (resourceData->hasContent() || resourceData->hasData())
-            m_contentSize -= resourceData->evictContent();
-        delete resourceData;
-        m_requestIdToResourceDataMap.remove(requestId);
-    }
+    ResourceData* resourceData = resourceDataForRequestId(requestId);
+    if (!resourceData)
+        return;
+    if (resourceData->hasContent() || resourceData->hasData())
+        m_contentSize -= resourceData->evictContent();
+    delete resourceData;
+    m_requestIdToResourceDataMap.remove(requestId);
 }
 
 bool NetworkResourcesData::ensureFreeSpace(size_t size)
@@ -401,7 +408,7 @@ bool NetworkResourcesData::ensureFreeSpace(size_t size)
 
     while (size > m_maximumResourcesContentSize - m_contentSize) {
         String requestId = m_requestIdsDeque.takeFirst();
-        ResourceData* resourceData = m_requestIdToResourceDataMap.get(requestId);
+        ResourceData* resourceData = resourceDataForRequestId(requestId);
         if (resourceData)
             m_contentSize -= resourceData->evictContent();
     }
@@ -411,9 +418,9 @@ bool NetworkResourcesData::ensureFreeSpace(size_t size)
 void NetworkResourcesData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_requestIdsDeque);
-    info.addMember(m_reusedXHRReplayDataRequestIds);
-    info.addMember(m_requestIdToResourceDataMap);
+    info.addMember(m_requestIdsDeque, "requestIdsDeque");
+    info.addMember(m_reusedXHRReplayDataRequestIds, "reusedXHRReplayDataRequestIds");
+    info.addMember(m_requestIdToResourceDataMap, "requestIdToResourceDataMap");
 }
 
 } // namespace WebCore

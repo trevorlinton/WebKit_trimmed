@@ -20,16 +20,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-messages -> WebProcess {
+messages -> WebProcess LegacyReceiver {
     # Initialize the WebProcess. 
     InitializeWebProcess(WebKit::WebProcessCreationParameters processCreationParameters, WebKit::WebContextUserMessageEncoder initializationUserData) Variadic
 
     # Create a new page.
     CreateWebPage(uint64_t newPageID, WebKit::WebPageCreationParameters pageCreationParameters)
-
-#if ENABLE(WEB_INTENTS)
-    RemoveMessagePortChannel(uint64_t channelID);
-#endif
 
     # Visited link tracking.
     SetVisitedLinkTable(WebKit::SharedMemory::Handle handle)
@@ -51,9 +47,6 @@ messages -> WebProcess {
     SetShouldUseFontSmoothing(bool useFontSmoothing)
     UserPreferredLanguagesChanged(Vector<WTF::String> languages)
     FullKeyboardAccessModeChanged(bool fullKeyboardAccessEnabled)
-#if PLATFORM(WIN)
-    SetShouldPaintNativeControls(bool shouldPaintNativeControls)
-#endif
 #if USE(SOUP)
     SetIgnoreTLSErrors(bool ignoreTLSErrors)
 #endif
@@ -63,19 +56,12 @@ messages -> WebProcess {
     DestroyPrivateBrowsingSession()
 
     # Plug-ins.
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    DidGetPlugins(uint64_t requestID, Vector<WebCore::PluginInfo> plugins) DispatchOnConnectionQueue
-#endif
 #if ENABLE(NETSCAPE_PLUGIN_API) && !ENABLE(PLUGIN_PROCESS)
     GetSitesWithPluginData(Vector<WTF::String> pluginPaths, uint64_t callbackID)
     ClearPluginSiteData(Vector<WTF::String> pluginPaths, Vector<WTF::String> sites, uint64_t flags, uint64_t maxAgeInSeconds, uint64_t callbackID)
 #endif
     DidAddPlugInAutoStartOrigin(uint32_t hash, double expirationTime)
     ResetPlugInAutoStartOrigins(HashMap<uint32_t,double> hashes)
-
-#if ENABLE(PLUGIN_PROCESS)
-    PluginProcessCrashed(String pluginProcess, uint32_t processType) DispatchOnConnectionQueue
-#endif
 
     void StartMemorySampler(WebKit::SandboxExtension::Handle sampleLogFileHandle, WTF::String sampleLogFilePath, double interval);
     void StopMemorySampler();
@@ -98,11 +84,7 @@ messages -> WebProcess {
 
     PostInjectedBundleMessage(CoreIPC::DataReference messageData);
 
-#if USE(SECURITY_FRAMEWORK)
-    SecItemResponse(uint64_t requestID, WebKit::SecItemResponseData response) DispatchOnConnectionQueue
-#endif
-
 #if PLATFORM(MAC)
-    SetApplicationIsOccluded(bool flag);
+    SetProcessSuppressionEnabled(bool flag);
 #endif
 }

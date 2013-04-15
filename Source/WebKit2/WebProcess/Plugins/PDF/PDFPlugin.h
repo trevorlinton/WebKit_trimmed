@@ -70,12 +70,18 @@ public:
     
     using ScrollableArea::notifyScrollPositionChanged;
     void notifyContentScaleFactorChanged(CGFloat scaleFactor);
+    void notifyDisplayModeChanged(int);
+
+    void notifySelectionChanged(PDFSelection *);
 
     void clickedLink(NSURL *);
     void saveToPDF();
     void openWithNativeApplication();
     void writeItemsToPasteboard(NSArray *items, NSArray *types);
     void showDefinitionForAttributedString(NSAttributedString *, CGPoint);
+
+    void focusNextAnnotation();
+    void focusPreviousAnnotation();
 
 private:
     explicit PDFPlugin(WebFrame*);
@@ -103,6 +109,9 @@ private:
     virtual bool findString(const String& target, WebCore::FindOptions, unsigned maxMatchCount) OVERRIDE;
 
     PDFSelection *nextMatchForString(const String& target, BOOL searchForward, BOOL caseSensitive, BOOL wrapSearch, PDFSelection *initialSelection, BOOL startInSelection);
+
+    virtual bool performDictionaryLookupAtLocation(const WebCore::FloatPoint&) OVERRIDE;
+    virtual String getSelectionString() const OVERRIDE;
 
     // ScrollableArea functions.
     virtual void setScrollOffset(const WebCore::IntPoint&) OVERRIDE;

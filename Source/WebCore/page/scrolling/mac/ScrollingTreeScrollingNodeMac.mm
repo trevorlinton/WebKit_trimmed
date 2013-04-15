@@ -28,6 +28,7 @@
 
 #if ENABLE(THREADED_SCROLLING)
 
+#include "FrameView.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollingCoordinator.h"
 #include "ScrollingTree.h"
@@ -44,15 +45,18 @@
 namespace WebCore {
 
 static void logThreadedScrollingMode(unsigned mainThreadScrollingReasons);
+static void logWheelEventHandlerCountChanged(unsigned);
 
-PassOwnPtr<ScrollingTreeScrollingNode> ScrollingTreeScrollingNode::create(ScrollingTree* scrollingTree)
+
+PassOwnPtr<ScrollingTreeScrollingNode> ScrollingTreeScrollingNode::create(ScrollingTree* scrollingTree, ScrollingNodeID nodeID)
 {
-    return adoptPtr(new ScrollingTreeScrollingNodeMac(scrollingTree));
+    return adoptPtr(new ScrollingTreeScrollingNodeMac(scrollingTree, nodeID));
 }
 
-ScrollingTreeScrollingNodeMac::ScrollingTreeScrollingNodeMac(ScrollingTree* scrollingTree)
-    : ScrollingTreeScrollingNode(scrollingTree)
+ScrollingTreeScrollingNodeMac::ScrollingTreeScrollingNodeMac(ScrollingTree* scrollingTree, ScrollingNodeID nodeID)
+    : ScrollingTreeScrollingNode(scrollingTree, nodeID)
     , m_scrollElasticityController(this)
+    , m_lastScrollHadUnfilledPixels(false)
 {
 }
 
@@ -62,28 +66,25 @@ ScrollingTreeScrollingNodeMac::~ScrollingTreeScrollingNodeMac()
         CFRunLoopTimerInvalidate(m_snapRubberbandTimer.get());
 }
 
-void ScrollingTreeScrollingNodeMac::update(ScrollingStateNode* stateNode)
+void ScrollingTreeScrollingNodeMac::updateBeforeChildren(ScrollingStateNode* stateNode)
 {
-    ScrollingTreeScrollingNode::update(stateNode);
-    ScrollingStateScrollingNode* state = toScrollingStateScrollingNode(stateNode);
+    ScrollingTreeScrollingNode::updateBeforeChildren(stateNode);
+    ScrollingStateScrollingNode* scrollingStateNode = toScrollingStateScrollingNode(stateNode);
 
-    if (state->scrollLayerDidChange())
-        m_scrollLayer = state->platformScrollLayer();
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateNode::ScrollLayer))
+        m_scrollLayer = scrollingStateNode->platformScrollLayer();
 
-    if (state->changedProperties() & ScrollingStateScrollingNode::RequestedScrollPosition)
-        setScrollPosition(state->requestedScrollPosition());
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::CounterScrollingLayer))
+        m_counterScrollingLayer = scrollingStateNode->counterScrollingPlatformLayer();
 
-    if (state->scrollLayerDidChange() || state->changedProperties() & (ScrollingStateScrollingNode::ContentsSize | ScrollingStateScrollingNode::ViewportRect))
-        updateMainFramePinState(scrollPosition());
-
-    if ((state->changedProperties() & ScrollingStateScrollingNode::ShouldUpdateScrollLayerPositionOnMainThread)) {
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::ShouldUpdateScrollLayerPositionOnMainThread)) {
         unsigned mainThreadScrollingReasons = this->shouldUpdateScrollLayerPositionOnMainThread();
 
         if (mainThreadScrollingReasons) {
             // We're transitioning to the slow "update scroll layer position on the main thread" mode.
             // Initialize the probable main thread scroll position with the current scroll layer position.
-            if (state->changedProperties() & ScrollingStateScrollingNode::RequestedScrollPosition)
-                m_probableMainThreadScrollPosition = state->requestedScrollPosition();
+            if (scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::RequestedScrollPosition))
+                m_probableMainThreadScrollPosition = scrollingStateNode->requestedScrollPosition();
             else {
                 CGPoint scrollLayerPosition = m_scrollLayer.get().position;
                 m_probableMainThreadScrollPosition = IntPoint(-scrollLayerPosition.x, -scrollLayerPosition.y);
@@ -93,6 +94,25 @@ void ScrollingTreeScrollingNodeMac::update(ScrollingStateNode* stateNode)
         if (scrollingTree()->scrollingPerformanceLoggingEnabled())
             logThreadedScrollingMode(mainThreadScrollingReasons);
     }
+
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::WheelEventHandlerCount)) {
+        if (scrollingTree()->scrollingPerformanceLoggingEnabled())
+            logWheelEventHandlerCountChanged(scrollingStateNode->wheelEventHandlerCount());
+    }
+}
+
+void ScrollingTreeScrollingNodeMac::updateAfterChildren(ScrollingStateNode* stateNode)
+{
+    ScrollingTreeScrollingNode::updateAfterChildren(stateNode);
+
+    ScrollingStateScrollingNode* scrollingStateNode = toScrollingStateScrollingNode(stateNode);
+
+    // Update the scroll position after child nodes have been updated, because they need to have updated their constraints before any scrolling happens.
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::RequestedScrollPosition))
+        setScrollPosition(scrollingStateNode->requestedScrollPosition());
+
+    if (scrollingStateNode->hasChangedProperty(ScrollingStateNode::ScrollLayer) || scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::ContentsSize) || scrollingStateNode->hasChangedProperty(ScrollingStateScrollingNode::ViewportRect))
+        updateMainFramePinState(scrollPosition());
 }
 
 void ScrollingTreeScrollingNodeMac::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
@@ -148,6 +168,13 @@ IntSize ScrollingTreeScrollingNodeMac::stretchAmount()
     else if (scrollPosition().x() > maximumScrollPosition().x())
         stretch.setWidth(scrollPosition().x() - maximumScrollPosition().x());
 
+    if (scrollingTree()->rootNode() == this) {
+        if (stretch.isZero())
+            scrollingTree()->setMainFrameIsRubberBanding(false);
+        else
+            scrollingTree()->setMainFrameIsRubberBanding(true);
+    }
+
     return stretch;
 }
 
@@ -173,7 +200,7 @@ bool ScrollingTreeScrollingNodeMac::pinnedInDirection(const FloatSize& delta)
         }
     }
 
-    if ((delta.width() || delta.height()) && (limitDelta.width() < 1 && limitDelta.height() < 1))        
+    if ((delta.width() || delta.height()) && (limitDelta.width() < 1 && limitDelta.height() < 1))
         return true;
 
     return false;
@@ -232,6 +259,8 @@ void ScrollingTreeScrollingNodeMac::stopSnapRubberbandTimer()
     if (!m_snapRubberbandTimer)
         return;
 
+    scrollingTree()->setMainFrameIsRubberBanding(false);
+
     CFRunLoopTimerInvalidate(m_snapRubberbandTimer.get());
     m_snapRubberbandTimer = nullptr;
 }
@@ -276,10 +305,13 @@ void ScrollingTreeScrollingNodeMac::setScrollLayerPosition(const IntPoint& posit
     ASSERT(!shouldUpdateScrollLayerPositionOnMainThread());
     m_scrollLayer.get().position = CGPointMake(-position.x() + scrollOrigin().x(), -position.y() + scrollOrigin().y());
 
+    IntSize scrollOffsetForFixedChildren = FrameView::scrollOffsetForFixedPosition(viewportRect(), contentsSize(), position, scrollOrigin(), frameScaleFactor(), false);
+    if (m_counterScrollingLayer)
+        m_counterScrollingLayer.get().position = FloatPoint(scrollOffsetForFixedChildren);
+
     if (!m_children)
         return;
 
-    IntSize scrollOffsetForFixedChildren = WebCore::scrollOffsetForFixedPosition(viewportRect(), contentsSize(), position, scrollOrigin(), frameScaleFactor(), false);
     IntRect viewportRect = this->viewportRect();
     viewportRect.setLocation(IntPoint(scrollOffsetForFixedChildren));
 
@@ -317,8 +349,10 @@ void ScrollingTreeScrollingNodeMac::updateMainFramePinState(const IntPoint& scro
 {
     bool pinnedToTheLeft = scrollPosition.x() <= minimumScrollPosition().x();
     bool pinnedToTheRight = scrollPosition.x() >= maximumScrollPosition().x();
+    bool pinnedToTheTop = scrollPosition.y() <= minimumScrollPosition().y();
+    bool pinnedToTheBottom = scrollPosition.y() >= maximumScrollPosition().y();
 
-    scrollingTree()->setMainFramePinState(pinnedToTheLeft, pinnedToTheRight);
+    scrollingTree()->setMainFramePinState(pinnedToTheLeft, pinnedToTheRight, pinnedToTheTop, pinnedToTheBottom);
 }
 
 void ScrollingTreeScrollingNodeMac::logExposedUnfilledArea()
@@ -350,8 +384,10 @@ void ScrollingTreeScrollingNodeMac::logExposedUnfilledArea()
     IntPoint scrollPosition = this->scrollPosition();
     unsigned unfilledArea = TileCache::blankPixelCountForTiles(tiles, viewportRect(), IntPoint(-scrollPosition.x(), -scrollPosition.y()));
 
-    if (unfilledArea)
+    if (unfilledArea || m_lastScrollHadUnfilledPixels)
         WTFLogAlways("SCROLLING: Exposed tileless area. Time: %f Unfilled Pixels: %u\n", WTF::monotonicallyIncreasingTime(), unfilledArea);
+
+    m_lastScrollHadUnfilledPixels = unfilledArea;
 }
 
 static void logThreadedScrollingMode(unsigned mainThreadScrollingReasons)
@@ -365,7 +401,7 @@ static void logThreadedScrollingMode(unsigned mainThreadScrollingReasons)
             reasonsDescription.append("slow-repaint objects,");
         if (mainThreadScrollingReasons & ScrollingCoordinator::HasViewportConstrainedObjectsWithoutSupportingFixedLayers)
             reasonsDescription.append("viewport-constrained objects,");
-        if (mainThreadScrollingReasons & ScrollingCoordinator::HasNonLayerFixedObjects)
+        if (mainThreadScrollingReasons & ScrollingCoordinator::HasNonLayerViewportConstrainedObjects)
             reasonsDescription.append("non-layer viewport-constrained objects,");
         if (mainThreadScrollingReasons & ScrollingCoordinator::IsImageDocument)
             reasonsDescription.append("image document,");
@@ -376,6 +412,11 @@ static void logThreadedScrollingMode(unsigned mainThreadScrollingReasons)
         WTFLogAlways("SCROLLING: Switching to main-thread scrolling mode. Time: %f Reason(s): %s\n", WTF::monotonicallyIncreasingTime(), reasonsDescriptionTrimmed.ascii().data());
     } else
         WTFLogAlways("SCROLLING: Switching to threaded scrolling mode. Time: %f\n", WTF::monotonicallyIncreasingTime());
+}
+
+void logWheelEventHandlerCountChanged(unsigned count)
+{
+    WTFLogAlways("SCROLLING: Wheel event handler count changed. Time: %f Count: %u\n", WTF::monotonicallyIncreasingTime(), count);
 }
 
 } // namespace WebCore

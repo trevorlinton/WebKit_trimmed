@@ -26,6 +26,8 @@
 #include "config.h"
 #include "ChildProcess.h"
 
+#include "SandboxInitializationParameters.h"
+
 #if !OS(WINDOWS)
 #include <unistd.h>
 #endif
@@ -53,20 +55,24 @@ NO_RETURN static void watchdogCallback()
     _exit(EXIT_FAILURE);
 }
 
-static void didCloseOnConnectionWorkQueue(WorkQueue& workQueue, CoreIPC::Connection*)
+static void didCloseOnConnectionWorkQueue(CoreIPC::Connection*)
 {
     // If the connection has been closed and we haven't responded in the main thread for 10 seconds
     // the process will exit forcibly.
     const double watchdogDelay = 10;
 
-    workQueue.dispatchAfterDelay(bind(static_cast<void(*)()>(watchdogCallback)), watchdogDelay);
+    WorkQueue::create("com.apple.WebKit.ChildProcess.WatchDogQueue")->dispatchAfterDelay(bind(static_cast<void(*)()>(watchdogCallback)), watchdogDelay);
 }
 
 void ChildProcess::initialize(const ChildProcessInitializationParameters& parameters)
 {
     platformInitialize();
 
-    initializeSandbox(parameters.clientIdentifier);
+    initializeProcess(parameters);
+    initializeProcessName(parameters);
+
+    SandboxInitializationParameters sandboxParameters;
+    initializeSandbox(parameters, sandboxParameters);
     
     m_connection = CoreIPC::Connection::createClientConnection(parameters.connectionIdentifier, this, RunLoop::main());
     m_connection->setDidCloseOnConnectionWorkQueueCallback(didCloseOnConnectionWorkQueue);
@@ -74,11 +80,15 @@ void ChildProcess::initialize(const ChildProcessInitializationParameters& parame
     m_connection->open();
 }
 
-void ChildProcess::initializeConnection(CoreIPC::Connection*)
+void ChildProcess::initializeProcess(const ChildProcessInitializationParameters&)
 {
 }
 
-void ChildProcess::initializeSandbox(const String& clientIdentifier)
+void ChildProcess::initializeProcessName(const ChildProcessInitializationParameters&)
+{
+}
+
+void ChildProcess::initializeConnection(CoreIPC::Connection*)
 {
 }
 
@@ -130,13 +140,16 @@ void ChildProcess::terminationTimerFired()
 void ChildProcess::terminate()
 {
     m_connection->invalidate();
-    m_connection = nullptr;
 
     RunLoop::main()->stop();
 }
 
 #if !PLATFORM(MAC)
 void ChildProcess::platformInitialize()
+{
+}
+
+void ChildProcess::initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&)
 {
 }
 #endif

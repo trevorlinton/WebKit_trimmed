@@ -45,7 +45,6 @@
 
 namespace WebCore {
 
-class IDBVersionChangeRequest;
 class ScriptExecutionContext;
 
 typedef int ExceptionCode;
@@ -83,6 +82,7 @@ public:
     virtual void onComplete(int64_t);
 
     // ActiveDOMObject
+    virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
     // EventTarget
@@ -102,6 +102,8 @@ public:
     {
         return findObjectStoreId(name) != IDBObjectStoreMetadata::InvalidId;
     }
+
+    IDBDatabaseBackendInterface* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
 

@@ -292,14 +292,6 @@ void ScriptDebugServer::dispatchDidParseSource(const ListenerSet& listeners, Sou
     script.startColumn = sourceProvider->startPosition().m_column.zeroBasedInt();
     script.isContentScript = isContentScript;
 
-#if ENABLE(INSPECTOR)
-    if (!script.startLine && !script.startColumn) {
-        String sourceURL = ContentSearchUtils::findSourceURL(script.source);
-        if (!sourceURL.isEmpty())
-            script.url = sourceURL;
-    }
-#endif
-
     int sourceLength = script.source.length();
     int lineCount = 1;
     int lastLineStart = 0;
@@ -510,8 +502,13 @@ void ScriptDebugServer::didExecuteProgram(const DebuggerCallFrame& debuggerCallF
     updateCallFrameAndPauseIfNeeded(debuggerCallFrame, sourceID, lineNumber, columnNumber);
 
     // Treat stepping over the end of a program like stepping out.
-    if (m_currentCallFrame == m_pauseOnCallFrame)
+    if (!m_currentCallFrame)
+        return;
+    if (m_currentCallFrame == m_pauseOnCallFrame) {
         m_pauseOnCallFrame = m_currentCallFrame->caller();
+        if (!m_currentCallFrame)
+            return;
+    }
     m_currentCallFrame = m_currentCallFrame->caller();
 }
 

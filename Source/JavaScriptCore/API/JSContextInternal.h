@@ -23,11 +23,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
+#ifndef JSContextInternal_h
+#define JSContextInternal_h
+
 #import <JavaScriptCore/JavaScriptCore.h>
 
-#if JS_OBJC_API_ENABLED
+#if JSC_OBJC_API_ENABLED
 
-#import "JSContext.h"
+#import <JavaScriptCore/JSContext.h>
 
 struct CallbackData {
     CallbackData *next;
@@ -52,9 +55,11 @@ private:
     JSContext *m_weakContext;
 };
 
+@class JSWrapperMap;
+
 @interface JSContext(Internal)
 
-JSGlobalContextRef contextInternalContext(JSContext *);
+- (id)initWithGlobalContextRef:(JSGlobalContextRef)context;
 
 - (void)notifyException:(JSValueRef)exception;
 - (JSValue *)valueFromNotifyException:(JSValueRef)exception;
@@ -63,11 +68,15 @@ JSGlobalContextRef contextInternalContext(JSContext *);
 - (void)beginCallbackWithData:(CallbackData *)callbackData thisValue:(JSValueRef)thisValue argumentCount:(size_t)argumentCount arguments:(const JSValueRef *)arguments;
 - (void)endCallbackWithData:(CallbackData *)callbackData;
 
-- (void)protect:(JSValueRef)value;
-- (void)unprotect:(JSValueRef)value;
+- (JSValue *)wrapperForObjCObject:(id)object;
+- (JSValue *)wrapperForJSObject:(JSValueRef)value;
 
-- (JSValue *)wrapperForObject:(id)object;
++ (JSContext *)contextWithGlobalContextRef:(JSGlobalContextRef)globalContext;
+
+@property (readonly, retain) JSWrapperMap *wrapperMap;
 
 @end
 
 #endif
+
+#endif // JSContextInternal_h

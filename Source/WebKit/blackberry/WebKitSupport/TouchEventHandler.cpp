@@ -73,6 +73,13 @@ void TouchEventHandler::doFatFingers(const Platform::TouchPoint& point)
     m_webPage->postponeDocumentStyleRecalc();
     m_lastFatFingersResult = FatFingers(m_webPage, point.documentContentPosition(), FatFingers::ClickableElement).findBestPoint();
     m_webPage->resumeDocumentStyleRecalc();
+
+    Node* nodeUnderFatFinger = m_lastFatFingersResult.node();
+    if (nodeUnderFatFinger && nodeUnderFatFinger->document()->frame() != m_webPage->focusedOrMainFrame()) {
+        m_webPage->clearFocusNode();
+        m_webPage->m_selectionHandler->cancelSelection();
+        m_webPage->m_page->focusController()->setFocusedFrame(nodeUnderFatFinger->document()->frame());
+    }
 }
 
 void TouchEventHandler::sendClickAtFatFingersPoint(unsigned modifiers)
@@ -110,6 +117,8 @@ void TouchEventHandler::handleTouchPoint(const Platform::TouchPoint& point, unsi
                 m_shouldRequestSpellCheckOptions = m_webPage->m_inputHandler->shouldRequestSpellCheckingOptionsForPoint(m_lastFatFingersResult.adjustedPosition(), elementUnderFatFinger, m_spellCheckOptionRequest);
             }
 
+            m_webPage->m_inputHandler->elementTouched(lastFatFingersResult().nodeAsElementIfApplicable(FatFingersResult::ShadowContentNotAllowed));
+
             handleFatFingerPressed(shiftActive, altActive, ctrlActive);
             break;
         }
@@ -127,6 +136,7 @@ void TouchEventHandler::handleTouchPoint(const Platform::TouchPoint& point, unsi
                 m_webPage->m_inputHandler->notifyClientOfKeyboardVisibilityChange(true);
 
             m_webPage->m_tapHighlight->hide();
+            m_webPage->m_selectionHighlight->hide();
 
             IntPoint adjustedPoint = m_webPage->mapFromContentsToViewport(m_lastFatFingersResult.adjustedPosition());
             PlatformMouseEvent mouseEvent(adjustedPoint, m_lastScreenPoint, PlatformEvent::MouseReleased, 1, LeftButton, shiftActive, ctrlActive, altActive, TouchScreen);

@@ -35,7 +35,7 @@
 #include "DumpRenderTreeQt.h"
 #include "DumpRenderTreeSupportQt.h"
 #include "EventSenderQt.h"
-#include "GCControllerQt.h"
+#include "GCController.h"
 #include "InitWebCoreQt.h"
 #include "InitWebKitQt.h"
 #include "QtTestSupport.h"
@@ -192,7 +192,6 @@ void WebPage::resetSettings()
 
     m_drt->testRunner()->setCaretBrowsingEnabled(false);
     m_drt->testRunner()->setAuthorAndUserStylesEnabled(true);
-    m_drt->testRunner()->setFrameFlatteningEnabled(false);
     m_drt->testRunner()->setSmartInsertDeleteEnabled(true);
     m_drt->testRunner()->setSelectTrailingWhitespaceEnabled(false);
     m_drt->testRunner()->setDefersLoading(false);
@@ -203,7 +202,7 @@ void WebPage::resetSettings()
     QWebSettings::setMaximumPagesInCache(0); // reset to default
     settings()->setUserStyleSheetUrl(QUrl()); // reset to default
 
-    DumpRenderTreeSupportQt::setMinimumTimerInterval(handle(), DumpRenderTreeSupportQt::defaultMinimumTimerInterval());
+    DumpRenderTreeSupportQt::setSeamlessIFramesEnabled(true);
 
     DumpRenderTreeSupportQt::resetInternalsObject(mainFrame()->handle());
 
@@ -423,7 +422,7 @@ DumpRenderTree::DumpRenderTree()
     DumpRenderTreeSupportQt::webPageSetGroupName(pageAdapter(), "org.webkit.qt.DumpRenderTree");
 
     m_mainView->setContextMenuPolicy(Qt::NoContextMenu);
-    m_mainView->resize(QSize(TestRunner::maxViewWidth, TestRunner::maxViewHeight));
+    m_mainView->resize(QSize(TestRunnerQt::maxViewWidth, TestRunnerQt::maxViewHeight));
 
     // clean up cache by resetting quota.
     qint64 quota = webPage()->settings()->offlineWebApplicationCacheQuota();
@@ -431,7 +430,7 @@ DumpRenderTree::DumpRenderTree()
 
     // create our controllers. This has to be done before connectFrame,
     // as it exports there to the JavaScript DOM window.
-    m_controller = new TestRunner(this);
+    m_controller = new TestRunnerQt(this);
     connect(m_controller, SIGNAL(showPage()), this, SLOT(showPage()));
     connect(m_controller, SIGNAL(hidePage()), this, SLOT(hidePage()));
 
@@ -441,7 +440,7 @@ DumpRenderTree::DumpRenderTree()
     connect(m_controller, SIGNAL(done()), this, SLOT(dump()));
     m_eventSender = new EventSender(m_page);
     m_textInputController = new TextInputController(m_page);
-    m_gcController = new GCController(m_page);
+    m_gcController.reset(new GCController());
 
     // now connect our different signals
     connect(m_page, SIGNAL(frameCreated(QWebFrame *)),
@@ -613,8 +612,8 @@ void DumpRenderTree::open(const QUrl& url)
 
     // W3C SVG tests expect to be 480x360
     bool isW3CTest = url.toString().contains("svg/W3C-SVG-1.1");
-    int width = isW3CTest ? 480 : TestRunner::maxViewWidth;
-    int height = isW3CTest ? 360 : TestRunner::maxViewHeight;
+    int width = isW3CTest ? 480 : TestRunnerQt::maxViewWidth;
+    int height = isW3CTest ? 360 : TestRunnerQt::maxViewHeight;
     m_mainView->resize(QSize(width, height));
     m_page->setPreferredContentsSize(QSize());
     m_page->setViewportSize(QSize(width, height));
@@ -720,6 +719,8 @@ void DumpRenderTree::processLine(const QString &input)
         open(QUrl::fromLocalFile(fi.absoluteFilePath()));
     }
 
+    if (command.timeout > 0)
+        setTimeout(command.timeout);
     fflush(stdout);
 }
 
@@ -734,10 +735,17 @@ void DumpRenderTree::initJSObjects()
 {
     QWebFrame *frame = qobject_cast<QWebFrame*>(sender());
     Q_ASSERT(frame);
+
+    JSContextRef context = 0;
+    JSObjectRef window = 0;
+
+    DumpRenderTreeSupportQt::getJSWindowObject(frame->handle(), &context, &window);
+
     frame->addToJavaScriptWindowObject(QLatin1String("testRunner"), m_controller);
     frame->addToJavaScriptWindowObject(QLatin1String("eventSender"), m_eventSender);
     frame->addToJavaScriptWindowObject(QLatin1String("textInputController"), m_textInputController);
-    frame->addToJavaScriptWindowObject(QLatin1String("GCController"), m_gcController);
+    m_gcController->makeWindowObject(context, window, 0);
+
     DumpRenderTreeSupportQt::injectInternalsObject(frame->handle());
 }
 
@@ -877,7 +885,7 @@ QString DumpRenderTree::dumpBackForwardList(QWebPage* page)
     return result;
 }
 
-static const char *methodNameStringForFailedTest(TestRunner *controller)
+static const char *methodNameStringForFailedTest(TestRunnerQt *controller)
 {
     const char *errorMessage;
     if (controller->shouldDumpAsText())
@@ -912,14 +920,19 @@ void DumpRenderTree::dump()
 
     // Dump render text...
     QString resultString;
-    if (m_controller->shouldDumpAsText())
+    QString resultContentType = "text/plain";
+    QByteArray resultData;
+    if (m_controller->shouldDumpAsAudio()) {
+        resultContentType = "audio/wav";
+        resultData = m_controller->audioData();
+    } else if (m_controller->shouldDumpAsText())
         resultString = dumpFramesAsText(mainFrame);
     else {
         resultString = DumpRenderTreeSupportQt::frameRenderTreeDump(mainFrame->handle());
         resultString += dumpFrameScrollPosition(mainFrame);
     }
     if (!resultString.isEmpty()) {
-        fprintf(stdout, "Content-Type: text/plain\n");
+        fprintf(stdout, "Content-Type: %s\n", resultContentType.toUtf8().constData());
         fprintf(stdout, "%s", resultString.toUtf8().constData());
 
         if (m_controller->shouldDumpBackForwardList()) {
@@ -929,7 +942,10 @@ void DumpRenderTree::dump()
                 fprintf(stdout, "%s", dumpBackForwardList(page).toUtf8().constData());
             }
         }
-
+    } else if (!resultData.isEmpty()) {
+        fprintf(stdout, "Content-Type: %s\n", resultContentType.toUtf8().constData());
+        fprintf(stdout, "Content-Transfer-Encoding: base64\n");
+        fprintf(stdout, "%s", resultData.toBase64().constData());
     } else
         printf("ERROR: nil result from %s", methodNameStringForFailedTest(m_controller));
 

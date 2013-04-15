@@ -64,9 +64,6 @@ class ViewportConstraints;
 class ScrollingTree;
 #endif
 
-IntSize scrollOffsetForFixedPosition(const IntRect& visibleContentRect, const IntSize& contentsSize, const IntPoint& scrollPosition,
-    const IntPoint& scrollOrigin, float frameScaleFactor, bool fixedElementsLayoutRelativeToFrame);
-
 enum SetOrSyncScrollingLayerPosition {
     SetScrollingLayerPosition,
     SyncScrollingLayerPosition
@@ -123,8 +120,14 @@ public:
     virtual void detachFromStateTree(ScrollingNodeID) { }
     virtual void clearStateTree() { }
     virtual void updateViewportConstrainedNode(ScrollingNodeID, const ViewportConstraints&, GraphicsLayer*) { }
+    virtual void updateScrollingNode(ScrollingNodeID, GraphicsLayer* /*scrollLayer*/, GraphicsLayer* /*counterScrollingLayer*/) { }
     virtual void syncChildPositions(const LayoutRect&) { }
     virtual String scrollingStateTreeAsText() const;
+    virtual bool isRubberBandInProgress() const { return false; }
+    virtual bool rubberBandsAtBottom() const { return false; }
+    virtual void setRubberBandsAtBottom(bool) { }
+    virtual bool rubberBandsAtTop() const { return false; }
+    virtual void setRubberBandsAtTop(bool) { }
 
     // Generated a unique id for scroll layers.
     ScrollingNodeID uniqueScrollLayerID();
@@ -137,7 +140,7 @@ public:
         ForcedOnMainThread = 1 << 0,
         HasSlowRepaintObjects = 1 << 1,
         HasViewportConstrainedObjectsWithoutSupportingFixedLayers = 1 << 2,
-        HasNonLayerFixedObjects = 1 << 3,
+        HasNonLayerViewportConstrainedObjects = 1 << 3,
         IsImageDocument = 1 << 4
     };
 
@@ -146,9 +149,9 @@ public:
 
     // These virtual functions are currently unique to Chromium's WebLayer approach. Their meaningful
     // implementations are in ScrollingCoordinatorChromium.
-    virtual void frameViewHorizontalScrollbarLayerDidChange(FrameView*, GraphicsLayer*) { }
-    virtual void frameViewVerticalScrollbarLayerDidChange(FrameView*, GraphicsLayer*) { }
-    virtual void scrollableAreaScrollLayerDidChange(ScrollableArea*, GraphicsLayer*) { }
+    virtual void willDestroyScrollableArea(ScrollableArea*) { }
+    virtual void scrollableAreaScrollLayerDidChange(ScrollableArea*) { }
+    virtual void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation) { }
     virtual void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool) { }
     virtual void setLayerIsFixedToContainerLayer(GraphicsLayer*, bool) { }
     virtual void touchEventTargetRectsDidChange(const Document*) { }
@@ -160,12 +163,18 @@ public:
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
 
+    Region computeNonFastScrollableRegion(const Frame*, const IntPoint& frameLocation) const;
+
 protected:
     explicit ScrollingCoordinator(Page*);
 
-    Region computeNonFastScrollableRegion(Frame*, const IntPoint& frameLocation);
+    static GraphicsLayer* scrollLayerForScrollableArea(ScrollableArea*);
+    static GraphicsLayer* horizontalScrollbarLayerForScrollableArea(ScrollableArea*);
+    static GraphicsLayer* verticalScrollbarLayerForScrollableArea(ScrollableArea*);
+
     unsigned computeCurrentWheelEventHandlerCount();
     GraphicsLayer* scrollLayerForFrameView(FrameView*);
+    GraphicsLayer* counterScrollingLayerForFrameView(FrameView*);
 
     Page* m_page;
 
@@ -173,7 +182,7 @@ private:
     virtual void recomputeWheelEventHandlerCountForFrameView(FrameView*) { }
     virtual void setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons) { }
 
-    virtual bool hasVisibleSlowRepaintFixedObjects(FrameView*) const;
+    virtual bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
     void updateShouldUpdateScrollLayerPositionOnMainThread();
     
     void updateMainFrameScrollPositionTimerFired(Timer<ScrollingCoordinator>*);

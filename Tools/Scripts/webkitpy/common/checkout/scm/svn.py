@@ -29,8 +29,10 @@
 
 import logging
 import os
+import random
 import re
 import shutil
+import string
 import sys
 import tempfile
 
@@ -43,9 +45,16 @@ _log = logging.getLogger(__name__)
 
 
 # A mixin class that represents common functionality for SVN and Git-SVN.
-class SVNRepository:
+class SVNRepository(object):
+    # FIXME: These belong in common.config.urls
+    svn_server_host = "svn.webkit.org"
+    svn_server_realm = "<http://svn.webkit.org:80> Mac OS Forge"
+
     def has_authorization_for_realm(self, realm, home_directory=os.getenv("HOME")):
-        # ignore false positives for methods implemented in the mixee class. pylint: disable-msg=E1101
+        # If we are working on a file:// repository realm will be None
+        if realm is None:
+            return True
+        # ignore false positives for methods implemented in the mixee class. pylint: disable=E1101
         # Assumes find and grep are installed.
         if not os.path.isdir(os.path.join(home_directory, ".subversion")):
             return False
@@ -63,9 +72,6 @@ class SVNRepository:
 
 
 class SVN(SCM, SVNRepository):
-    # FIXME: These belong in common.config.urls
-    svn_server_host = "svn.webkit.org"
-    svn_server_realm = "<http://svn.webkit.org:80> Mac OS Forge"
 
     executable_name = "svn"
 
@@ -106,7 +112,7 @@ class SVN(SCM, SVNRepository):
         match = re.search("^%s: (?P<value>.+)$" % field_name, info_output, re.MULTILINE)
         if not match:
             raise ScriptError(script_args=svn_info_args, message='svn info did not contain a %s.' % field_name)
-        return match.group('value')
+        return match.group('value').rstrip('\r')
 
     def find_checkout_root(self, path):
         uuid = self.find_uuid(path)
@@ -134,10 +140,11 @@ class SVN(SCM, SVNRepository):
     def svn_version(self):
         return self._run_svn(['--version', '--quiet'])
 
-    def working_directory_is_clean(self):
-        return self._run_svn(["diff"], cwd=self.checkout_root, decode_output=False) == ""
+    def has_working_directory_changes(self):
+        # FIXME: What about files which are not committed yet?
+        return self._run_svn(["diff"], cwd=self.checkout_root, decode_output=False) != ""
 
-    def clean_working_directory(self):
+    def discard_working_directory_changes(self):
         # Make sure there are no locks lying around from a previously aborted svn invocation.
         # This is slightly dangerous, as it's possible the user is running another svn process
         # on this checkout at the same time.  However, it's much more likely that we're running
@@ -239,6 +246,13 @@ class SVN(SCM, SVNRepository):
     def svn_revision(self, path):
         return self.value_from_svn_info(path, 'Revision')
 
+    def timestamp_of_latest_commit(self, path, revision):
+        # We use --xml to get timestamps like 2013-02-08T08:18:04.964409Z
+        repository_root = self.value_from_svn_info(self.checkout_root, 'Repository Root')
+        info_output = Executive().run_command([self.executable_name, 'log', '-r', revision, '--xml', repository_root], cwd=path).rstrip()
+        match = re.search(r"^<date>(?P<value>.+)</date>\r?$", info_output, re.MULTILINE)
+        return match.group('value')
+
     # FIXME: This method should be on Checkout.
     def create_patch(self, git_commit=None, changed_files=None):
         """Returns a byte array (str()) representing the patch file.
@@ -266,11 +280,12 @@ class SVN(SCM, SVNRepository):
         return self._run_svn(['diff', '-c', revision])
 
     def _bogus_dir_name(self):
+        rnd = ''.join(random.sample(string.ascii_letters, 5))
         if sys.platform.startswith("win"):
             parent_dir = tempfile.gettempdir()
         else:
             parent_dir = sys.path[0]  # tempdir is not secure.
-        return os.path.join(parent_dir, "temp_svn_config")
+        return os.path.join(parent_dir, "temp_svn_config_" + rnd)
 
     def _setup_bogus_dir(self, log):
         self._bogus_dir = self._bogus_dir_name()

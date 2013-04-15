@@ -198,6 +198,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
 #if ENABLE(MEDIA_CAPTURE)
         settings.capture = input->capture();
 #endif
+        settings.initialPath = input->nwWorkingDir();
         chrome->runOpenPanel(input->document()->frame(), newFileChooser(settings));
     }
     event->setDefaultHandled();
@@ -307,8 +308,7 @@ bool FileInputType::isFileUpload() const
 void FileInputType::createShadowSubtree()
 {
     ASSERT(element()->shadow());
-    ExceptionCode ec = 0;
-    element()->userAgentShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), ec);
+    element()->userAgentShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), IGNORE_EXCEPTION);
 }
 
 void FileInputType::disabledAttributeChanged()

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,10 +35,9 @@ using namespace WebCore;
 
 namespace WebKit {
 
-const AtomicString& WebMediaCacheManager::supplementName()
+const char* WebMediaCacheManager::supplementName()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("WebMediaCacheManager", AtomicString::ConstructFromLiteral));
-    return name;
+    return "WebMediaCacheManager";
 }
 
 WebMediaCacheManager::WebMediaCacheManager(WebProcess* process)
@@ -47,15 +46,8 @@ WebMediaCacheManager::WebMediaCacheManager(WebProcess* process)
     m_process->addMessageReceiver(Messages::WebMediaCacheManager::messageReceiverName(), this);
 }
 
-void WebMediaCacheManager::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
-{
-    didReceiveWebMediaCacheManagerMessage(connection, messageID, decoder);
-}
-
 void WebMediaCacheManager::getHostnamesWithMediaCache(uint64_t callbackID)
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
     Vector<String> mediaCacheHostnames;
 
 #if ENABLE(VIDEO)
@@ -67,8 +59,6 @@ void WebMediaCacheManager::getHostnamesWithMediaCache(uint64_t callbackID)
 
 void WebMediaCacheManager::clearCacheForHostname(const String& hostname)
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
 #if ENABLE(VIDEO)
     HTMLMediaElement::clearMediaCacheForSite(hostname);
 #endif
@@ -76,8 +66,6 @@ void WebMediaCacheManager::clearCacheForHostname(const String& hostname)
 
 void WebMediaCacheManager::clearCacheForAllHostnames()
 {
-    ChildProcess::LocalTerminationDisabler terminationDisabler(*m_process);
-
 #if ENABLE(VIDEO)
     HTMLMediaElement::clearMediaCache();
 #endif

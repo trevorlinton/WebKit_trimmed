@@ -28,7 +28,6 @@
 
 #if ENABLE(VIDEO) && USE(AVFOUNDATION)
 
-#include "CachedResourceClient.h"
 #include "MediaPlayerPrivateAVFoundation.h"
 #include <wtf/HashMap.h>
 
@@ -48,6 +47,7 @@ OBJC_CLASS AVAssetResourceLoadingRequest;
 
 typedef struct CGImage *CGImageRef;
 typedef struct __CVBuffer *CVPixelBufferRef;
+typedef struct OpaqueVTPixelTransferSession* VTPixelTransferSessionRef;
 
 namespace WebCore {
 
@@ -73,6 +73,14 @@ public:
     void didCancelLoadingRequest(AVAssetResourceLoadingRequest*);
 #endif
 
+#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
+    static bool extractKeyURIKeyIDAndCertificateFromInitData(Uint8Array* initData, String& keyURI, String& keyID, RefPtr<Uint8Array>& certificate);
+#endif
+
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+    static RetainPtr<AVAssetResourceLoadingRequest> takeRequestForPlayerAndKeyURI(MediaPlayer*, const String&);
+#endif
+
 private:
     MediaPlayerPrivateAVFoundationObjC(MediaPlayer*);
 
@@ -80,7 +88,7 @@ private:
     static PassOwnPtr<MediaPlayerPrivateInterface> create(MediaPlayer*);
     static void getSupportedTypes(HashSet<String>& types);
     static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs, const KURL&);
-#if ENABLE(ENCRYPTED_MEDIA)
+#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
     static MediaPlayer::SupportsType extendedSupportsType(const String& type, const String& codecs, const String& keySystem, const KURL&);
 #endif
 
@@ -174,15 +182,14 @@ private:
     RetainPtr<CVPixelBufferRef> m_lastImage;
 #endif
 
-#if ENABLE(ENCRYPTED_MEDIA) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+    RetainPtr<VTPixelTransferSessionRef> m_pixelTransferSession;
+
+    friend class WebCoreAVFResourceLoader;
+    OwnPtr<WebCoreAVFResourceLoader> m_resourceLoader;
     RetainPtr<WebCoreAVFLoaderDelegate> m_loaderDelegate;
     HashMap<String, RetainPtr<AVAssetResourceLoadingRequest> > m_keyURIToRequestMap;
     HashMap<String, RetainPtr<AVAssetResourceLoadingRequest> > m_sessionIDToRequestMap;
-#endif
-
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
-    friend class WebCoreAVFResourceLoader;
-    OwnPtr<WebCoreAVFResourceLoader> m_resourceLoader;
 #endif
 
 #if HAVE(AVFOUNDATION_TEXT_TRACK_SUPPORT)

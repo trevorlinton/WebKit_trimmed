@@ -50,13 +50,6 @@ const JSC::HashTable* getHashTableForGlobalData(JSGlobalData& globalData, const 
     return DOMObjectHashTableMap::mapFor(globalData).get(staticTable);
 }
 
-JSValue jsStringWithCacheSlowCase(ExecState* exec, JSStringCache& stringCache, StringImpl* stringImpl)
-{
-    JSString* wrapper = JSC::jsString(exec, String(stringImpl));
-    weakAdd(stringCache, stringImpl, PassWeak<JSString>(wrapper, currentWorld(exec)->stringWrapperOwner(), stringImpl));
-    return wrapper;
-}
-
 JSValue jsStringOrNull(ExecState* exec, const String& s)
 {
     if (s.isNull())
@@ -122,7 +115,7 @@ String valueToStringWithUndefinedOrNullCheck(ExecState* exec, JSValue value)
 
 JSValue jsDateOrNull(ExecState* exec, double value)
 {
-    if (!isfinite(value))
+    if (!std::isfinite(value))
         return jsNull();
     return DateInstance::create(exec, exec->lexicalGlobalObject()->dateStructure(), value);
 }

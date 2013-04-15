@@ -163,24 +163,31 @@ uint64_t InjectedBundlePageUIClient::didExceedDatabaseQuota(WebPage* page, WebSe
     return m_client.didExceedDatabaseQuota(toAPI(page), toAPI(origin), toAPI(databaseName.impl()), toAPI(databaseDisplayName.impl()), currentQuotaBytes, currentOriginUsageBytes, currentDatabaseUsageBytes, expectedUsageBytes, m_client.clientInfo);
 }
 
-PassRefPtr<WebImage> InjectedBundlePageUIClient::plugInStartLabelImage(RenderSnapshottedPlugIn::LabelSize size) const
+String InjectedBundlePageUIClient::plugInStartLabelTitle() const
 {
-    if (!m_client.plugInStartLabelImage)
-        return 0;
+    if (!m_client.createPlugInStartLabelTitle)
+        return String();
 
-    WKBundlePageLabelSize wkSize;
-    switch (size) {
-    case RenderSnapshottedPlugIn::LabelSizeSmall:
-        wkSize = WKBundlePageLabelSizeSmall;
-        break;
-    case RenderSnapshottedPlugIn::LabelSizeLarge:
-        wkSize = WKBundlePageLabelSizeLarge;
-        break;
-    default:
-        return 0;
-    }
+    RefPtr<WebString> title = adoptRef(toImpl(m_client.createPlugInStartLabelTitle(m_client.clientInfo)));
+    return title ? title->string() : String();
+}
 
-    return adoptRef(toImpl(m_client.plugInStartLabelImage(wkSize, m_client.clientInfo)));
+String InjectedBundlePageUIClient::plugInStartLabelSubtitle() const
+{
+    if (!m_client.createPlugInStartLabelSubtitle)
+        return String();
+
+    RefPtr<WebString> subtitle = adoptRef(toImpl(m_client.createPlugInStartLabelSubtitle(m_client.clientInfo)));
+    return subtitle ? subtitle->string() : String();
+}
+
+String InjectedBundlePageUIClient::plugInExtraStyleSheet() const
+{
+    if (!m_client.createPlugInExtraStyleSheet)
+        return String();
+
+    RefPtr<WebString> styleSheet = adoptRef(toImpl(m_client.createPlugInExtraStyleSheet(m_client.clientInfo)));
+    return styleSheet ? styleSheet->string() : String();
 }
 
 } // namespace WebKit

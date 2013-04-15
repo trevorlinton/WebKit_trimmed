@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <algorithm>
 
+#include "compiler/HashNames.h"
 #include "compiler/localintermediate.h"
 #include "compiler/QualifierAlive.h"
 #include "compiler/RemoveTree.h"
@@ -1161,7 +1162,7 @@ TIntermTyped* TIntermConstantUnion::fold(TOperator op, TIntermTyped* constantNod
             case EbtFloat:
                 if (rightUnionArray[i] == 0.0f) {
                     infoSink.info.message(EPrefixWarning, "Divide by zero error during constant folding", getLine());
-                    tempConstArray[i].setFConst(FLT_MAX);
+                    tempConstArray[i].setFConst(unionArray[i].getFConst() < 0 ? -FLT_MAX : FLT_MAX);
                 } else
                     tempConstArray[i].setFConst(unionArray[i].getFConst() / rightUnionArray[i].getFConst());
                 break;
@@ -1445,3 +1446,14 @@ TIntermTyped* TIntermediate::promoteConstantUnion(TBasicType promoteTo, TIntermC
     return addConstantUnion(leftUnionArray, TType(promoteTo, t.getPrecision(), t.getQualifier(), t.getNominalSize(), t.isMatrix(), t.isArray()), node->getLine());
 }
 
+// static
+TString TIntermTraverser::hash(const TString& name, ShHashFunction64 hashFunction)
+{
+    if (hashFunction == NULL || name.empty())
+        return name;
+    khronos_uint64_t number = (*hashFunction)(name.c_str(), name.length());
+    TStringStream stream;
+    stream << HASHED_NAME_PREFIX << std::hex << number;
+    TString hashedName = stream.str();
+    return hashedName;
+}

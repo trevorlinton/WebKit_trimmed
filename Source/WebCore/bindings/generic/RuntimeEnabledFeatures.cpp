@@ -54,6 +54,7 @@ bool RuntimeEnabledFeatures::isTouchEnabled = true;
 bool RuntimeEnabledFeatures::isDeviceMotionEnabled = true;
 bool RuntimeEnabledFeatures::isDeviceOrientationEnabled = true;
 bool RuntimeEnabledFeatures::isSpeechInputEnabled = true;
+bool RuntimeEnabledFeatures::isCanvasPathEnabled = false;
 bool RuntimeEnabledFeatures::isCSSExclusionsEnabled = false;
 bool RuntimeEnabledFeatures::isCSSRegionsEnabled = false;
 bool RuntimeEnabledFeatures::isLangAttributeAwareFormControlUIEnabled = false;
@@ -189,6 +190,10 @@ bool RuntimeEnabledFeatures::isShadowDOMEnabled = false;
 bool RuntimeEnabledFeatures::isAuthorShadowDOMForAnyElementEnabled = false;
 #endif
 
+#if ENABLE(CUSTOM_ELEMENTS)
+bool RuntimeEnabledFeatures::isCustomDOMElementsEnabled = false;
+#endif
+
 #if ENABLE(STYLE_SCOPED)
 bool RuntimeEnabledFeatures::isStyleScopedEnabled = false;
 #endif
@@ -233,8 +238,8 @@ bool RuntimeEnabledFeatures::isRequestAutocompleteEnabled = false;
 bool RuntimeEnabledFeatures::areExperimentalContentSecurityPolicyFeaturesEnabled = false;
 #endif
 
-#if ENABLE(WEB_INTENTS)
-bool RuntimeEnabledFeatures::isWebIntentsEnabled = true;
+#if ENABLE(IFRAME_SEAMLESS)
+bool RuntimeEnabledFeatures::areSeamlessIFramesEnabled = false;
 #endif
 
 } // namespace WebCore

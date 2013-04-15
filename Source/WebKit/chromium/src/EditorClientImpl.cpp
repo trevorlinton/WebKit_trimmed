@@ -36,6 +36,7 @@
 #include "HTMLNames.h"
 #include "KeyboardCodes.h"
 #include "KeyboardEvent.h"
+#include "NotImplemented.h"
 #include "PlatformKeyboardEvent.h"
 #include "RenderObject.h"
 #include "Settings.h"
@@ -90,15 +91,6 @@ void EditorClientImpl::pageDestroyed()
 
 void EditorClientImpl::frameWillDetachPage(WebCore::Frame* frame)
 {
-}
-
-bool EditorClientImpl::shouldShowDeleteInterface(HTMLElement* elem)
-{
-    // Normally, we don't care to show WebCore's deletion UI, so we only enable
-    // it if in testing mode and the test specifically requests it by using this
-    // magic class name.
-    return layoutTestMode()
-           && elem->getAttribute(HTMLNames::classAttr) == "needsDeletionUI";
 }
 
 bool EditorClientImpl::smartInsertDeleteEnabled()
@@ -268,8 +260,11 @@ void EditorClientImpl::didBeginEditing()
 void EditorClientImpl::respondToChangedSelection(Frame* frame)
 {
     if (m_webView->client()) {
-        if (frame)
+        if (frame) {
             m_webView->client()->didChangeSelection(!frame->selection()->isRange());
+            if (frame->editor()->cancelCompositionIfSelectionIsInvalid())
+                m_webView->client()->didCancelCompositionOnSelectionChange();
+        }
     }
 }
 
@@ -286,6 +281,14 @@ void EditorClientImpl::didEndEditing()
 }
 
 void EditorClientImpl::didWriteSelectionToPasteboard()
+{
+}
+
+void EditorClientImpl::willWriteSelectionToPasteboard(WebCore::Range*)
+{
+}
+
+void EditorClientImpl::getClientPasteboardDataForRange(WebCore::Range*, Vector<String>&, Vector<RefPtr<WebCore::SharedBuffer> >&)
 {
 }
 
@@ -744,7 +747,7 @@ void EditorClientImpl::checkSpellingOfString(const UChar* text, int length,
 void EditorClientImpl::requestCheckingOfString(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
 {
     if (m_webView->spellCheckClient()) {
-        String text = request->text();
+        String text = request->data().text();
         m_webView->spellCheckClient()->requestCheckingOfText(text, new WebTextCheckingCompletionImpl(request));
     }
 }

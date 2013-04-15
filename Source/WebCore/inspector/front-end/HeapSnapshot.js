@@ -316,11 +316,6 @@ WebInspector.HeapSnapshotNode = function(snapshot, nodeIndex)
 }
 
 WebInspector.HeapSnapshotNode.prototype = {
-    isUserObject: function()
-    {
-        return true;
-    },
-
     distance: function()
     {
         return this._snapshot._nodeDistances[this.nodeIndex / this._snapshot._nodeFieldCount];
@@ -493,6 +488,10 @@ WebInspector.HeapSnapshot = function(profile)
     this._metaNode = profile.snapshot.meta;
     this._strings = profile.strings;
 
+    this._rootNodeIndex = 0;
+    if (profile.snapshot.root_index)
+        this._rootNodeIndex = profile.snapshot.root_index;
+
     this._snapshotDiffs = {};
     this._aggregatesForDiff = null;
 
@@ -509,6 +508,7 @@ function HeapSnapshotMetainfo()
     this.node_types = [];
     this.edge_fields = [];
     this.edge_types = [];
+    this.type_strings = {};
 
     // Old format.
     this.fields = [];
@@ -532,7 +532,6 @@ WebInspector.HeapSnapshot.prototype = {
     _init: function()
     {
         var meta = this._metaNode;
-        this._rootNodeIndex = 0;
 
         this._nodeTypeOffset = meta.node_fields.indexOf("type");
         this._nodeNameOffset = meta.node_fields.indexOf("name");
@@ -775,9 +774,9 @@ WebInspector.HeapSnapshot.prototype = {
         return this._aggregatesForDiff;
     },
 
-    canHaveDistanceOne: function(node)
+    distanceForUserRoot: function(node)
     {
-        return true;
+        return 1;
     },
 
     _calculateDistances: function()
@@ -790,9 +789,10 @@ WebInspector.HeapSnapshot.prototype = {
         var nodesToVisitLength = 0;
         for (var iter = this.rootNode().edges(); iter.hasNext(); iter.next()) {
             var node = iter.edge.node();
-            if (this.canHaveDistanceOne(node)) {
+            var distance = this.distanceForUserRoot(node);
+            if (distance !== -1) {
                 nodesToVisit[nodesToVisitLength++] = node.nodeIndex;
-                distances[node.nodeIndex / nodeFieldCount] = 1;
+                distances[node.nodeIndex / nodeFieldCount] = distance;
             }
         }
         this._bfs(nodesToVisit, nodesToVisitLength, distances);
@@ -1027,8 +1027,21 @@ WebInspector.HeapSnapshot.prototype = {
             }
         }
 
-        if (postOrderIndex !== nodeCount)
+        if (postOrderIndex !== nodeCount) {
+            var dumpNode = this.rootNode();
+            for (var i = 0; i < nodeCount; ++i) {
+                if (painted[i] !== black) {
+                    dumpNode.nodeIndex = i * nodeFieldCount;
+                    console.log(JSON.stringify(dumpNode.serialize()));
+                    var retainers = dumpNode.retainers();
+                    while (retainers) {
+                        console.log("edgeName: " + retainers.item().name() + " nodeClassName: " + retainers.item().node().className());
+                        retainers = retainers.item().node().retainers();
+                    }
+                }
+            }
             throw new Error("Postordering failed. " + (nodeCount - postOrderIndex) + " hanging nodes");
+        }
 
         return {postOrderIndex2NodeOrdinal: postOrderIndex2NodeOrdinal, nodeOrdinal2PostOrderIndex: nodeOrdinal2PostOrderIndex};
     },
@@ -1361,16 +1374,34 @@ WebInspector.HeapSnapshot.prototype = {
         return parsedFilter.bind(this);
     },
 
-    createEdgesProvider: function(nodeIndex, filter)
+    createEdgesProvider: function(nodeIndex, showHiddenData)
     {
         var node = this.createNode(nodeIndex);
-        return new WebInspector.HeapSnapshotEdgesProvider(this, this._parseFilter(filter), node.edges());
+        var filter = this.containmentEdgesFilter(showHiddenData);
+        return new WebInspector.HeapSnapshotEdgesProvider(this, filter, node.edges());
     },
 
-    createRetainingEdgesProvider: function(nodeIndex, filter)
+    createEdgesProviderForTest: function(nodeIndex, filter)
     {
         var node = this.createNode(nodeIndex);
-        return new WebInspector.HeapSnapshotEdgesProvider(this, this._parseFilter(filter), node.retainers());
+        return new WebInspector.HeapSnapshotEdgesProvider(this, filter, node.edges());
+    },
+
+    retainingEdgesFilter: function(showHiddenData)
+    {
+        return null;
+    },
+
+    containmentEdgesFilter: function(showHiddenData)
+    {
+        return null;
+    },
+
+    createRetainingEdgesProvider: function(nodeIndex, showHiddenData)
+    {
+        var node = this.createNode(nodeIndex);
+        var filter = this.retainingEdgesFilter(showHiddenData);
+        return new WebInspector.HeapSnapshotEdgesProvider(this, filter, node.retainers());
     },
 
     createAddedNodesProvider: function(baseSnapshotId, className)
@@ -1385,12 +1416,14 @@ WebInspector.HeapSnapshot.prototype = {
         return new WebInspector.HeapSnapshotNodesProvider(this, null, nodeIndexes);
     },
 
+    classNodesFilter: function()
+    {
+        return null;
+    },
+
     createNodesProviderForClass: function(className, aggregatesKey)
     {
-        function filter(node) {
-            return node.isUserObject();
-        }
-        return new WebInspector.HeapSnapshotNodesProvider(this, filter, this.aggregates(false, aggregatesKey)[className].idxs);
+        return new WebInspector.HeapSnapshotNodesProvider(this, this.classNodesFilter(), this.aggregates(false, aggregatesKey)[className].idxs);
     },
 
     createNodesProviderForDominator: function(nodeIndex)

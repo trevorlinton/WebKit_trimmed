@@ -5,6 +5,11 @@ if (window.testRunner)
 
 function insertAfter(nodeToAdd, referenceNode)
 {
+    if (referenceNode == document.body) {
+        document.body.appendChild(nodeToAdd);
+        return;
+    }
+
     if (referenceNode.nextSibling)
         referenceNode.parentNode.insertBefore(nodeToAdd, referenceNode.nextSibling);
     else
@@ -158,6 +163,8 @@ window.checkLayout = function(selectorList)
         return;
     }
     var nodes = document.querySelectorAll(selectorList);
+    nodes = Array.prototype.slice.call(nodes);
+    nodes.reverse();
     Array.prototype.forEach.call(nodes, function(node) {
         var failures = [];
         checkExpectedValues(node.parentNode, failures);

@@ -31,6 +31,10 @@
 #ifndef WebFrameClient_h
 #define WebFrameClient_h
 
+#include "../../../Platform/chromium/public/WebCommon.h"
+#include "../../../Platform/chromium/public/WebFileSystem.h"
+#include "../../../Platform/chromium/public/WebURLError.h"
+#include "../../../Platform/chromium/public/WebURLRequest.h"
 #include "WebDOMMessageEvent.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
@@ -38,9 +42,6 @@
 #include "WebSecurityOrigin.h"
 #include "WebStorageQuotaType.h"
 #include "WebTextDirection.h"
-#include "platform/WebCommon.h"
-#include "platform/WebFileSystem.h"
-#include "platform/WebURLError.h"
 
 #if WEBKIT_USING_V8
 #include <v8.h>
@@ -56,9 +57,6 @@ class WebDataSource;
 class WebDOMEvent;
 class WebFormElement;
 class WebFrame;
-class WebIntent;
-class WebIntentRequest;
-class WebIntentServiceInfo;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebNode;
@@ -71,7 +69,6 @@ class WebStorageQuotaCallbacks;
 class WebString;
 class WebURL;
 class WebURLLoader;
-class WebURLRequest;
 class WebURLResponse;
 class WebWorker;
 struct WebPluginParams;
@@ -275,6 +272,9 @@ public:
     virtual void didReceiveResponse(
         WebFrame*, unsigned identifier, const WebURLResponse&) { }
 
+    virtual void didChangeResourcePriority(
+        WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&) { }
+
     // The resource request given by identifier succeeded.
     virtual void didFinishResourceLoad(
         WebFrame*, unsigned identifier) { }
@@ -331,6 +331,9 @@ public:
     // The main frame scrolled.
     virtual void didChangeScrollOffset(WebFrame*) { }
 
+    // If the frame is loading an HTML document, this will be called to
+    // notify that the <body> will be attached soon.
+    virtual void willInsertBody(WebFrame*) { }
 
     // Find-in-page notifications ------------------------------------------
 
@@ -398,15 +401,6 @@ public:
         WebFrame*, WebStorageQuotaType,
         unsigned long long newQuotaInBytes,
         WebStorageQuotaCallbacks*) { }
-
-    // Web Intents ---------------------------------------------------
-
-    // Register a service to handle Web Intents.
-    virtual void registerIntentService(WebFrame*, const WebIntentServiceInfo&) { }
-
-    // Start a Web Intents activity. The callee uses the |WebIntentRequest|
-    // object to coordinate replies to the intent invocation.
-    virtual void dispatchIntent(WebFrame*, const WebIntentRequest&) { }
 
     // WebSocket -----------------------------------------------------
 

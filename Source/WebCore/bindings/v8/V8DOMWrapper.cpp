@@ -31,15 +31,14 @@
 #include "config.h"
 #include "V8DOMWrapper.h"
 
+#include "V8AdaptorFunction.h"
 #include "V8Binding.h"
 #include "V8DOMWindow.h"
-#include "V8EventListenerList.h"
 #include "V8HTMLCollection.h"
 #include "V8HTMLDocument.h"
 #include "V8HiddenPropertyName.h"
 #include "V8ObjectConstructor.h"
 #include "V8PerContextData.h"
-#include "V8WorkerContextEventListener.h"
 #include "ScriptController.h"
 
 #include "third_party/node/src/node.h"
@@ -83,21 +82,15 @@ private:
     v8::Handle<v8::Context> m_context;
 };
 
-void V8DOMWrapper::setNamedHiddenReference(v8::Handle<v8::Object> parent, const char* name, v8::Handle<v8::Value> child)
-{
-    ASSERT(name);
-    parent->SetHiddenValue(V8HiddenPropertyName::hiddenReferenceName(name, strlen(name)), child);
-}
-
-v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl)
+v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl, v8::Isolate* isolate)
 {
     V8WrapperInstantiationScope scope(creationContext);
 
     V8PerContextData* perContextData = V8PerContextData::from(scope.context());
-    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate()->GetFunction());
+    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
 
     if (type == &V8HTMLDocument::info && !wrapper.IsEmpty())
-        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl));
+        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl), isolate);
 
     return wrapper;
 }
@@ -125,6 +118,21 @@ bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
 }
 #endif
 
+bool V8DOMWrapper::isDOMWrapper(v8::Handle<v8::Value> value)
+{
+    if (value.IsEmpty() || !value->IsObject())
+        return false;
+
+    v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(value);
+    if (wrapper->InternalFieldCount() < v8DefaultWrapperInternalFieldCount)
+        return false;
+    ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+    ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
+    // FIXME: Add class id checks.
+    return true;
+}
+
 bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo* type)
 {
     if (!hasInternalField(value))
@@ -138,24 +146,25 @@ bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo*
     return typeInfo == type;
 }
 
-PassRefPtr<EventListener> V8DOMWrapper::getEventListener(v8::Local<v8::Value> value, bool isAttribute, ListenerLookupType lookup)
+#if ENABLE(CUSTOM_ELEMENTS)
+
+v8::Handle<v8::Function> V8DOMWrapper::toFunction(v8::Handle<v8::Value> object)
 {
-    v8::Handle<v8::Context> context = v8::Context::GetCurrent();
-    if (context.IsEmpty())
-        return 0;
-    if (lookup == ListenerFindOnly)
-        return V8EventListenerList::findWrapper(value, isAttribute);
-    if (context == node::g_context) {
-        DOMWindow* window = toDOMWindow(context);
-        context = ScriptController::mainWorldContext(window->frame());
-    }
-    if (isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info))
-        return V8EventListenerList::findOrCreateWrapper<V8EventListener>(value, isAttribute);
-#if ENABLE(WORKERS)
-    return V8EventListenerList::findOrCreateWrapper<V8WorkerContextEventListener>(value, isAttribute);
-#else
-    return 0;
-#endif
+    return V8AdaptorFunction::get(v8::Handle<v8::Object>::Cast(object));
 }
+
+v8::Handle<v8::Function> V8DOMWrapper::toFunction(v8::Handle<v8::Object> object, const AtomicString& name, v8::Isolate* isolate)
+{
+    return V8AdaptorFunction::wrap(object, name, isolate);
+}
+
+v8::Handle<v8::Object> V8DOMWrapper::fromFunction(v8::Handle<v8::Object> object)
+{
+    if (!object->IsFunction())
+        return object;
+    return V8AdaptorFunction::unwrap(v8::Handle<v8::Function>::Cast(object));
+}
+
+#endif // ENABLE(CUSTOM_ELEMENTS)
 
 }  // namespace WebCore

@@ -438,8 +438,9 @@ public:
     static PassRefPtr<MediaControlTextTrackContainerElement> create(Document*);
 
     void updateDisplay();
-    void updateSizes();
+    void updateSizes(bool forceUpdate = false);
     void createSubtrees(Document*);
+    static const AtomicString& textTrackContainerElementShadowPseudoId();
 
 private:
     explicit MediaControlTextTrackContainerElement(Document*);

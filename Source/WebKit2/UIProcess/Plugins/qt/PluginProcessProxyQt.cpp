@@ -51,8 +51,9 @@ namespace WebKit {
 
 class PluginProcessCreationParameters;
 
-void PluginProcessProxy::platformInitializeLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions, const PluginModuleInfo& pluginInfo)
+void PluginProcessProxy::platformGetLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions, const PluginModuleInfo& pluginInfo)
 {
+    launchOptions.extraInitializationData.add("plugin-path", pluginInfo.path);
 }
 
 void PluginProcessProxy::platformInitializePluginProcess(PluginProcessCreationParameters&)
@@ -208,7 +209,7 @@ bool PluginProcessProxy::scanPlugin(const String& pluginPath, RawPluginMetaData&
         String output(reinterpret_cast<const UChar*>(outputBytes.constData()), outputBytes.size() / sizeof(UChar));
         Vector<String> lines;
         output.split(UChar('\n'), true, lines);
-        ASSERT(lines.size() == 3);
+        ASSERT(lines.size() == 4 && lines.last().isEmpty());
 
         result.name.swap(lines[0]);
         result.description.swap(lines[1]);

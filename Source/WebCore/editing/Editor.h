@@ -50,7 +50,9 @@ namespace WebCore {
 
 class Clipboard;
 class CompositeEditCommand;
+#if ENABLE(DELETION_UI)
 class DeleteButtonController;
+#endif
 class EditCommand;
 class EditCommandComposition;
 class EditorClient;
@@ -94,7 +96,16 @@ public:
     TextCheckerClient* textChecker() const;
 
     Frame* frame() const { return m_frame; }
+
+#if ENABLE(DELETION_UI)
     DeleteButtonController* deleteButtonController() const { return m_deleteButtonController.get(); }
+    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(const Range*) const;
+    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection&) const;
+#else
+    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(Range* range) const { return range; }
+    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection& selection) const { return selection; }
+#endif
+
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
     void handleKeyboardEvent(KeyboardEvent*);
@@ -132,7 +143,6 @@ public:
 
     bool shouldInsertFragment(PassRefPtr<DocumentFragment>, PassRefPtr<Range>, EditorInsertAction);
     bool shouldInsertText(const String&, Range*, EditorInsertAction) const;
-    bool shouldShowDeleteInterface(HTMLElement*) const;
     bool shouldDeleteRange(Range*) const;
     bool shouldApplyStyle(StylePropertySet*, Range*);
 
@@ -213,7 +223,7 @@ public:
     bool insertParagraphSeparatorInQuotedContent();
 #endif
     
-    bool isContinuousSpellCheckingEnabled();
+    bool isContinuousSpellCheckingEnabled() const;
     void toggleContinuousSpellChecking();
     bool isGrammarCheckingEnabled();
     void toggleGrammarChecking();
@@ -221,10 +231,11 @@ public:
     void learnSpelling();
     int spellCheckerDocumentTag();
     bool isSelectionUngrammatical();
-    bool isSelectionMisspelled();
-    Vector<String> guessesForMisspelledSelection();
+    String misspelledSelectionString() const;
+    String misspelledWordAtCaretOrRange(Node* clickedNode) const;
+    Vector<String> guessesForMisspelledWord(const String&) const;
     Vector<String> guessesForUngrammaticalSelection();
-    Vector<String> guessesForMisspelledOrUngrammaticalSelection(bool& misspelled, bool& ungrammatical);
+    Vector<String> guessesForMisspelledOrUngrammatical(bool& misspelled, bool& ungrammatical);
     bool isSpellCheckingEnabledInFocusedNode() const;
     bool isSpellCheckingEnabledFor(Node*) const;
     void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping, bool doReplacement);
@@ -272,6 +283,7 @@ public:
 
     void didBeginEditing();
     void didEndEditing();
+    void willWriteSelectionToPasteboard(PassRefPtr<Range>);
     void didWriteSelectionToPasteboard();
     
     void showFontPanel();
@@ -294,6 +306,7 @@ public:
     void confirmComposition();
     void confirmComposition(const String&); // if no existing composition, replaces selection
     void cancelComposition();
+    bool cancelCompositionIfSelectionIsInvalid();
     PassRefPtr<Range> compositionRange() const;
     bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
     bool setSelectionOffsets(int selectionStart, int selectionEnd);
@@ -360,8 +373,7 @@ public:
 
     void respondToChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
     bool shouldChangeSelection(const VisibleSelection& oldSelection, const VisibleSelection& newSelection, EAffinity, bool stillSelecting) const;
-    unsigned countMatchesForText(const String&, FindOptions, unsigned limit, bool markMatches);
-    unsigned countMatchesForText(const String&, Range*, FindOptions, unsigned limit, bool markMatches);
+    unsigned countMatchesForText(const String&, Range*, FindOptions, unsigned limit, bool markMatches, Vector<RefPtr<Range> >*);
     bool markedTextMatchesAreHighlighted() const;
     void setMarkedTextMatchesAreHighlighted(bool);
 
@@ -371,11 +383,11 @@ public:
     bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
     void textWillBeDeletedInTextField(Element* input);
     void textDidChangeInTextArea(Element*);
+    WritingDirection baseWritingDirectionForSelectionStart() const;
 
 #if PLATFORM(MAC)
     const SimpleFontData* fontForSelection(bool&) const;
     NSDictionary* fontAttributesForSelectionStart() const;
-    NSWritingDirection baseWritingDirectionForSelectionStart() const;
     bool canCopyExcludingStandaloneImages();
     void takeFindStringFromSelection();
     void writeSelectionToPasteboard(const String& pasteboardName, const Vector<String>& pasteboardTypes);
@@ -401,7 +413,9 @@ public:
 private:
     virtual void willDetachPage() OVERRIDE;
 
+#if ENABLE(DELETION_UI)
     OwnPtr<DeleteButtonController> m_deleteButtonController;
+#endif
     RefPtr<CompositeEditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
     RefPtr<Text> m_compositionNode;

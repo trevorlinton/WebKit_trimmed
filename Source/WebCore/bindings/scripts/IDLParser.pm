@@ -35,8 +35,9 @@ use constant EmptyToken => 5;
 
 # Used to represent a parsed IDL document
 struct( idlDocument => {
-    interfaces => '@',  # All parsed interfaces
-    fileName => '$'  # file name
+    interfaces => '@', # All parsed interfaces
+    enumerations => '@', # All parsed enumerations
+    fileName => '$', # file name
 });
 
 # Used to represent 'interface' blocks
@@ -47,7 +48,7 @@ struct( domInterface => {
     functions => '@',    # List of 'domFunction'
     attributes => '@',    # List of 'domAttribute'    
     extendedAttributes => '$', # Extended attributes
-    constructors => '@', # Constructor
+    constructors => '@', # Constructors, list of 'domFunction'
     isException => '$', # Used for exception interfaces
 });
 
@@ -86,10 +87,24 @@ struct( domConstant => {
     extendedAttributes => '$', # Extended attributes
 });
 
+# Used to represent 'enum' definitions
+struct( domEnum => {
+    name => '$', # Enumeration identifier
+    values => '@', # Enumeration values (list of unique strings)
+});
+
 struct( Token => {
     type => '$', # type of token
     value => '$' # value of token
 });
+
+struct( Typedef => {
+    extendedAttributes => '$', # Extended attributes
+    type => '$', # Type of data
+});
+
+# Maps 'typedef name' -> Typedef
+my %typedefs = ();
 
 sub new {
     my $class = shift;
@@ -142,6 +157,19 @@ sub assertUnexpectedToken
     die $msg;
 }
 
+sub assertNoExtendedAttributesInTypedef
+{
+    my $self = shift;
+    my $name = shift;
+    my $line = shift;
+    my $typedef = $typedefs{$name};
+    my $msg = "Unexpected extendedAttributeList in typedef \"$name\" at " . $self->{Line};
+    if (defined ($line)) {
+        $msg .= " IDLParser.pm:" . $line;
+    }
+    die $msg if %{$typedef->extendedAttributes};
+}
+
 sub Parse
 {
     my $self = shift;
@@ -165,17 +193,17 @@ sub Parse
     };
     die $@ . " in $fileName" if $@;
 
-    die "No document found" unless @definitions;
-
-    my $document;
-    if ($#definitions == 0 && ref($definitions[0]) eq "idlDocument") {
-        $document = $definitions[0];
-    } else {
-        $document = idlDocument->new();
-        push(@{$document->interfaces}, @definitions);
-    }
-
+    my $document = idlDocument->new();
     $document->fileName($fileName);
+    foreach my $definition (@definitions) {
+        if (ref($definition) eq "domInterface") {
+            push(@{$document->interfaces}, $definition);
+        } elsif (ref($definition) eq "domEnum") {
+            push(@{$document->enumerations}, $definition);
+        } else {
+            die "Unrecognized IDL definition kind: \"" . ref($definition) . "\"";
+        }
+    }
     return $document;
 }
 
@@ -253,6 +281,16 @@ sub getTokenInternal
     die "Failed in tokenizing at " . $self->{Line};
 }
 
+sub unquoteString
+{
+    my $self = shift;
+    my $quotedString = shift;
+    if ($quotedString =~ /^"([^"]*)"$/) {
+        return $1;
+    }
+    die "Failed to parse string (" . $quotedString . ") at " . $self->{Line};
+}
+
 my $nextAttributeOld_1 = '^(attribute|inherit|readonly)$';
 my $nextPrimitiveType_1 = '^(int|long|short|unsigned)$';
 my $nextPrimitiveType_2 = '^(double|float|unrestricted)$';
@@ -303,7 +341,71 @@ sub parseDefinitions
             push(@definitions, $definition);
         }
     }
+    $self->applyTypedefs(\@definitions);
     return \@definitions;
+}
+
+sub applyTypedefs
+{
+    my $self = shift;
+    my $definitions = shift;
+   
+    if (!%typedefs) {
+        return;
+    }
+    foreach my $definition (@$definitions) {
+        if (ref($definition) eq "domInterface") {
+            foreach my $constant (@{$definition->constants}) {
+                if (exists $typedefs{$constant->type}) {
+                    my $typedef = $typedefs{$constant->type};
+                    $self->assertNoExtendedAttributesInTypedef($constant->type, __LINE__);
+                    $constant->type($typedef->type);
+                }
+            }
+            foreach my $attribute (@{$definition->attributes}) {
+                $self->applyTypedefsForSignature($attribute->signature);
+            }
+            foreach my $function (@{$definition->functions}, @{$definition->constructors}) {
+                $self->applyTypedefsForSignature($function->signature);
+                foreach my $signature (@{$function->parameters}) {
+                    $self->applyTypedefsForSignature($signature);
+                }
+            }
+        }
+    }
+}
+
+sub applyTypedefsForSignature
+{
+    my $self = shift;
+    my $signature = shift;
+
+    if (!defined ($signature->type)) {
+        return;
+    }
+
+    my $type = $signature->type;
+    $type =~ s/[\?\[\]]+$//g;
+    my $typeSuffix = $signature->type;
+    $typeSuffix =~ s/^[^\?\[\]]+//g;
+    if (exists $typedefs{$type}) {
+        my $typedef = $typedefs{$type};
+        $signature->type($typedef->type . $typeSuffix);
+        copyExtendedAttributes($signature->extendedAttributes, $typedef->extendedAttributes);
+    }
+
+    # Handle union types, sequences and etc.
+    foreach my $name (%typedefs) {
+        if (!exists $typedefs{$name}) {
+            next;
+        }
+        my $typedef = $typedefs{$name};
+        my $regex = '\\b' . $name . '\\b';
+        my $replacement = $typedef->type;
+        my $type = $signature->type;
+        $type =~ s/($regex)/$replacement/g;
+        $signature->type($type);
+    }
 }
 
 sub parseDefinition
@@ -632,17 +734,20 @@ sub parseInheritance
 sub parseEnum
 {
     my $self = shift;
-    my $extendedAttributeList = shift;
+    my $extendedAttributeList = shift; # ignored: Extended attributes are not applicable to enumerations
 
     my $next = $self->nextToken();
     if ($next->value() eq "enum") {
+        my $enum = domEnum->new();
         $self->assertTokenValue($self->getToken(), "enum", __LINE__);
-        $self->assertTokenType($self->getToken(), IdentifierToken);
+        my $enumNameToken = $self->getToken();
+        $self->assertTokenType($enumNameToken, IdentifierToken);
+        $enum->name($enumNameToken->value());
         $self->assertTokenValue($self->getToken(), "{", __LINE__);
-        $self->parseEnumValueList();
+        push(@{$enum->values}, @{$self->parseEnumValueList()});
         $self->assertTokenValue($self->getToken(), "}", __LINE__);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
-        return;
+        return $enum;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
@@ -650,24 +755,35 @@ sub parseEnum
 sub parseEnumValueList
 {
     my $self = shift;
+    my @values = ();
     my $next = $self->nextToken();
     if ($next->type() == StringToken) {
-        $self->assertTokenType($self->getToken(), StringToken);
-        $self->parseEnumValues();
-        return;
+        my $enumValueToken = $self->getToken();
+        $self->assertTokenType($enumValueToken, StringToken);
+        my $enumValue = $self->unquoteString($enumValueToken->value());
+        push(@values, $enumValue);
+        push(@values, @{$self->parseEnumValues()});
+        return \@values;
     }
+    # value list must be non-empty
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
 
 sub parseEnumValues
 {
     my $self = shift;
+    my @values = ();
     my $next = $self->nextToken();
     if ($next->value() eq ",") {
         $self->assertTokenValue($self->getToken(), ",", __LINE__);
-        $self->assertTokenType($self->getToken(), StringToken);
-        $self->parseEnumValues();
+        my $enumValueToken = $self->getToken();
+        $self->assertTokenType($enumValueToken, StringToken);
+        my $enumValue = $self->unquoteString($enumValueToken->value());
+        push(@values, $enumValue);
+        push(@values, @{$self->parseEnumValues()});
+        return \@values;
     }
+    return \@values; # empty list (end of enumeration-values)
 }
 
 sub parseCallbackRest
@@ -693,14 +809,20 @@ sub parseTypedef
 {
     my $self = shift;
     my $extendedAttributeList = shift;
+    die "Extended attributes are not applicable to typedefs themselves: " . $self->{Line} if %{$extendedAttributeList};
 
     my $next = $self->nextToken();
     if ($next->value() eq "typedef") {
         $self->assertTokenValue($self->getToken(), "typedef", __LINE__);
-        $self->parseExtendedAttributeList();
-        $self->parseType();
-        $self->assertTokenType($self->getToken(), IdentifierToken);
+        my $typedef = Typedef->new();
+        $typedef->extendedAttributes($self->parseExtendedAttributeListAllowEmpty());
+        $typedef->type($self->parseType());
+        my $nameToken = $self->getToken();
+        $self->assertTokenType($nameToken, IdentifierToken);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
+        my $name = $nameToken->value();
+        die "typedef redefinition for " . $name . " at " . $self->{Line} if exists $typedefs{$name};
+        $typedefs{$name} = $typedef;
         return;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
@@ -1770,7 +1892,7 @@ sub parseUnrestrictedFloatType
     my $next = $self->nextToken();
     if ($next->value() eq "unrestricted") {
         $self->assertTokenValue($self->getToken(), "unrestricted", __LINE__);
-        return "unrestricted" . $self->parseFloatType();
+        return "unrestricted " . $self->parseFloatType();
     }
     if ($next->value() =~ /$nextUnrestrictedFloatType_1/) {
         return $self->parseFloatType();
@@ -2187,14 +2309,16 @@ sub parseEnumOld
     my $self = shift;
     my $next = $self->nextToken();
     if ($next->value() eq "enum") {
+        my $enum = domEnum->new();
         $self->assertTokenValue($self->getToken(), "enum", __LINE__);
-        $self->parseExtendedAttributeListAllowEmpty();
-        $self->assertTokenType($self->getToken(), IdentifierToken);
+        my $enumNameToken = $self->getToken();
+        $self->assertTokenType($enumNameToken, IdentifierToken);
+        $enum->name($enumNameToken->value());
         $self->assertTokenValue($self->getToken(), "{", __LINE__);
-        $self->parseEnumValueList();
+        push(@{$enum->values}, @{$self->parseEnumValueList()});
         $self->assertTokenValue($self->getToken(), "}", __LINE__);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
-        return;
+        return $enum;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }

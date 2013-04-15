@@ -123,9 +123,7 @@ void AccessibilityRenderObject::init()
 
 PassRefPtr<AccessibilityRenderObject> AccessibilityRenderObject::create(RenderObject* renderer)
 {
-    AccessibilityRenderObject* obj = new AccessibilityRenderObject(renderer);
-    obj->init();
-    return adoptRef(obj);
+    return adoptRef(new AccessibilityRenderObject(renderer));
 }
 
 void AccessibilityRenderObject::detach()
@@ -669,10 +667,12 @@ String AccessibilityRenderObject::textUnderElement() const
         }
     
         // Sometimes text fragments don't have Nodes associated with them (like when
-        // CSS content is used to insert text).
+        // CSS content is used to insert text or when a RenderCounter is used.)
         RenderText* renderTextObject = toRenderText(m_renderer);
         if (renderTextObject->isTextFragment())
             return String(static_cast<RenderTextFragment*>(m_renderer)->contentString());
+        else
+            return String(renderTextObject->text());
     }
     
     return AccessibilityNodeObject::textUnderElement();
@@ -1121,9 +1121,13 @@ AccessibilityObjectInclusion AccessibilityRenderObject::accessibilityIsIgnoredBa
         
     return DefaultBehavior;
 }  
- 
-bool AccessibilityRenderObject::accessibilityIsIgnored() const
+
+bool AccessibilityRenderObject::computeAccessibilityIsIgnored() const
 {
+#ifndef NDEBUG
+    ASSERT(m_initialized);
+#endif
+
     // Check first if any of the common reasons cause this element to be ignored.
     // Then process other use cases that need to be applied to all the various roles
     // that AccessibilityRenderObjects take on.
@@ -1365,10 +1369,9 @@ PlainTextRange AccessibilityRenderObject::ariaSelectedTextRange() const
     if (!node)
         return PlainTextRange();
     
-    ExceptionCode ec = 0;
     VisibleSelection visibleSelection = selection();
     RefPtr<Range> currentSelectionRange = visibleSelection.toNormalizedRange();
-    if (!currentSelectionRange || !currentSelectionRange->intersectsNode(node, ec))
+    if (!currentSelectionRange || !currentSelectionRange->intersectsNode(node, IGNORE_EXCEPTION))
         return PlainTextRange();
     
     int start = indexForVisiblePosition(visibleSelection.start());
@@ -1837,12 +1840,11 @@ VisiblePosition AccessibilityRenderObject::visiblePositionForIndex(int index) co
     if (index <= 0)
         return VisiblePosition(firstPositionInOrBeforeNode(node), DOWNSTREAM);
     
-    ExceptionCode ec = 0;
     RefPtr<Range> range = Range::create(m_renderer->document());
-    range->selectNodeContents(node, ec);
+    range->selectNodeContents(node, IGNORE_EXCEPTION);
     CharacterIterator it(range.get());
     it.advance(index - 1);
-    return VisiblePosition(Position(it.range()->endContainer(ec), it.range()->endOffset(ec), Position::PositionIsOffsetInAnchor), UPSTREAM);
+    return VisiblePosition(Position(it.range()->endContainer(), it.range()->endOffset(), Position::PositionIsOffsetInAnchor), UPSTREAM);
 }
     
 int AccessibilityRenderObject::indexForVisiblePosition(const VisiblePosition& pos) const
@@ -1863,10 +1865,9 @@ int AccessibilityRenderObject::indexForVisiblePosition(const VisiblePosition& po
     if (indexPosition.isNull() || highestEditableRoot(indexPosition, HasEditableAXRole) != node)
         return 0;
     
-    ExceptionCode ec = 0;
     RefPtr<Range> range = Range::create(m_renderer->document());
-    range->setStart(node, 0, ec);
-    range->setEnd(indexPosition, ec);
+    range->setStart(node, 0, IGNORE_EXCEPTION);
+    range->setEnd(indexPosition, IGNORE_EXCEPTION);
 
 #if PLATFORM(GTK)
     // We need to consider replaced elements for GTK, as they will be
@@ -2192,7 +2193,7 @@ AccessibilityObject* AccessibilityRenderObject::accessibilityHitTest(const IntPo
     layer->hitTest(request, hitTestResult);
     if (!hitTestResult.innerNode())
         return 0;
-    Node* node = hitTestResult.innerNode()->shadowAncestorNode();
+    Node* node = hitTestResult.innerNode()->deprecatedShadowAncestorNode();
 
     if (node->hasTagName(areaTag)) 
         return accessibilityImageMapHitTest(static_cast<HTMLAreaElement*>(node), point);
@@ -2222,11 +2223,20 @@ AccessibilityObject* AccessibilityRenderObject::accessibilityHitTest(const IntPo
     return result;
 }
 
+bool AccessibilityRenderObject::shouldNotifyActiveDescendant() const
+{
+    // We want to notify that the combo box has changed its active descendant,
+    // but we do not want to change the focus, because focus should remain with the combo box.
+    if (isComboBox())
+        return true;
+    
+    return shouldFocusActiveDescendant();
+}
+
 bool AccessibilityRenderObject::shouldFocusActiveDescendant() const
 {
     switch (ariaRoleAttribute()) {
     case GroupRole:
-    case ComboBoxRole:
     case ListBoxRole:
     case MenuRole:
     case MenuBarRole:
@@ -2319,7 +2329,7 @@ void AccessibilityRenderObject::handleActiveDescendantChanged()
         return; 
     AccessibilityRenderObject* activedescendant = static_cast<AccessibilityRenderObject*>(activeDescendant());
     
-    if (activedescendant && shouldFocusActiveDescendant())
+    if (activedescendant && shouldNotifyActiveDescendant())
         doc->axObjectCache()->postNotification(m_renderer, AXObjectCache::AXActiveDescendantChanged, true);
 }
 
@@ -2343,6 +2353,11 @@ AccessibilityObject* AccessibilityRenderObject::correspondingControlForLabelElem
 AccessibilityObject* AccessibilityRenderObject::correspondingLabelForControlElement() const
 {
     if (!m_renderer)
+        return 0;
+
+    // ARIA: section 2A, bullet #3 says if aria-labeledby or aria-label appears, it should
+    // override the "label" element association.
+    if (hasTextAlternative())
         return 0;
 
     Node* node = m_renderer->node();
@@ -2454,6 +2469,12 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
             return RadioButtonRole;
         if (input->isTextButton())
             return buttonRoleType();
+
+#if ENABLE(INPUT_TYPE_COLOR)
+        const AtomicString& type = input->getAttribute(typeAttr);
+        if (equalIgnoringCase(type, "color"))
+            return ColorWellRole;
+#endif
     }
 
     if (isFileUploadButton())
@@ -2482,10 +2503,10 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
         return MathElementRole;
     
     if (node && node->hasTagName(ddTag))
-        return DefinitionListDefinitionRole;
+        return DescriptionListDetailRole;
     
     if (node && node->hasTagName(dtTag))
-        return DefinitionListTermRole;
+        return DescriptionListTermRole;
 
     if (node && (node->hasTagName(rpTag) || node->hasTagName(rtTag)))
         return AnnotationRole;
@@ -2524,6 +2545,9 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
     if (node && node->hasTagName(articleTag))
         return DocumentArticleRole;
 
+    if (node && node->hasTagName(mainTag))
+        return LandmarkMainRole;
+
     if (node && node->hasTagName(navTag))
         return LandmarkNavigationRole;
 
@@ -2535,6 +2559,10 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
 
     if (node && node->hasTagName(addressTag))
         return LandmarkContentInfoRole;
+
+    // The HTML element should not be exposed as an element. That's what the RenderView element does.
+    if (node && node->hasTagName(htmlTag))
+        return IgnoredRole;
 
     // There should only be one banner/contentInfo per page. If header/footer are being used within an article or section
     // then it should not be exposed as whole page's banner/contentInfo
@@ -3364,7 +3392,7 @@ void AccessibilityRenderObject::scrollTo(const IntPoint& point) const
         return;
 
     RenderLayer* layer = box->layer();
-    layer->scrollToOffset(toSize(point), RenderLayer::ScrollOffsetClamped);
+    layer->scrollToOffset(toIntSize(point), RenderLayer::ScrollOffsetClamped);
 }
 
 #if ENABLE(MATHML)

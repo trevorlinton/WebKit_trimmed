@@ -38,16 +38,18 @@
 #include "JIT.h"
 #include "JITDriver.h"
 #include "JSActivation.h"
+#include "JSCJSValue.h"
 #include "JSGlobalObjectFunctions.h"
 #include "JSNameScope.h"
 #include "JSPropertyNameIterator.h"
 #include "JSString.h"
-#include "JSValue.h"
 #include "JSWithScope.h"
 #include "LLIntCommon.h"
 #include "LLIntExceptions.h"
 #include "LowLevelInterpreter.h"
+#include "ObjectConstructor.h"
 #include "Operations.h"
+#include "StructureRareDataInlines.h"
 #include <wtf/StringPrintStream.h>
 
 namespace JSC { namespace LLInt {
@@ -307,7 +309,7 @@ inline bool jitCompileAndSetHeuristics(CodeBlock* codeBlock, ExecState* exec)
         codeBlock->jitSoon();
         return true;
     }
-    ASSERT_NOT_REACHED();
+    RELEASE_ASSERT_NOT_REACHED();
     return false;
 }
 
@@ -483,8 +485,9 @@ LLINT_SLOW_PATH_DECL(slow_path_create_this)
     ConstructData constructData;
     ASSERT(constructor->methodTable()->getConstructData(constructor, constructData) == ConstructTypeJS);
 #endif
-    
-    Structure* structure = constructor->cachedInheritorID(exec);
+
+    size_t inlineCapacity = pc[3].u.operand;
+    Structure* structure = constructor->allocationProfile(exec, inlineCapacity)->structure();
     LLINT_RETURN(constructEmptyObject(exec, structure));
 }
 
@@ -503,7 +506,7 @@ LLINT_SLOW_PATH_DECL(slow_path_convert_this)
 LLINT_SLOW_PATH_DECL(slow_path_new_object)
 {
     LLINT_BEGIN();
-    LLINT_RETURN(constructEmptyObject(exec));
+    LLINT_RETURN(constructEmptyObject(exec, pc[3].u.objectAllocationProfile->structure()));
 }
 
 LLINT_SLOW_PATH_DECL(slow_path_new_array)
@@ -784,10 +787,9 @@ LLINT_SLOW_PATH_DECL(slow_path_resolve)
 {
     LLINT_BEGIN();
     Identifier ident = exec->codeBlock()->identifier(pc[2].u.operand);
-    ResolveOperations* operations = exec->codeBlock()->resolveOperations(pc[3].u.operand);
+    ResolveOperations* operations = pc[3].u.resolveOperations;
     JSValue result = JSScope::resolve(exec, ident, operations);
     ASSERT(operations->size());
-    ASSERT(operations == exec->codeBlock()->resolveOperations(pc[3].u.operand));
     switch (operations->data()[0].m_operation) {
     case ResolveOperation::GetAndReturnGlobalProperty:
         pc[0].u.opcode = LLInt::getOpcode(llint_op_resolve_global_property);
@@ -817,7 +819,7 @@ LLINT_SLOW_PATH_DECL(slow_path_resolve)
 LLINT_SLOW_PATH_DECL(slow_path_put_to_base)
 {
     LLINT_BEGIN();
-    PutToBaseOperation* operation = exec->codeBlock()->putToBaseOperation(pc[4].u.operand);
+    PutToBaseOperation* operation = pc[4].u.putToBaseOperation;
     JSScope::resolvePut(exec, LLINT_OP_C(1).jsValue(), exec->codeBlock()->identifier(pc[2].u.operand), LLINT_OP_C(3).jsValue(), operation);
     switch (operation->m_kind) {
     case PutToBaseOperation::VariablePut:
@@ -834,14 +836,14 @@ LLINT_SLOW_PATH_DECL(slow_path_resolve_base)
 {
     LLINT_BEGIN();
     Identifier& ident = exec->codeBlock()->identifier(pc[2].u.operand);
-    ResolveOperations* operations = exec->codeBlock()->resolveOperations(pc[4].u.operand);
+    ResolveOperations* operations = pc[4].u.resolveOperations;
     JSValue result;
     if (pc[3].u.operand) {
-        result = JSScope::resolveBase(exec, ident, true, operations, exec->codeBlock()->putToBaseOperation(pc[5].u.operand));
+        result = JSScope::resolveBase(exec, ident, true, operations, pc[5].u.putToBaseOperation);
         if (!result)
             LLINT_THROW(globalData.exception);
     } else
-        result = JSScope::resolveBase(exec, ident, false, operations, exec->codeBlock()->putToBaseOperation(pc[5].u.operand));
+        result = JSScope::resolveBase(exec, ident, false, operations, pc[5].u.putToBaseOperation);
     ASSERT(operations->size());
     switch (operations->data()[0].m_operation) {
     case ResolveOperation::ReturnGlobalObjectAsBase:
@@ -877,8 +879,8 @@ LLINT_SLOW_PATH_DECL(slow_path_ensure_property_exists)
 LLINT_SLOW_PATH_DECL(slow_path_resolve_with_base)
 {
     LLINT_BEGIN();
-    ResolveOperations* operations = exec->codeBlock()->resolveOperations(pc[4].u.operand);
-    JSValue result = JSScope::resolveWithBase(exec, exec->codeBlock()->identifier(pc[3].u.operand), &LLINT_OP(1), operations, exec->codeBlock()->putToBaseOperation(pc[5].u.operand));
+    ResolveOperations* operations = pc[4].u.resolveOperations;
+    JSValue result = JSScope::resolveWithBase(exec, exec->codeBlock()->identifier(pc[3].u.operand), &LLINT_OP(1), operations, pc[5].u.putToBaseOperation);
     LLINT_CHECK_EXCEPTION();
     LLINT_OP(2) = result;
     LLINT_PROFILE_VALUE(op_resolve_with_base, result);
@@ -888,7 +890,7 @@ LLINT_SLOW_PATH_DECL(slow_path_resolve_with_base)
 LLINT_SLOW_PATH_DECL(slow_path_resolve_with_this)
 {
     LLINT_BEGIN();
-    ResolveOperations* operations = exec->codeBlock()->resolveOperations(pc[4].u.operand);
+    ResolveOperations* operations = pc[4].u.resolveOperations;
     JSValue result = JSScope::resolveWithThis(exec, exec->codeBlock()->identifier(pc[3].u.operand), &LLINT_OP(1), operations);
     LLINT_CHECK_EXCEPTION();
     LLINT_OP(2) = result;
@@ -1428,7 +1430,7 @@ inline SlowPathReturnType setUpCall(ExecState* execCallee, Instruction* pc, Code
             codePtr = functionExecutable->jsCodeEntryFor(kind);
     }
     
-    if (callLinkInfo) {
+    if (!LLINT_ALWAYS_ACCESS_SLOW && callLinkInfo) {
         if (callLinkInfo->isOnList())
             callLinkInfo->remove();
         ExecState* execCaller = execCallee->callerFrame();

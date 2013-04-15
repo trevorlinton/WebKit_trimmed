@@ -55,6 +55,7 @@ class InlineFlowBox;
 class OverlapTestRequestClient;
 class Path;
 class Position;
+class PseudoStyleRequest;
 class RenderBoxModelObject;
 class RenderInline;
 class RenderBlock;
@@ -155,7 +156,7 @@ class RenderObject : public CachedImageClient {
 public:
     // Anonymous objects should pass the document as their node, and they will then automatically be
     // marked as anonymous in the constructor.
-    RenderObject(Node*);
+    explicit RenderObject(Node*);
     virtual ~RenderObject();
 
     RenderTheme* theme() const;
@@ -183,22 +184,6 @@ public:
     {
         if (const RenderObjectChildList* children = virtualChildren())
             return children->lastChild();
-        return 0;
-    }
-    RenderObject* beforePseudoElementRenderer() const
-    {
-        if (const RenderObjectChildList* children = virtualChildren())
-            return children->beforePseudoElementRenderer(this);
-        return 0;
-    }
-
-    // This function only returns the renderer of the "after" pseudoElement if it is a child of
-    // this renderer. If "continuations" exist, the function returns 0 even if the element that
-    // generated this renderer has an "after" pseudo-element.
-    RenderObject* afterPseudoElementRenderer() const
-    {
-        if (const RenderObjectChildList* children = virtualChildren())
-            return children->afterPseudoElementRenderer(this);
         return 0;
     }
 
@@ -232,8 +217,14 @@ public:
     RenderBox* enclosingBox() const;
     RenderBoxModelObject* enclosingBoxModelObject() const;
 
-    // Function to return our enclosing flow thread if we are contained inside one.
-    RenderFlowThread* enclosingRenderFlowThread() const;
+    // Function to return our enclosing flow thread if we are contained inside one. This
+    // function follows the containing block chain.
+    RenderFlowThread* flowThreadContainingBlock() const
+    {
+        if (flowThreadState() == NotInsideFlowThread)
+            return 0;
+        return locateFlowThreadContainingBlock();
+    }
 
     RenderNamedFlowThread* renderNamedFlowThreadWrapper() const;
 
@@ -242,13 +233,11 @@ public:
 #ifndef NDEBUG
     void setHasAXObject(bool flag) { m_hasAXObject = flag; }
     bool hasAXObject() const { return m_hasAXObject; }
-    bool isSetNeedsLayoutForbidden() const { return m_setNeedsLayoutForbidden; }
-    void setNeedsLayoutIsForbidden(bool flag) { m_setNeedsLayoutForbidden = flag; }
 
     // Helper class forbidding calls to setNeedsLayout() during its lifetime.
     class SetLayoutNeededForbiddenScope {
     public:
-        explicit SetLayoutNeededForbiddenScope(RenderObject*);
+        explicit SetLayoutNeededForbiddenScope(RenderObject*, bool isForbidden = true);
         ~SetLayoutNeededForbiddenScope();
     private:
         RenderObject* m_renderObject;
@@ -260,11 +249,6 @@ public:
     // children.
     virtual RenderBlock* firstLineBlock() const;
 
-    // Called when an object that was floating or positioned becomes a normal flow object
-    // again.  We have to make sure the render tree updates as needed to accommodate the new
-    // normal flow object.
-    void handleDynamicFloatPositionChange();
-    
     // RenderObject tree manipulation
     //////////////////////////////////////////
     virtual bool canHaveChildren() const { return virtualChildren(); }
@@ -286,13 +270,22 @@ protected:
     void setParent(RenderObject* parent)
     {
         m_parent = parent;
-        if (parent && parent->inRenderFlowThread())
-            setInRenderFlowThread(true);
-        else if (!parent && inRenderFlowThread())
-            setInRenderFlowThread(false);
+        
+        // Only update if our flow thread state is different from our new parent and if we're not a RenderFlowThread.
+        // A RenderFlowThread is always considered to be inside itself, so it never has to change its state
+        // in response to parent changes.
+        FlowThreadState newState = parent ? parent->flowThreadState() : NotInsideFlowThread;
+        if (newState != flowThreadState() && !isRenderFlowThread())
+            setFlowThreadStateIncludingDescendants(newState);
     }
+
     //////////////////////////////////////////
 private:
+#ifndef NDEBUG
+    bool isSetNeedsLayoutForbidden() const { return m_setNeedsLayoutForbidden; }
+    void setNeedsLayoutIsForbidden(bool flag) { m_setNeedsLayoutForbidden = flag; }
+#endif
+
     void addAbsoluteRectForLayer(LayoutRect& result);
     void setLayerNeedsFullRepaint();
     void setLayerNeedsFullRepaintForPositionedMovementLayout();
@@ -310,7 +303,7 @@ public:
     void showRenderTreeAndMark(const RenderObject* markedObject1 = 0, const char* markedLabel1 = 0, const RenderObject* markedObject2 = 0, const char* markedLabel2 = 0, int depth = 0) const;
 #endif
 
-    static RenderObject* createObject(Node*, RenderStyle*);
+    static RenderObject* createObject(Element*, RenderStyle*);
 
     // Overloaded new operator.  Derived classes must override operator new
     // in order to allocate out of the RenderArena.
@@ -337,7 +330,7 @@ public:
 #endif
     virtual bool isQuote() const { return false; }
 
-#if ENABLE(DETAILS_ELEMENT)
+#if ENABLE(DETAILS_ELEMENT) || ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     virtual bool isDetailsMarker() const { return false; }
 #endif
     virtual bool isEmbeddedObject() const { return false; }
@@ -398,7 +391,9 @@ public:
 
     virtual bool isRenderFlowThread() const { return false; }
     virtual bool isRenderNamedFlowThread() const { return false; }
-    
+    bool isInFlowRenderFlowThread() const { return isRenderFlowThread() && !isOutOfFlowPositioned(); }
+    bool isOutOfFlowRenderFlowThread() const { return isRenderFlowThread() && isOutOfFlowPositioned(); }
+
     virtual bool isRenderMultiColumnBlock() const { return false; }
     virtual bool isRenderMultiColumnSet() const { return false; }
 
@@ -447,8 +442,16 @@ public:
         }
     }
 
-    bool inRenderFlowThread() const { return m_bitfields.inRenderFlowThread(); }
-    void setInRenderFlowThread(bool b = true) { m_bitfields.setInRenderFlowThread(b); }
+    enum FlowThreadState {
+        NotInsideFlowThread = 0,
+        InsideOutOfFlowThread = 1,
+        InsideInFlowThread = 2,
+    };
+
+    void setFlowThreadStateIncludingDescendants(FlowThreadState);
+
+    FlowThreadState flowThreadState() const { return m_bitfields.flowThreadState(); }
+    void setFlowThreadState(FlowThreadState state) { m_bitfields.setFlowThreadState(state); }
 
     virtual bool requiresForcedStyleRecalcPropagation() const { return false; }
 
@@ -514,7 +517,6 @@ public:
 #endif
 
     bool isAnonymous() const { return m_bitfields.isAnonymous(); }
-    void setIsAnonymous(bool b) { m_bitfields.setIsAnonymous(b); }
     bool isAnonymousBlock() const
     {
         // This function is kept in sync with anonymous block creation conditions in
@@ -542,6 +544,16 @@ public:
 
     bool isOutOfFlowPositioned() const { return m_bitfields.isOutOfFlowPositioned(); } // absolute or fixed positioning
     bool isInFlowPositioned() const { return m_bitfields.isRelPositioned() || m_bitfields.isStickyPositioned(); } // relative or sticky positioning
+    bool hasPaintOffset() const
+    {
+        bool positioned = isInFlowPositioned();
+#if ENABLE(CSS_EXCLUSIONS)
+        // Shape outside on a float can reposition the float in much the
+        // same way as relative positioning, so treat it as such.
+        positioned = positioned || (m_bitfields.floating() && m_bitfields.isBox() && style()->shapeOutside());
+#endif
+        return positioned;
+    }
     bool isRelPositioned() const { return m_bitfields.isRelPositioned(); } // relative positioning
     bool isStickyPositioned() const { return m_bitfields.isStickyPositioned(); }
     bool isPositioned() const { return m_bitfields.isPositioned(); }
@@ -560,6 +572,8 @@ public:
     bool borderImageIsLoadedAndCanBeRendered() const;
     bool mustRepaintBackgroundOrBorder() const;
     bool hasBackground() const { return style()->hasBackground(); }
+    bool hasEntirelyFixedBackground() const;
+
     bool needsLayout() const
     {
         return m_bitfields.needsLayout() || m_bitfields.normalChildNeedsLayout() || m_bitfields.posChildNeedsLayout()
@@ -608,7 +622,7 @@ public:
     // The pseudo element style can be cached or uncached.  Use the cached method if the pseudo element doesn't respect
     // any pseudo classes (and therefore has no concept of changing state).
     RenderStyle* getCachedPseudoStyle(PseudoId, RenderStyle* parentStyle = 0) const;
-    PassRefPtr<RenderStyle> getUncachedPseudoStyle(PseudoId, RenderStyle* parentStyle = 0, RenderStyle* ownStyle = 0) const;
+    PassRefPtr<RenderStyle> getUncachedPseudoStyle(const PseudoStyleRequest&, RenderStyle* parentStyle = 0, RenderStyle* ownStyle = 0) const;
     
     virtual void updateDragState(bool dragOn);
 
@@ -626,7 +640,7 @@ public:
     // Returns the styled node that caused the generation of this renderer.
     // This is the same as node() except for renderers of :before and :after
     // pseudo elements for which their parent node is returned.
-    Node* generatingNode() const { return isPseudoElement() ? node()->parentOrHostNode() : node(); }
+    Node* generatingNode() const { return isPseudoElement() ? node()->parentOrShadowHostNode() : node(); }
 
     Document* document() const { return m_node->document(); }
     Frame* frame() const { return document()->frame(); }
@@ -729,6 +743,15 @@ public:
     // returns the containing block level element for this element.
     RenderBlock* containingBlock() const;
 
+    bool canContainFixedPositionObjects() const
+    {
+        return isRenderView() || (hasTransform() && isRenderBlock())
+#if ENABLE(SVG)
+                || isSVGForeignObject()
+#endif
+                || isOutOfFlowRenderFlowThread();
+    }
+
     // Convert the given local point to absolute coordinates
     // FIXME: Temporary. If UseTransforms is true, take transforms into account. Eventually localToAbsolute() will always be transform-aware.
     FloatPoint localToAbsolute(const FloatPoint& localPoint = FloatPoint(), MapCoordinatesFlags = 0) const;
@@ -739,6 +762,8 @@ public:
     {
         return localToContainerQuad(quad, 0, mode, wasFixed);
     }
+    // Convert an absolute quad to local coordinates.
+    FloatQuad absoluteToLocalQuad(const FloatQuad&, MapCoordinatesFlags mode = 0) const;
 
     // Convert a local quad into the coordinate system of container, taking transforms into account.
     FloatQuad localToContainerQuad(const FloatQuad&, const RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
@@ -894,11 +919,6 @@ public:
      */
     virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
 
-    bool isMarginBeforeQuirk() const { return m_bitfields.marginBeforeQuirk(); }
-    bool isMarginAfterQuirk() const { return m_bitfields.marginAfterQuirk(); }
-    void setMarginBeforeQuirk(bool b = true) { m_bitfields.setMarginBeforeQuirk(b); }
-    void setMarginAfterQuirk(bool b = true) { m_bitfields.setMarginAfterQuirk(b); }
-
     // When performing a global document tear-down, the renderer of the document is cleared.  We use this
     // as a hook to detect the case of document destruction and don't waste time doing unnecessary work.
     bool documentBeingDestroyed() const;
@@ -954,7 +974,7 @@ public:
     // return true if this object requires a new stacking context
     bool createsGroup() const { return isTransparent() || hasMask() || hasFilter() || hasBlendMode(); } 
     
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&) { };
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& /* additionalOffset */, const RenderLayerModelObject* /* paintContainer */ = 0) { };
 
     LayoutRect absoluteOutlineBounds() const
     {
@@ -978,8 +998,8 @@ protected:
     void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide,
                             Color, EBorderStyle, int adjbw1, int adjbw2, bool antialias = false);
 
-    void paintFocusRing(GraphicsContext*, const LayoutPoint&, RenderStyle*);
-    void paintOutline(GraphicsContext*, const LayoutRect&);
+    void paintFocusRing(PaintInfo&, const LayoutPoint&, RenderStyle*);
+    void paintOutline(PaintInfo&, const LayoutRect&);
     void addPDFURLRect(GraphicsContext*, const LayoutRect&);
     
     virtual LayoutRect viewRect() const;
@@ -995,7 +1015,10 @@ protected:
     virtual void insertedIntoTree();
     virtual void willBeRemovedFromTree();
 
+    void setDocumentForAnonymous(Document* document) { ASSERT(isAnonymous()); m_node = document; }
+
 private:
+    RenderFlowThread* locateFlowThreadContainingBlock() const;
     void removeFromRenderFlowThread();
     void removeFromRenderFlowThreadRecursive(RenderFlowThread*);
 
@@ -1032,11 +1055,12 @@ private:
 
     class RenderObjectBitfields {
         enum PositionedState {
-            IsStaticlyPositioned = 0,
+            IsStaticallyPositioned = 0,
             IsRelativelyPositioned = 1,
             IsOutOfFlowPositioned = 2,
             IsStickyPositioned = 3
         };
+
     public:
         RenderObjectBitfields(Node* node)
             : m_needsLayout(false)
@@ -1047,7 +1071,7 @@ private:
             , m_preferredLogicalWidthsDirty(false)
             , m_floating(false)
             , m_paintBackground(false)
-            , m_isAnonymous(node == node->document())
+            , m_isAnonymous(!node)
             , m_isText(false)
             , m_isBox(false)
             , m_isInline(true)
@@ -1060,17 +1084,15 @@ private:
             , m_hasReflection(false)
             , m_hasCounterNodeMap(false)
             , m_everHadLayout(false)
-            , m_inRenderFlowThread(false)
             , m_childrenInline(false)
-            , m_marginBeforeQuirk(false) 
-            , m_marginAfterQuirk(false)
             , m_hasColumns(false)
-            , m_positionedState(IsStaticlyPositioned)
+            , m_positionedState(IsStaticallyPositioned)
             , m_selectionState(SelectionNone)
+            , m_flowThreadState(NotInsideFlowThread)
         {
         }
         
-        // 32 bits have been used here. THERE ARE NO FREE BITS AVAILABLE.
+        // 30 bits have been used here. There are two bits available.
         ADD_BOOLEAN_BITFIELD(needsLayout, NeedsLayout);
         ADD_BOOLEAN_BITFIELD(needsPositionedMovementLayout, NeedsPositionedMovementLayout);
         ADD_BOOLEAN_BITFIELD(normalChildNeedsLayout, NormalChildNeedsLayout);
@@ -1098,25 +1120,20 @@ private:
         ADD_BOOLEAN_BITFIELD(hasCounterNodeMap, HasCounterNodeMap);
         ADD_BOOLEAN_BITFIELD(everHadLayout, EverHadLayout);
 
-        // These bitfields are moved here from subclasses to pack them together.
-        // from RenderFlowThread
-        ADD_BOOLEAN_BITFIELD(inRenderFlowThread, InRenderFlowThread);
-
         // from RenderBlock
         ADD_BOOLEAN_BITFIELD(childrenInline, ChildrenInline);
-        ADD_BOOLEAN_BITFIELD(marginBeforeQuirk, MarginBeforeQuirk);
-        ADD_BOOLEAN_BITFIELD(marginAfterQuirk, MarginAfterQuirk);
         ADD_BOOLEAN_BITFIELD(hasColumns, HasColumns);
 
     private:
         unsigned m_positionedState : 2; // PositionedState
         unsigned m_selectionState : 3; // SelectionState
+        unsigned m_flowThreadState : 2; // FlowThreadState
 
     public:
         bool isOutOfFlowPositioned() const { return m_positionedState == IsOutOfFlowPositioned; }
         bool isRelPositioned() const { return m_positionedState == IsRelativelyPositioned; }
         bool isStickyPositioned() const { return m_positionedState == IsStickyPositioned; }
-        bool isPositioned() const { return m_positionedState != IsStaticlyPositioned; }
+        bool isPositioned() const { return m_positionedState != IsStaticallyPositioned; }
 
         void setPositionedState(int positionState)
         {
@@ -1127,6 +1144,9 @@ private:
 
         ALWAYS_INLINE SelectionState selectionState() const { return static_cast<SelectionState>(m_selectionState); }
         ALWAYS_INLINE void setSelectionState(SelectionState selectionState) { m_selectionState = selectionState; }
+        
+        ALWAYS_INLINE FlowThreadState flowThreadState() const { return static_cast<FlowThreadState>(m_flowThreadState); }
+        ALWAYS_INLINE void setFlowThreadState(FlowThreadState flowThreadState) { m_flowThreadState = flowThreadState; }
     };
 
 #undef ADD_BOOLEAN_BITFIELD
@@ -1140,10 +1160,6 @@ private:
     void setPaintBackground(bool b) { m_bitfields.setPaintBackground(b); }
     void setIsDragging(bool b) { m_bitfields.setIsDragging(b); }
     void setEverHadLayout(bool b) { m_bitfields.setEverHadLayout(b); }
-
-private:
-    // Store state between styleWillChange and styleDidChange
-    static bool s_affectsParentBlock;
 };
 
 inline bool RenderObject::documentBeingDestroyed() const
@@ -1288,6 +1304,13 @@ inline int adjustForAbsoluteZoom(int value, RenderObject* renderer)
 {
     return adjustForAbsoluteZoom(value, renderer->style());
 }
+
+#if ENABLE(SUBPIXEL_LAYOUT)
+inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, RenderObject* renderer)
+{
+    return adjustLayoutUnitForAbsoluteZoom(value, renderer->style());
+}
+#endif
 
 inline void adjustFloatQuadForAbsoluteZoom(FloatQuad& quad, RenderObject* renderer)
 {

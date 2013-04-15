@@ -31,7 +31,7 @@
 #ifndef WebSecurityOrigin_h
 #define WebSecurityOrigin_h
 
-#include "platform/WebCommon.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
 
 #if WEBKIT_IMPLEMENTATION
 namespace WebCore { class SecurityOrigin; }
@@ -98,6 +98,11 @@ public:
 
     // Allows this WebSecurityOrigin access to local resources.
     WEBKIT_EXPORT void grantLoadLocalResources() const;
+
+    // Explicitly grant the ability to access very other SecurityOrigin.
+    //
+    // WARNING: This is an extremely powerful ability. Use with caution!
+    WEBKIT_EXPORT void grantUniversalAccess() const;
 
 #if WEBKIT_IMPLEMENTATION
     WebSecurityOrigin(const WTF::PassRefPtr<WebCore::SecurityOrigin>&);

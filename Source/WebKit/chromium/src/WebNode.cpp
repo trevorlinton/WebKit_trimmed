@@ -33,6 +33,7 @@
 
 #include "Document.h"
 #include "Element.h"
+#include "Event.h"
 #include "Frame.h"
 #include "FrameLoaderClientImpl.h"
 #include "Node.h"
@@ -259,6 +260,14 @@ WebPluginContainer* WebNode::pluginContainer() const
         }
     }
     return 0;
+}
+
+WebElement WebNode::shadowHost() const
+{
+    if (isNull())
+        return WebElement();
+    const Node* coreNode = constUnwrap<Node>();
+    return WebElement(coreNode->shadowHost());
 }
 
 WebNode::WebNode(const PassRefPtr<Node>& node)

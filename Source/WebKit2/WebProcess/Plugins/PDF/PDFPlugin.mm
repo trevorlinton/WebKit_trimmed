@@ -37,7 +37,6 @@
 #import "PDFLayerControllerDetails.h"
 #import "PDFPluginAnnotation.h"
 #import "PluginView.h"
-#import "ShareableBitmap.h"
 #import "WebContextMessages.h"
 #import "WebEvent.h"
 #import "WebEventConversion.h"
@@ -46,28 +45,19 @@
 #import "WebProcess.h"
 #import <PDFKit/PDFKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <WebCore/ArchiveResource.h>
-#import <WebCore/CSSPrimitiveValue.h>
-#import <WebCore/CSSPropertyNames.h>
-#import <WebCore/Chrome.h>
-#import <WebCore/DocumentLoader.h>
 #import <WebCore/FocusController.h>
 #import <WebCore/FormState.h>
 #import <WebCore/Frame.h>
-#import <WebCore/FrameLoadRequest.h>
+#import <WebCore/FrameLoader.h>
 #import <WebCore/FrameView.h>
 #import <WebCore/GraphicsContext.h>
 #import <WebCore/HTMLElement.h>
 #import <WebCore/HTMLFormElement.h>
-#import <WebCore/HTTPHeaderMap.h>
 #import <WebCore/LocalizedStrings.h>
 #import <WebCore/MouseEvent.h>
 #import <WebCore/Page.h>
 #import <WebCore/Pasteboard.h>
-#import <WebCore/PluginData.h>
 #import <WebCore/PluginDocument.h>
-#import <WebCore/RenderBoxModelObject.h>
-#import <WebCore/ScrollAnimator.h>
 #import <WebCore/ScrollbarTheme.h>
 #import <WebCore/UUID.h>
 #import <WebKitSystemInterface.h>
@@ -173,7 +163,7 @@ static const char* annotationStyle =
     // FIXME: Implement.
 }
 
-- (void)openWithPreview
+- (void)openWithNativeApplication
 {
     _pdfPlugin->openWithNativeApplication();
 }
@@ -196,6 +186,16 @@ static const char* annotationStyle =
 - (void)pdfLayerController:(PDFLayerController *)pdfLayerController didChangeContentScaleFactor:(CGFloat)scaleFactor
 {
     _pdfPlugin->notifyContentScaleFactorChanged(scaleFactor);
+}
+
+- (void)pdfLayerController:(PDFLayerController *)pdfLayerController didChangeDisplayMode:(int)mode
+{
+    _pdfPlugin->notifyDisplayModeChanged(mode);
+}
+
+- (void)pdfLayerController:(PDFLayerController *)pdfLayerController didChangeSelection:(PDFSelection *)selection
+{
+    _pdfPlugin->notifySelectionChanged(selection);
 }
 
 @end
@@ -762,6 +762,12 @@ void PDFPlugin::notifyContentScaleFactorChanged(CGFloat scaleFactor)
     updateScrollbars();
 }
 
+void PDFPlugin::notifyDisplayModeChanged(int)
+{
+    calculateSizes();
+    updateScrollbars();
+}
+
 void PDFPlugin::saveToPDF()
 {
     // FIXME: We should probably notify the user that they can't save before the document is finished loading.
@@ -937,6 +943,36 @@ bool PDFPlugin::findString(const String& target, WebCore::FindOptions options, u
     }
 
     return matchCount > 0;
+}
+
+bool PDFPlugin::performDictionaryLookupAtLocation(const WebCore::FloatPoint& point)
+{
+    PDFSelection* lookupSelection = [m_pdfLayerController.get() getSelectionForWordAtPoint:convertFromPluginToPDFView(roundedIntPoint(point))];
+
+    if ([[lookupSelection string] length])
+        [m_pdfLayerController.get() searchInDictionaryWithSelection:lookupSelection];
+
+    return true;
+}
+
+void PDFPlugin::focusNextAnnotation()
+{
+    [m_pdfLayerController.get() activateNextAnnotation:false];
+}
+
+void PDFPlugin::focusPreviousAnnotation()
+{
+    [m_pdfLayerController.get() activateNextAnnotation:true];
+}
+
+void PDFPlugin::notifySelectionChanged(PDFSelection *)
+{
+    webFrame()->page()->didChangeSelection();
+}
+
+String PDFPlugin::getSelectionString() const
+{
+    return [[m_pdfLayerController.get() currentSelection] string];
 }
 
 } // namespace WebKit

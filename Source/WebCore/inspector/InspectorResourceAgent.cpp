@@ -39,6 +39,7 @@
 #include "CachedResourceLoader.h"
 #include "Document.h"
 #include "DocumentLoader.h"
+#include "ExceptionCodePlaceholder.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "HTTPHeaderMap.h"
@@ -62,6 +63,7 @@
 #include "ScriptCallStack.h"
 #include "ScriptCallStackFactory.h"
 #include "ScriptableDocumentParser.h"
+#include "Settings.h"
 #include "SubresourceLoader.h"
 #include "WebSocketFrame.h"
 #include "WebSocketHandshakeRequest.h"
@@ -478,21 +480,6 @@ PassRefPtr<TypeBuilder::Network::Initiator> InspectorResourceAgent::buildInitiat
 
 #if ENABLE(WEB_SOCKETS)
 
-// FIXME: More this into the front-end?
-// Create human-readable binary representation, like "01:23:45:67:89:AB:CD:EF".
-static String createReadableStringFromBinary(const unsigned char* value, size_t length)
-{
-    ASSERT(length > 0);
-    StringBuilder builder;
-    builder.reserveCapacity(length * 3 - 1);
-    for (size_t i = 0; i < length; ++i) {
-        if (i > 0)
-            builder.append(':');
-        appendByteAsHex(value[i], builder);
-    }
-    return builder.toString();
-}
-
 void InspectorResourceAgent::didCreateWebSocket(unsigned long identifier, const KURL& requestURL)
 {
     m_frontend->webSocketCreated(IdentifiersFactory::requestId(identifier), requestURL.string());
@@ -501,7 +488,6 @@ void InspectorResourceAgent::didCreateWebSocket(unsigned long identifier, const 
 void InspectorResourceAgent::willSendWebSocketHandshakeRequest(unsigned long identifier, const WebSocketHandshakeRequest& request)
 {
     RefPtr<TypeBuilder::Network::WebSocketRequest> requestObject = TypeBuilder::Network::WebSocketRequest::create()
-        .setRequestKey3(createReadableStringFromBinary(request.key3().value, sizeof(request.key3().value)))
         .setHeaders(buildObjectForHeaders(request.headerFields()));
     m_frontend->webSocketWillSendHandshakeRequest(IdentifiersFactory::requestId(identifier), currentTime(), requestObject);
 }
@@ -511,8 +497,7 @@ void InspectorResourceAgent::didReceiveWebSocketHandshakeResponse(unsigned long 
     RefPtr<TypeBuilder::Network::WebSocketResponse> responseObject = TypeBuilder::Network::WebSocketResponse::create()
         .setStatus(response.statusCode())
         .setStatusText(response.statusText())
-        .setHeaders(buildObjectForHeaders(response.headerFields()))
-        .setChallengeResponse(createReadableStringFromBinary(response.challengeResponse().value, sizeof(response.challengeResponse().value)));
+        .setHeaders(buildObjectForHeaders(response.headerFields()));
     m_frontend->webSocketHandshakeResponseReceived(IdentifiersFactory::requestId(identifier), currentTime(), responseObject);
 }
 
@@ -619,22 +604,25 @@ void InspectorResourceAgent::getResponseBody(ErrorString* errorString, const Str
 void InspectorResourceAgent::replayXHR(ErrorString*, const String& requestId)
 {
     RefPtr<XMLHttpRequest> xhr = XMLHttpRequest::create(m_pageAgent->mainFrame()->document());
-    ExceptionCode code;
     String actualRequestId = requestId;
 
     XHRReplayData* xhrReplayData = m_resourcesData->xhrReplayData(requestId);
     if (!xhrReplayData)
         return;
 
-    CachedResource* cachedResource = memoryCache()->resourceForURL(xhrReplayData->url());
+    ResourceRequest request(xhrReplayData->url());
+#if ENABLE(CACHE_PARTITIONING)
+    request.setCachePartition(m_pageAgent->mainFrame()->document()->topOrigin()->cachePartition());
+#endif
+    CachedResource* cachedResource = memoryCache()->resourceForRequest(request);
     if (cachedResource)
         memoryCache()->remove(cachedResource);
 
-    xhr->open(xhrReplayData->method(), xhrReplayData->url(), xhrReplayData->async(), code);
+    xhr->open(xhrReplayData->method(), xhrReplayData->url(), xhrReplayData->async(), IGNORE_EXCEPTION);
     HTTPHeaderMap::const_iterator end = xhrReplayData->headers().end();
     for (HTTPHeaderMap::const_iterator it = xhrReplayData->headers().begin(); it!= end; ++it)
-        xhr->setRequestHeader(it->key, it->value, code);
-    xhr->sendFromInspector(xhrReplayData->formData(), code);
+        xhr->setRequestHeader(it->key, it->value, IGNORE_EXCEPTION);
+    xhr->sendFromInspector(xhrReplayData->formData(), IGNORE_EXCEPTION);
 }
 
 void InspectorResourceAgent::canClearBrowserCache(ErrorString*, bool* result)
@@ -679,10 +667,10 @@ void InspectorResourceAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInf
     info.addWeakPointer(m_pageAgent);
     info.addWeakPointer(m_client);
     info.addWeakPointer(m_frontend);
-    info.addMember(m_userAgentOverride);
-    info.addMember(m_resourcesData);
-    info.addMember(m_pendingXHRReplayData);
-    info.addMember(m_styleRecalculationInitiator);
+    info.addMember(m_userAgentOverride, "userAgentOverride");
+    info.addMember(m_resourcesData, "resourcesData");
+    info.addMember(m_pendingXHRReplayData, "pendingXHRReplayData");
+    info.addMember(m_styleRecalculationInitiator, "styleRecalculationInitiator");
 }
 
 InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)

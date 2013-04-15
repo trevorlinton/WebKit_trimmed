@@ -37,6 +37,7 @@
 #include "EventNames.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "HTMLBRElement.h"
 #include "HTMLCollection.h"
 #include "HTMLDocument.h"
@@ -50,6 +51,7 @@
 #include "RenderWordBreak.h"
 #include "ScriptEventListener.h"
 #include "Settings.h"
+#include "StylePropertySet.h"
 #include "Text.h"
 #include "TextIterator.h"
 #include "XMLNames.h"
@@ -133,27 +135,25 @@ static inline int unicodeBidiAttributeForDirAuto(HTMLElement* element)
     return CSSValueWebkitIsolate;
 }
 
-static unsigned parseBorderWidthAttribute(const Attribute& attribute)
+unsigned HTMLElement::parseBorderWidthAttribute(const AtomicString& value) const
 {
-    ASSERT(attribute.name() == borderAttr);
     unsigned borderWidth = 0;
-    if (!attribute.isEmpty())
-        parseHTMLNonNegativeInteger(attribute.value(), borderWidth);
+    if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth))
+        return hasLocalName(tableTag) ? 1 : borderWidth;
     return borderWidth;
 }
 
-void HTMLElement::applyBorderAttributeToStyle(const Attribute& attribute, StylePropertySet* style)
+void HTMLElement::applyBorderAttributeToStyle(const AtomicString& value, MutableStylePropertySet* style)
 {
-    addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, parseBorderWidthAttribute(attribute), CSSPrimitiveValue::CSS_PX);
+    addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, parseBorderWidthAttribute(value), CSSPrimitiveValue::CSS_PX);
     addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderStyle, CSSValueSolid);
 }
 
-void HTMLElement::mapLanguageAttributeToLocale(const Attribute& attribute, StylePropertySet* style)
+void HTMLElement::mapLanguageAttributeToLocale(const AtomicString& value, MutableStylePropertySet* style)
 {
-    ASSERT((attribute.name() == langAttr || attribute.name().matches(XMLNames::langAttr)));
-    if (!attribute.isEmpty()) {
+    if (!value.isEmpty()) {
         // Have to quote so the locale id is treated as a string instead of as a CSS keyword.
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, quoteCSSString(attribute.value()));
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, quoteCSSString(value));
     } else {
         // The empty string means the language is explicitly unknown.
         addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, CSSValueAuto);
@@ -167,50 +167,50 @@ bool HTMLElement::isPresentationAttribute(const QualifiedName& name) const
     return StyledElement::isPresentationAttribute(name);
 }
 
-void HTMLElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (attribute.name() == alignAttr) {
-        if (equalIgnoringCase(attribute.value(), "middle"))
+    if (name == alignAttr) {
+        if (equalIgnoringCase(value, "middle"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, CSSValueCenter);
         else
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, attribute.value());
-    } else if (attribute.name() == contenteditableAttr) {
-        if (attribute.isEmpty() || equalIgnoringCase(attribute.value(), "true")) {
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, value);
+    } else if (name == contenteditableAttr) {
+        if (value.isEmpty() || equalIgnoringCase(value, "true")) {
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserModify, CSSValueReadWrite);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWordWrap, CSSValueBreakWord);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitNbspMode, CSSValueSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLineBreak, CSSValueAfterWhiteSpace);
-        } else if (equalIgnoringCase(attribute.value(), "plaintext-only")) {
+        } else if (equalIgnoringCase(value, "plaintext-only")) {
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserModify, CSSValueReadWritePlaintextOnly);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWordWrap, CSSValueBreakWord);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitNbspMode, CSSValueSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLineBreak, CSSValueAfterWhiteSpace);
-        } else if (equalIgnoringCase(attribute.value(), "false"))
+        } else if (equalIgnoringCase(value, "false"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserModify, CSSValueReadOnly);
-    } else if (attribute.name() == hiddenAttr) {
+    } else if (name == hiddenAttr) {
         addPropertyToPresentationAttributeStyle(style, CSSPropertyDisplay, CSSValueNone);
-    } else if (attribute.name() == draggableAttr) {
-        if (equalIgnoringCase(attribute.value(), "true")) {
+    } else if (name == draggableAttr) {
+        if (equalIgnoringCase(value, "true")) {
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserDrag, CSSValueElement);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserSelect, CSSValueNone);
-        } else if (equalIgnoringCase(attribute.value(), "false"))
+        } else if (equalIgnoringCase(value, "false"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitUserDrag, CSSValueNone);
-    } else if (attribute.name() == dirAttr) {
-        if (equalIgnoringCase(attribute.value(), "auto"))
+    } else if (name == dirAttr) {
+        if (equalIgnoringCase(value, "auto"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, unicodeBidiAttributeForDirAuto(this));
         else {
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, attribute.value());
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, value);
             if (!hasTagName(bdiTag) && !hasTagName(bdoTag) && !hasTagName(outputTag))
                 addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, CSSValueEmbed);
         }
-    } else if (attribute.name().matches(XMLNames::langAttr)) {
-        mapLanguageAttributeToLocale(attribute, style);
-    } else if (attribute.name() == langAttr) {
+    } else if (name.matches(XMLNames::langAttr))
+        mapLanguageAttributeToLocale(value, style);
+    else if (name == langAttr) {
         // xml:lang has a higher priority than lang.
         if (!fastHasAttribute(XMLNames::langAttr))
-            mapLanguageAttributeToLocale(attribute, style);
+            mapLanguageAttributeToLocale(value, style);
     } else
-        StyledElement::collectStyleForPresentationAttribute(attribute, style);
+        StyledElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -223,7 +223,7 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     else if (name == tabindexAttr) {
         int tabindex = 0;
         if (value.isEmpty())
-            clearTabIndexExplicitly();
+            clearTabIndexExplicitlyIfNeeded();
         else if (parseHTMLInteger(value, tabindex)) {
             // Clamp tabindex to the range of 'short' to match Firefox's behavior.
             setTabIndexExplicitly(max(static_cast<int>(std::numeric_limits<short>::min()), min(tabindex, static_cast<int>(std::numeric_limits<short>::max()))));
@@ -312,6 +312,8 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
         setAttributeEventListener(eventNames().webkitAnimationEndEvent, createAttributeEventListener(this, name, value));
     } else if (name == onwebkittransitionendAttr) {
         setAttributeEventListener(eventNames().webkitTransitionEndEvent, createAttributeEventListener(this, name, value));
+    } else if (name == ontransitionendAttr) {
+        setAttributeEventListener(eventNames().transitionendEvent, createAttributeEventListener(this, name, value));
     } else if (name == oninputAttr) {
         setAttributeEventListener(eventNames().inputEvent, createAttributeEventListener(this, name, value));
     } else if (name == oninvalidAttr) {
@@ -599,14 +601,13 @@ void HTMLElement::insertAdjacentText(const String& where, const String& text, Ex
     insertAdjacent(where, textNode.get(), ec);
 }
 
-void HTMLElement::applyAlignmentAttributeToStyle(const Attribute& attribute, StylePropertySet* style)
+void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, MutableStylePropertySet* style)
 {
     // Vertical alignment with respect to the current baseline of the text
     // right or left means floating images.
     int floatValue = CSSValueInvalid;
     int verticalAlignValue = CSSValueInvalid;
 
-    const AtomicString& alignment = attribute.value();
     if (equalIgnoringCase(alignment, "absmiddle"))
         verticalAlignValue = CSSValueMiddle;
     else if (equalIgnoringCase(alignment, "absbottom"))
@@ -852,7 +853,8 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
 
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
 {
-    if (HTMLTextFormControlElement* textElement = toTextFormControl(const_cast<HTMLElement*>(this))) {
+    if (isHTMLTextFormControlElement(this)) {
+        HTMLTextFormControlElement* textElement = toHTMLTextFormControlElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
         Unicode::Direction textDirection = textElement->value().defaultWritingDirection(&hasStrongDirectionality);
         if (strongDirectionalityTextNode)
@@ -1049,7 +1051,7 @@ void HTMLElement::getItemRefElements(Vector<HTMLElement*>& itemRefElements)
 }
 #endif
 
-void HTMLElement::addHTMLLengthToStyle(StylePropertySet* style, CSSPropertyID propertyID, const String& value)
+void HTMLElement::addHTMLLengthToStyle(MutableStylePropertySet* style, CSSPropertyID propertyID, const String& value)
 {
     // FIXME: This function should not spin up the CSS parser, but should instead just figure out the correct
     // length unit and make the appropriate parsed value.
@@ -1131,7 +1133,7 @@ static RGBA32 parseColorStringWithCrazyLegacyRules(const String& colorString)
     ASSERT(greenIndex >= componentLength);
     ASSERT(greenIndex + 1 < componentLength * 2);
     ASSERT(blueIndex >= componentLength * 2);
-    ASSERT(blueIndex + 1 < digitBuffer.size());
+    ASSERT_WITH_SECURITY_IMPLICATION(blueIndex + 1 < digitBuffer.size());
 
     int redValue = toASCIIHexValue(digitBuffer[redIndex], digitBuffer[redIndex + 1]);
     int greenValue = toASCIIHexValue(digitBuffer[greenIndex], digitBuffer[greenIndex + 1]);
@@ -1140,7 +1142,7 @@ static RGBA32 parseColorStringWithCrazyLegacyRules(const String& colorString)
 }
 
 // Color parsing that matches HTML's "rules for parsing a legacy color value"
-void HTMLElement::addHTMLColorToStyle(StylePropertySet* style, CSSPropertyID propertyID, const String& attributeValue)
+void HTMLElement::addHTMLColorToStyle(MutableStylePropertySet* style, CSSPropertyID propertyID, const String& attributeValue)
 {
     // An empty string doesn't apply a color. (One containing only whitespace does, which is why this check occurs before stripping.)
     if (attributeValue.isEmpty())

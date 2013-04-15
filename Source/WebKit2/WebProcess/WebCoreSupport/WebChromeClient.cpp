@@ -50,6 +50,7 @@
 #include <WebCore/AXObjectCache.h>
 #include <WebCore/ColorChooser.h>
 #include <WebCore/DatabaseManager.h>
+#include <WebCore/DocumentLoader.h>
 #include <WebCore/FileChooser.h>
 #include <WebCore/FileIconLoader.h>
 #include <WebCore/Frame.h>
@@ -57,6 +58,7 @@
 #include <WebCore/FrameLoader.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/HTMLNames.h>
+#include <WebCore/HTMLParserIdioms.h>
 #include <WebCore/HTMLPlugInImageElement.h>
 #include <WebCore/Icon.h>
 #include <WebCore/NotImplemented.h>
@@ -119,11 +121,7 @@ FloatRect WebChromeClient::windowRect()
 
 FloatRect WebChromeClient::pageRect()
 {
-#if USE(TILED_BACKING_STORE)
-    return FloatRect(FloatPoint(), m_page->viewportSize());
-#else
     return FloatRect(FloatPoint(), m_page->size());
-#endif
 }
 
 void WebChromeClient::focus()
@@ -390,7 +388,7 @@ void WebChromeClient::invalidateContentsAndRootView(const IntRect& rect, bool)
             return;
     }
 
-    m_page->drawingArea()->setNeedsDisplay(rect);
+    m_page->drawingArea()->setNeedsDisplayInRect(rect);
 }
 
 void WebChromeClient::invalidateContentsForSlowScroll(const IntRect& rect, bool)
@@ -401,13 +399,13 @@ void WebChromeClient::invalidateContentsForSlowScroll(const IntRect& rect, bool)
     }
 
     m_page->pageDidScroll();
-    m_page->drawingArea()->setNeedsDisplay(rect);
+    m_page->drawingArea()->setNeedsDisplayInRect(rect);
 }
 
-void WebChromeClient::scroll(const IntSize& scrollOffset, const IntRect& scrollRect, const IntRect& clipRect)
+void WebChromeClient::scroll(const IntSize& scrollDelta, const IntRect& scrollRect, const IntRect& clipRect)
 {
     m_page->pageDidScroll();
-    m_page->drawingArea()->scroll(intersection(scrollRect, clipRect), scrollOffset);
+    m_page->drawingArea()->scroll(intersection(scrollRect, clipRect), scrollDelta);
 }
 
 #if USE(TILED_BACKING_STORE)
@@ -446,15 +444,10 @@ void WebChromeClient::contentsSizeChanged(Frame* frame, const IntSize& size) con
     if (frame->page()->mainFrame() != frame)
         return;
 
-#if PLATFORM(QT) || (PLATFORM(EFL) && USE(TILED_BACKING_STORE))
-    if (m_page->useFixedLayout()) {
-        // The below method updates the size().
-        m_page->resizeToContentsIfNeeded();
-        m_page->drawingArea()->layerTreeHost()->sizeDidChange(m_page->size());
-    }
+#if USE(COORDINATED_GRAPHICS)
+    if (m_page->useFixedLayout())
+        m_page->drawingArea()->layerTreeHost()->sizeDidChange(size);
 
-    m_page->send(Messages::WebPageProxy::DidChangeContentsSize(m_page->size()));
-#elif PLATFORM(EFL)
     m_page->send(Messages::WebPageProxy::DidChangeContentsSize(size));
 #endif
 
@@ -506,7 +499,13 @@ void WebChromeClient::unavailablePluginButtonClicked(Element* element, RenderEmb
 
     HTMLPlugInImageElement* pluginElement = static_cast<HTMLPlugInImageElement*>(element);
 
-    m_page->send(Messages::WebPageProxy::UnavailablePluginButtonClicked(pluginUnavailabilityReason, pluginElement->serviceType(), pluginElement->url(), pluginElement->getAttribute(pluginspageAttr)));
+    String frameURLString = pluginElement->document()->frame()->loader()->documentLoader()->responseURL().string();
+    String pageURLString = m_page->mainFrame()->loader()->documentLoader()->responseURL().string();
+    String pluginURLString = pluginElement->document()->completeURL(pluginElement->url()).string();
+    KURL pluginspageAttributeURL = element->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(pluginElement->getAttribute(pluginspageAttr)));
+    if (!pluginspageAttributeURL.protocolIsInHTTPFamily())
+        pluginspageAttributeURL = KURL();
+    m_page->send(Messages::WebPageProxy::UnavailablePluginButtonClicked(pluginUnavailabilityReason, pluginElement->serviceType(), pluginURLString, pluginspageAttributeURL.string(), frameURLString, pageURLString));
 }
 
 void WebChromeClient::scrollbarsModeDidChange() const
@@ -544,13 +543,12 @@ void WebChromeClient::print(Frame* frame)
 }
 
 #if ENABLE(SQL_DATABASE)
-void WebChromeClient::exceededDatabaseQuota(Frame* frame, const String& databaseName)
+void WebChromeClient::exceededDatabaseQuota(Frame* frame, const String& databaseName, DatabaseDetails details)
 {
     WebFrame* webFrame = static_cast<WebFrameLoaderClient*>(frame->loader()->client())->webFrame();
     SecurityOrigin* origin = frame->document()->securityOrigin();
 
     DatabaseManager& dbManager = DatabaseManager::manager();
-    DatabaseDetails details = dbManager.detailsForNameAndOrigin(databaseName, origin);
     uint64_t currentQuota = dbManager.quotaForOrigin(origin);
     uint64_t currentOriginUsage = dbManager.usageForOrigin(origin);
     uint64_t newQuota = 0;
@@ -676,7 +674,7 @@ void WebChromeClient::formStateDidChange(const Node*)
 
 bool WebChromeClient::selectItemWritingDirectionIsNatural()
 {
-#if PLATFORM(WIN) || PLATFORM(EFL)
+#if PLATFORM(EFL)
     return true;
 #else
     return false;
@@ -685,11 +683,7 @@ bool WebChromeClient::selectItemWritingDirectionIsNatural()
 
 bool WebChromeClient::selectItemAlignmentFollowsMenuWritingDirection()
 {
-#if PLATFORM(WIN)
-    return false;
-#else
     return true;
-#endif
 }
 
 bool WebChromeClient::hasOpenedPopup() const
@@ -735,25 +729,10 @@ void WebChromeClient::scheduleCompositingLayerFlush()
 
 #endif
 
-#if PLATFORM(WIN) && USE(AVFOUNDATION)
-WebCore::GraphicsDeviceAdapter* WebChromeClient::graphicsDeviceAdapter() const
-{
-    if (!m_page->drawingArea())
-        return 0;
-    return m_page->drawingArea()->layerTreeHost()->graphicsDeviceAdapter();
-}
-#endif
-
 #if ENABLE(TOUCH_EVENTS)
 void WebChromeClient::needTouchEvents(bool needTouchEvents)
 {
     m_page->send(Messages::WebPageProxy::NeedTouchEvents(needTouchEvents));
-}
-#endif
-
-#if PLATFORM(WIN)
-void WebChromeClient::setLastSetCursorToCurrentCursor()
-{
 }
 #endif
 
@@ -807,6 +786,11 @@ bool WebChromeClient::shouldRubberBandInDirection(WebCore::ScrollDirection direc
     return true;
 }
 
+Color WebChromeClient::underlayColor() const
+{
+    return m_page->underlayColor();
+}
+
 void WebChromeClient::numWheelEventHandlersChanged(unsigned count)
 {
     m_page->numWheelEventHandlersChanged(count);
@@ -820,9 +804,19 @@ void WebChromeClient::logDiagnosticMessage(const String& message, const String& 
     m_page->injectedBundleDiagnosticLoggingClient().logDiagnosticMessage(m_page, message, description, success);
 }
 
-PassRefPtr<Image> WebChromeClient::plugInStartLabelImage(RenderSnapshottedPlugIn::LabelSize size) const
+String WebChromeClient::plugInStartLabelTitle() const
 {
-    return m_page->injectedBundleUIClient().plugInStartLabelImage(size)->bitmap()->createImage();
+    return m_page->injectedBundleUIClient().plugInStartLabelTitle();
+}
+
+String WebChromeClient::plugInStartLabelSubtitle() const
+{
+    return m_page->injectedBundleUIClient().plugInStartLabelSubtitle();
+}
+
+String WebChromeClient::plugInExtraStyleSheet() const
+{
+    return m_page->injectedBundleUIClient().plugInExtraStyleSheet();
 }
 
 } // namespace WebKit

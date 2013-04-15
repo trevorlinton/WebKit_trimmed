@@ -27,10 +27,19 @@
 #include "WebKitCSSKeyframeRule.h"
 
 #include "PropertySetCSSStyleDeclaration.h"
+#include "StylePropertySet.h"
 #include "WebKitCSSKeyframesRule.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
+
+StyleKeyframe::StyleKeyframe()
+{
+}
+
+StyleKeyframe::~StyleKeyframe()
+{
+}
 
 StylePropertySet* StyleKeyframe::mutableProperties()
 {
@@ -90,8 +99,8 @@ String StyleKeyframe::cssText() const
 void StyleKeyframe::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_properties);
-    info.addMember(m_key);
+    info.addMember(m_properties, "properties");
+    info.addMember(m_key, "key");
 }
 
 WebKitCSSKeyframeRule::WebKitCSSKeyframeRule(StyleKeyframe* keyframe, WebKitCSSKeyframesRule* parent)
@@ -118,8 +127,8 @@ void WebKitCSSKeyframeRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
     CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_keyframe);
-    info.addMember(m_propertiesCSSOMWrapper);
+    info.addMember(m_keyframe, "keyframe");
+    info.addMember(m_propertiesCSSOMWrapper, "propertiesCSSOMWrapper");
 }
 
 void WebKitCSSKeyframeRule::reattach(StyleRuleBase*)

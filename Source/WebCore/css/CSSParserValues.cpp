@@ -111,8 +111,10 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
     case CSSPrimitiveValue::CSS_VW:
     case CSSPrimitiveValue::CSS_VH:
     case CSSPrimitiveValue::CSS_VMIN:
+    case CSSPrimitiveValue::CSS_VMAX:
     case CSSPrimitiveValue::CSS_TURN:
     case CSSPrimitiveValue::CSS_REMS:
+    case CSSPrimitiveValue::CSS_CHS:
         return CSSPrimitiveValue::create(fValue, primitiveUnit);
     case CSSPrimitiveValue::CSS_UNKNOWN:
     case CSSPrimitiveValue::CSS_DIMENSION:
@@ -146,6 +148,14 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
 
 CSSParserSelector::CSSParserSelector()
     : m_selector(adoptPtr(fastNew<CSSSelector>()))
+#if ENABLE(SHADOW_DOM)
+    , m_functionArgumentSelector(0)
+#endif
+{
+}
+
+CSSParserSelector::CSSParserSelector(const QualifiedName& tagQName)
+    : m_selector(adoptPtr(new CSSSelector(tagQName)))
 {
 }
 
@@ -171,6 +181,26 @@ void CSSParserSelector::adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& 
     m_selector->setSelectorList(adoptPtr(selectorList));
 }
 
+bool CSSParserSelector::isSimple() const
+{
+    if (m_selector->selectorList() || m_selector->matchesPseudoElement())
+        return false;
+
+    if (!m_tagHistory)
+        return true;
+
+    if (m_selector->m_match == CSSSelector::Tag) {
+        // We can't check against anyQName() here because namespace may not be nullAtom.
+        // Example:
+        //     @namespace "http://www.w3.org/2000/svg";
+        //     svg:not(:root) { ...
+        if (m_selector->tagQName().localName() == starAtom)
+            return m_tagHistory->isSimple();
+    }
+
+    return false;
+}
+
 void CSSParserSelector::insertTagHistory(CSSSelector::Relation before, PassOwnPtr<CSSParserSelector> selector, CSSSelector::Relation after)
 {
     if (m_tagHistory)
@@ -187,6 +217,17 @@ void CSSParserSelector::appendTagHistory(CSSSelector::Relation relation, PassOwn
         end = end->tagHistory();
     end->setRelation(relation);
     end->setTagHistory(selector);
+}
+
+void CSSParserSelector::prependTagSelector(const QualifiedName& tagQName, bool tagIsForNamespaceRule)
+{
+    OwnPtr<CSSParserSelector> second = adoptPtr(new CSSParserSelector);
+    second->m_selector = m_selector.release();
+    second->m_tagHistory = m_tagHistory.release();
+    m_tagHistory = second.release();
+
+    m_selector = adoptPtr(new CSSSelector(tagQName, tagIsForNamespaceRule));
+    m_selector->m_relation = CSSSelector::SubSelector;
 }
 
 }

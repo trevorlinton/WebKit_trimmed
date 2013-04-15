@@ -100,9 +100,9 @@
 #include <WebCore/ScriptValue.h>
 #include <WebCore/SecurityOrigin.h>
 #include <JavaScriptCore/APICast.h>
+#include <JavaScriptCore/JSCJSValue.h>
 #include <JavaScriptCore/JSLock.h>
 #include <JavaScriptCore/JSObject.h>
-#include <JavaScriptCore/JSValue.h>
 #include <wtf/MathExtras.h>
 
 #if USE(CG)
@@ -1264,7 +1264,7 @@ HRESULT WebFrame::visibleContentRect(RECT* rect)
     if (!view)
         return E_FAIL;
 
-    *rect = view->visibleContentRect(false);
+    *rect = view->visibleContentRect();
     return S_OK;
 }
 
@@ -2471,7 +2471,7 @@ HRESULT STDMETHODCALLTYPE WebFrame::frameBounds(
     if (!view)
         return E_FAIL;
 
-    FloatRect bounds = view->visibleContentRect(true);
+    FloatRect bounds = view->visibleContentRect(ScrollableArea::IncludeScrollbars);
     result->bottom = (LONG) bounds.height();
     result->right = (LONG) bounds.width();
     return S_OK;

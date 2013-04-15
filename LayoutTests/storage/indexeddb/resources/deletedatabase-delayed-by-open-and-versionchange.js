@@ -6,15 +6,17 @@ if (this.importScripts) {
 description("Test that deleteDatabase is delayed if a VERSION_CHANGE transaction is running");
 
 indexedDBTest(prepareDatabase, onOpenSuccess);
-function prepareDatabase()
+function prepareDatabase(evt)
 {
+    preamble(evt);
     evalAndLog("versionChangeComplete = false");
     evalAndLog("h = event.target.result");
 
     h.onversionchange = function onVersionChange(evt) {
         preamble(evt);
-        debug("old = " + JSON.stringify(event.target.version));
-        debug("new = " + JSON.stringify(event.version));
+        shouldBe("event.target.version", "1");
+        shouldBe("event.oldVersion", "1");
+        shouldBeNull("event.newVersion");
     };
 
     transaction = event.target.transaction;
@@ -35,8 +37,9 @@ function prepareDatabase()
     };
 }
 
-function onOpenSuccess()
+function onOpenSuccess(evt)
 {
+    preamble(evt);
     evalAndLog("h = event.target.result");
     evalAndLog("h.close()");
 }

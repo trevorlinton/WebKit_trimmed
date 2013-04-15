@@ -84,7 +84,7 @@ Parser<LexerType>::Parser(JSGlobalData* globalData, const SourceCode& source, Fu
     m_arena = m_globalData->parserArena.get();
     m_lexer->setCode(source, m_arena);
 
-    m_functionCache = source.provider()->cache();
+    m_functionCache = globalData->addSourceProviderCache(source.provider());
     ScopeRef scope = pushScope();
     if (parserMode == JSParseFunctionCode)
         scope->setIsFunction();
@@ -110,7 +110,6 @@ String Parser<LexerType>::parseInner()
 {
     String parseError = String();
     
-    unsigned oldFunctionCacheSize = m_functionCache ? m_functionCache->byteSize() : 0;
     ASTBuilder context(const_cast<JSGlobalData*>(m_globalData), const_cast<SourceCode*>(m_source));
     if (m_lexer->isReparsing())
         m_statementDepth--;
@@ -126,9 +125,6 @@ String Parser<LexerType>::parseInner()
         features |= StrictModeFeature;
     if (scope->shadowsArguments())
         features |= ShadowsArgumentsFeature;
-    unsigned functionCacheSize = m_functionCache ? m_functionCache->byteSize() : 0;
-    if (functionCacheSize != oldFunctionCacheSize)
-        m_lexer->sourceProvider()->notifyCacheSizeChanged(functionCacheSize - oldFunctionCacheSize);
 
     didFinishParsing(sourceElements, context.varDeclarations(), context.funcDeclarations(), features,
                      m_lastLine, context.numConstants(), capturedVariables);
@@ -838,7 +834,7 @@ template <FunctionRequirements requirements, bool nameIsInContainingScope, class
         ASSERT(!strictMode() || cachedInfo->strictMode);
         body = context.createFunctionBody(location, cachedInfo->strictMode);
         
-        functionScope->restoreFunctionInfo(cachedInfo);
+        functionScope->restoreFromSourceProviderCache(cachedInfo);
         failIfFalse(popScope(functionScope, TreeBuilder::NeedsFreeVariableInfo));
         
         closeBracePos = cachedInfo->closeBracePos;
@@ -863,22 +859,24 @@ template <FunctionRequirements requirements, bool nameIsInContainingScope, class
     
     // Cache the tokenizer state and the function scope the first time the function is parsed.
     // Any future reparsing can then skip the function.
-    static const int minimumFunctionLengthToCache = 64;
+    static const int minimumFunctionLengthToCache = 16;
     OwnPtr<SourceProviderCacheItem> newInfo;
     int functionLength = closeBracePos - openBracePos;
     if (TreeBuilder::CanUseFunctionCache && m_functionCache && functionLength > minimumFunctionLengthToCache) {
-        newInfo = adoptPtr(new SourceProviderCacheItem(functionStart, m_token.m_location.line, closeBracePos));
-        functionScope->saveFunctionInfo(newInfo.get());
+        SourceProviderCacheItemCreationParameters parameters;
+        parameters.functionStart = functionStart;
+        parameters.closeBraceLine = m_token.m_location.line;
+        parameters.closeBracePos = closeBracePos;
+        functionScope->fillParametersForSourceProviderCache(parameters);
+        newInfo = SourceProviderCacheItem::create(parameters);
     }
     context.setFunctionStart(body, functionStart);
     
     failIfFalse(popScope(functionScope, TreeBuilder::NeedsFreeVariableInfo));
     matchOrFail(CLOSEBRACE);
     
-    if (newInfo) {
-        unsigned approximateByteSize = newInfo->approximateByteSize();
-        m_functionCache->add(openBracePos, newInfo.release(), approximateByteSize);
-    }
+    if (newInfo)
+        m_functionCache->add(openBracePos, newInfo.release());
     
     next();
     return true;

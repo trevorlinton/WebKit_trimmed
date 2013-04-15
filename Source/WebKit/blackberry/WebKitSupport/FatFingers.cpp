@@ -66,9 +66,10 @@ IntPoint FatFingers::m_debugFatFingerAdjustedPosition;
 IntRect FatFingers::fingerRectForPoint(const IntPoint& point) const
 {
     unsigned topPadding, rightPadding, bottomPadding, leftPadding;
-    getPaddings(topPadding, rightPadding, bottomPadding, leftPadding);
+    IntPoint contentViewportPos = m_webPage->mapFromContentsToViewport(point);
+    getAdjustedPaddings(contentViewportPos, topPadding, rightPadding, bottomPadding, leftPadding);
 
-    return HitTestResult::rectForPoint(point, topPadding, rightPadding, bottomPadding, leftPadding);
+    return HitTestLocation::rectForPoint(point, topPadding, rightPadding, bottomPadding, leftPadding);
 }
 
 static bool hasMousePressListener(Element* element)
@@ -82,38 +83,20 @@ static bool hasMousePressListener(Element* element)
 bool FatFingers::isElementClickable(Element* element) const
 {
     ASSERT(element);
-    ASSERT(m_matchingApproach != Done);
     ASSERT(m_targetType == ClickableElement);
 
-    switch (m_matchingApproach) {
-    case ClickableByDefault: {
-        ExceptionCode ec = 0;
-        return element->webkitMatchesSelector("a[href],*:link,*:visited,*[role=button],button,input,select,label[for],area[href],textarea,embed,object", ec)
-            || element->isMediaControlElement()
-            || element->isContentEditable();
+    ExceptionCode ec = 0;
 
-    }
-    case MadeClickableByTheWebpage:
+    if (element->webkitMatchesSelector("a[href],*:link,*:visited,*[role=button],button,input,select,label[for],area[href],textarea,embed,object", ec)
+        || element->isMediaControlElement()
+        || element->isContentEditable())
+        return true;
 
-        // Elements within a shadow DOM can not be 'made clickable by the webpage', since
-        // they are not accessible.
-        if (element->isInShadowTree())
-            return false;
+    if (element->isInShadowTree())
+        return false;
 
-        // FIXME: We fall back to checking for the presence of CSS style "cursor: pointer" to indicate whether the element A
-        // can be clicked when A neither registers mouse events handlers nor is a hyperlink or form control. This workaround
-        // ensures that we don't break various Google web apps, including <http://maps.google.com>. Ideally, we should walk
-        // up the DOM hierarchy to determine the first parent element that accepts mouse events.
-        // Consider the HTML snippet: <div id="A" onclick="..."><div id="B">Example</div></div>
-        // Notice, B is not a hyperlink, or form control, and does not register any mouse event handler. Then B cannot
-        // be clicked. Suppose B specified the CSS property "cursor: pointer". Then, B will be considered as clickable.
-        return hasMousePressListener(element)
-            || CSSComputedStyleDeclaration::create(element)->getPropertyValue(cssPropertyID("cursor")) == "pointer";
-    default:
-        ASSERT_NOT_REACHED();
-    }
-
-    return false;
+    return hasMousePressListener(element)
+        || CSSComputedStyleDeclaration::create(element)->getPropertyValue(cssPropertyID("cursor")) == "pointer";
 }
 
 // FIXME: Handle content editable nodes here too.
@@ -150,7 +133,6 @@ FatFingers::FatFingers(WebPagePrivate* webPage, const WebCore::IntPoint& content
     : m_webPage(webPage)
     , m_contentPos(contentPos)
     , m_targetType(targetType)
-    , m_matchingApproach(Done)
 {
     ASSERT(webPage);
 
@@ -170,10 +152,14 @@ const FatFingersResult FatFingers::findBestPoint()
     ASSERT(m_webPage);
     ASSERT(m_webPage->m_mainFrame);
 
+    // Even though we have clamped the point in libwebview to viewport, but there might be a rounding difference for viewport rect.
+    // Clamp position to viewport to ensure we are inside viewport.
+    IntRect viewportRect = m_webPage->mainFrame()->view()->visibleContentRect();
+    m_contentPos = Platform::pointClampedToRect(m_contentPos, viewportRect);
+
     m_cachedRectHitTestResults.clear();
 
     FatFingersResult result(m_contentPos);
-    m_matchingApproach = ClickableByDefault;
 
     // Lets set nodeUnderFatFinger to the result of a point based hit test here. If something
     // targable is actually found by ::findIntersectingRegions, then we might replace what we just set below later on.
@@ -208,13 +194,7 @@ const FatFingersResult FatFingers::findBestPoint()
     IntRectRegion remainingFingerRegion = IntRectRegion(fingerRectForPoint(m_contentPos));
 
     bool foundOne = findIntersectingRegions(m_webPage->m_mainFrame->document(), intersectingRegions, remainingFingerRegion);
-    if (!foundOne) {
-        m_matchingApproach = MadeClickableByTheWebpage;
-        remainingFingerRegion = IntRectRegion(fingerRectForPoint(m_contentPos));
-        foundOne = findIntersectingRegions(m_webPage->m_mainFrame->document(), intersectingRegions, remainingFingerRegion);
-    }
 
-    m_matchingApproach = Done;
     m_cachedRectHitTestResults.clear();
 
     if (!foundOne)
@@ -304,6 +284,10 @@ bool FatFingers::findIntersectingRegions(Document* document, Vector<Intersecting
 
     // Create fingerRect.
     IntPoint frameContentPos(document->frame()->view()->windowToContents(m_webPage->m_mainFrame->view()->contentsToWindow(m_contentPos)));
+    IntRect viewportRect = m_webPage->mainFrame()->view()->visibleContentRect();
+
+    // Ensure the frameContentPos is inside the viewport.
+    frameContentPos = Platform::pointClampedToRect(frameContentPos, viewportRect);
 
 #if DEBUG_FAT_FINGERS
     IntRect fingerRect(fingerRectForPoint(frameContentPos));
@@ -450,7 +434,7 @@ bool FatFingers::checkForText(Node* curNode, Vector<IntersectingRegion>& interse
     return false;
 }
 
-void FatFingers::getPaddings(unsigned& top, unsigned& right, unsigned& bottom, unsigned& left) const
+void FatFingers::getAdjustedPaddings(const IntPoint& contentViewportPos, unsigned& top, unsigned& right, unsigned& bottom, unsigned& left) const
 {
     static unsigned topPadding = Platform::Settings::instance()->topFatFingerPadding();
     static unsigned rightPadding = Platform::Settings::instance()->rightFatFingerPadding();
@@ -462,40 +446,25 @@ void FatFingers::getPaddings(unsigned& top, unsigned& right, unsigned& bottom, u
     right = rightPadding / currentScale;
     bottom = bottomPadding / currentScale;
     left = leftPadding / currentScale;
-}
 
-FatFingers::CachedResultsStrategy FatFingers::cachingStrategy() const
-{
-    switch (m_matchingApproach) {
-    case ClickableByDefault:
-        return GetFromRenderTree;
-    case MadeClickableByTheWebpage:
-        return GetFromCache;
-    case Done:
-    default:
-        ASSERT_NOT_REACHED();
-        return GetFromRenderTree;
-    }
+    IntRect viewportRect = m_webPage->mainFrame()->view()->visibleContentRect();
+    // We clamp the event position inside the viewport. We should not expand the fat finger rect to the edge again.
+    top = std::min(unsigned(std::max(contentViewportPos.y() - 1, 0)), top);
+    left = std::min(unsigned(std::max(contentViewportPos.x() - 1, 0)), left);
+    bottom = std::min(unsigned(std::max(viewportRect.height() - contentViewportPos.y() - 1, 0)), bottom);
+    right = std::min(unsigned(std::max(viewportRect.width() - contentViewportPos.x() - 1, 0)), right);
 }
 
 void FatFingers::getNodesFromRect(Document* document, const IntPoint& contentPos, ListHashSet<RefPtr<Node> >& intersectedNodes)
 {
-    FatFingers::CachedResultsStrategy cacheResolvingStrategy = cachingStrategy();
-
-    if (cacheResolvingStrategy == GetFromCache) {
-        ASSERT(m_cachedRectHitTestResults.contains(document));
-        intersectedNodes = m_cachedRectHitTestResults.get(document);
-        return;
-    }
-
-    ASSERT(cacheResolvingStrategy == GetFromRenderTree);
-
     unsigned topPadding, rightPadding, bottomPadding, leftPadding;
-    getPaddings(topPadding, rightPadding, bottomPadding, leftPadding);
+    IntPoint contentViewportPos = m_webPage->mapFromContentsToViewport(m_contentPos);
+    // Do not allow fat fingers detect anything not visible(ie outside of the viewport)
+    getAdjustedPaddings(contentViewportPos, topPadding, rightPadding, bottomPadding, leftPadding);
 
     // The user functions checkForText() and findIntersectingRegions() uses the Node.wholeText() to checkFingerIntersection()
     // not the text in its shadow tree.
-    HitTestRequest::HitTestRequestType requestType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping;
+    HitTestRequest::HitTestRequestType requestType = HitTestRequest::ReadOnly | HitTestRequest::Active;
     if (m_targetType == Text)
         requestType |= HitTestRequest::AllowShadowContent;
     HitTestResult result(contentPos, topPadding, rightPadding, bottomPadding, leftPadding);
@@ -528,7 +497,7 @@ void FatFingers::setSuccessfulFatFingersResult(FatFingersResult& result, Node* b
 
     bool isTextInputElement = false;
     if (m_targetType == ClickableElement) {
-        ASSERT(bestNode->isElementNode());
+        ASSERT_WITH_SECURITY_IMPLICATION(bestNode->isElementNode());
         Element* bestElement = static_cast<Element*>(bestNode);
         isTextInputElement = DOMSupport::isTextInputElement(bestElement);
     }

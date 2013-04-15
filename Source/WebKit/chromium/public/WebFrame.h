@@ -31,14 +31,14 @@
 #ifndef WebFrame_h
 #define WebFrame_h
 
+#include "../../../Platform/chromium/public/WebCanvas.h"
+#include "../../../Platform/chromium/public/WebFileSystem.h"
+#include "../../../Platform/chromium/public/WebReferrerPolicy.h"
+#include "../../../Platform/chromium/public/WebURL.h"
 #include "WebIconURL.h"
 #include "WebMessagePortChannel.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
-#include "platform/WebCanvas.h"
-#include "platform/WebFileSystem.h"
-#include "platform/WebReferrerPolicy.h"
-#include "platform/WebURL.h"
 
 struct NPObject;
 
@@ -55,16 +55,13 @@ template <class T> class Local;
 
 namespace WebKit {
 
-class WebAnimationController;
 class WebData;
 class WebDataSource;
-class WebDeliveredIntentClient;
 class WebDocument;
 class WebElement;
 class WebFormElement;
 class WebHistoryItem;
 class WebInputElement;
-class WebIntent;
 class WebPerformance;
 class WebRange;
 class WebSecurityOrigin;
@@ -170,6 +167,9 @@ public:
     // Returns true if the contents (minus scrollbars) has non-zero area.
     virtual bool hasVisibleContent() const = 0;
 
+    // Returns the visible content rect (minus scrollbars, in absolute coordinate)
+    virtual WebRect visibleContentRect() const = 0;
+
     virtual bool hasHorizontalScrollbar() const = 0;
     virtual bool hasVerticalScrollbar() const = 0;
 
@@ -218,8 +218,6 @@ public:
     // Content ------------------------------------------------------------
 
     virtual WebDocument document() const = 0;
-
-    virtual WebAnimationController* animationController() = 0;
 
     virtual WebPerformance performance() const = 0;
 
@@ -631,14 +629,6 @@ public:
         const WebDOMEvent&) = 0;
 
 
-    // Web Intents ---------------------------------------------------------
-
-    // Called on a target service page to deliver an intent to the window.
-    // The ports are any transferred ports that accompany the intent as a result
-    // of MessagePort transfer.
-    virtual void deliverIntent(const WebIntent&, WebMessagePortChannelArray* ports, WebDeliveredIntentClient*) = 0;
-
-
     // Utility -------------------------------------------------------------
 
     // Returns the contents of this frame as a string.  If the text is
@@ -682,6 +672,7 @@ public:
 
     virtual void setNodeJS(bool) = 0;
     virtual bool isNodeJS() const = 0;
+    virtual bool isNwDisabledChildFrame() const = 0;
 protected:
     ~WebFrame() { }
 };

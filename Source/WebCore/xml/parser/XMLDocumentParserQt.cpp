@@ -33,6 +33,7 @@
 #include "Document.h"
 #include "DocumentFragment.h"
 #include "DocumentType.h"
+#include "ExceptionCodePlaceholder.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameView.h"
@@ -67,10 +68,16 @@ class EntityResolver : public QXmlStreamEntityResolver {
     virtual QString resolveUndeclaredEntity(const QString &name);
 };
 
+static QString decodeNamedEntity(const QString& entityName)
+{
+    UChar utf16DecodedEntity[4];
+    size_t numberOfCodePoints = decodeNamedEntityToUCharArray(entityName.toUtf8().constData(), utf16DecodedEntity);
+    return QString(reinterpret_cast<const QChar*>(utf16DecodedEntity), numberOfCodePoints);
+}
+
 QString EntityResolver::resolveUndeclaredEntity(const QString &name)
 {
-    UChar c = decodeNamedEntity(name.toUtf8().constData());
-    return QString(c);
+    return decodeNamedEntity(name);
 }
 
 // --------------------------------
@@ -139,7 +146,8 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
 
     QXmlStreamNamespaceDeclarations namespaces;
     for (Element* element = elemStack.last(); !elemStack.isEmpty(); elemStack.removeLast()) {
-        if (const ElementAttributeData* attrs = element->updatedAttributeData()) {
+        element->synchronizeAllAttributes();
+        if (const ElementData* attrs = element->elementData()) {
             for (unsigned i = 0; i < attrs->length(); i++) {
                 const Attribute* attr = attrs->attributeItem(i);
                 if (attr->localName() == "xmlns")
@@ -254,7 +262,7 @@ void XMLDocumentParser::resumeParsing()
     // Then, write any pending data
     SegmentedString rest = m_pendingSrc;
     m_pendingSrc.clear();
-    append(rest);
+    append(rest.toString().impl());
 
     // Finally, if finish() has been called and append() didn't result
     // in any further callbacks being queued, call end()
@@ -265,9 +273,9 @@ void XMLDocumentParser::resumeParsing()
 bool XMLDocumentParser::appendFragmentSource(const String& source)
 {
     ASSERT(!m_sawFirstElement);
-    append(String("<qxmlstreamdummyelement>"));
-    append(source);
-    append(String("</qxmlstreamdummyelement>"));
+    append(String("<qxmlstreamdummyelement>").impl());
+    append(source.impl());
+    append(String("</qxmlstreamdummyelement>").impl());
     return !hasError();
 }
 
@@ -394,13 +402,10 @@ void XMLDocumentParser::parse()
             //        <<", t = "<<m_stream.text().toString();
             if (isXHTMLDocument()) {
                 QString entity = m_stream.name().toString();
-                UChar c = decodeNamedEntity(entity.toUtf8().constData());
                 if (!m_leafTextNode)
                     enterText();
-                ExceptionCode ec = 0;
-                String str(&c, 1);
                 // qDebug()<<" ------- adding entity "<<str;
-                m_leafTextNode->appendData(str, ec);
+                m_leafTextNode->appendData(decodeNamedEntity(entity), IGNORE_EXCEPTION);
             }
             break;
         }
@@ -422,14 +427,13 @@ void XMLDocumentParser::parse()
 void XMLDocumentParser::startDocument()
 {
     initializeParserContext();
-    ExceptionCode ec = 0;
 
     if (!m_parsingFragment) {
-        document()->setXMLStandalone(m_stream.isStandaloneDocument(), ec);
+        document()->setXMLStandalone(m_stream.isStandaloneDocument(), IGNORE_EXCEPTION);
 
         QStringRef version = m_stream.documentVersion();
         if (!version.isEmpty())
-            document()->setXMLVersion(version, ec);
+            document()->setXMLVersion(version, IGNORE_EXCEPTION);
         QStringRef encoding = m_stream.documentEncoding();
         if (!encoding.isEmpty())
             document()->setXMLEncoding(encoding);
@@ -506,10 +510,9 @@ void XMLDocumentParser::parseEndElement()
     RefPtr<ContainerNode> n = m_currentNode;
     n->finishParsingChildren();
 
-    if (m_scriptingPermission == DisallowScriptingContent && n->isElementNode() && toScriptElement(static_cast<Element*>(n.get()))) {
+    if (!scriptingContentIsAllowed(m_scriptingPermission) && n->isElementNode() && toScriptElement(static_cast<Element*>(n.get()))) {
         popCurrentNode();
-        ExceptionCode ec;
-        n->remove(ec);
+        n->remove(IGNORE_EXCEPTION);
         return;
     }
 
@@ -560,8 +563,7 @@ void XMLDocumentParser::parseCharacters()
 {
     if (!m_leafTextNode)
         enterText();
-    ExceptionCode ec = 0;
-    m_leafTextNode->appendData(m_stream.text(), ec);
+    m_leafTextNode->appendData(m_stream.text(), IGNORE_EXCEPTION);
 }
 
 void XMLDocumentParser::parseProcessingInstruction()

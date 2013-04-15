@@ -90,9 +90,6 @@ class ChromiumPort(Port):
             path = filesystem.join(base_dir, *comps)
             if filesystem.exists(path):
                 hits.append((filesystem.mtime(path), path))
-        if hits:
-            hits.sort(reverse=True)
-            return hits[0][1]  # Return the newest file found.
 
         for directory in cls.DEFAULT_BUILD_DIRECTORIES:
             base_dir = filesystem.join(webkit_base, directory, configuration)
@@ -288,6 +285,7 @@ class ChromiumPort(Port):
         }
 
     def setup_test_run(self):
+        super(ChromiumPort, self).setup_test_run()
         # Delete the disk cache if any to ensure a clean test run.
         dump_render_tree_binary_path = self._path_to_driver()
         cachedir = self._filesystem.dirname(dump_render_tree_binary_path)
@@ -351,7 +349,7 @@ class ChromiumPort(Port):
     def warn_if_bug_missing_in_test_expectations(self):
         return True
 
-    def expectations_files(self):
+    def _port_specific_expectations_files(self):
         paths = [self.path_to_test_expectations_file()]
         skia_expectations_path = self.path_from_chromium_base('skia', 'skia_test_expectations.txt')
         # FIXME: we should probably warn if this file is missing in some situations.
@@ -366,7 +364,7 @@ class ChromiumPort(Port):
 
     def repository_paths(self):
         repos = super(ChromiumPort, self).repository_paths()
-        repos.append(('chromium', self.path_from_chromium_base('build')))
+        repos.append(('Chromium', self.path_from_chromium_base('build')))
         return repos
 
     def _get_crash_log(self, name, pid, stdout, stderr, newer_than):

@@ -64,8 +64,8 @@
 #include "resource.h"
 #include <JavaScriptCore/APICast.h>
 #include <JavaScriptCore/InitializeThreading.h>
+#include <JavaScriptCore/JSCJSValue.h>
 #include <JavaScriptCore/JSLock.h>
-#include <JavaScriptCore/JSValue.h>
 #include <WebCore/AXObjectCache.h>
 #include <WebCore/ApplicationCacheStorage.h>
 #include <WebCore/BString.h>
@@ -1286,7 +1286,7 @@ bool WebView::canHandleRequest(const WebCore::ResourceRequest& request)
         return true;
 
 #if USE(CFNETWORK)
-    if (CFURLProtocolCanHandleRequest(request.cfURLRequest()))
+    if (CFURLProtocolCanHandleRequest(request.cfURLRequest(UpdateHTTPBody)))
         return true;
 
     // FIXME: Mac WebKit calls _representationExistsForURLScheme here
@@ -1334,7 +1334,7 @@ bool WebView::handleContextMenuEvent(WPARAM wParam, LPARAM lParam)
     m_page->contextMenuController()->clearContextMenu();
 
     IntPoint documentPoint(m_page->mainFrame()->view()->windowToContents(coords));
-    HitTestResult result = m_page->mainFrame()->eventHandler()->hitTestResultAtPoint(documentPoint, false);
+    HitTestResult result = m_page->mainFrame()->eventHandler()->hitTestResultAtPoint(documentPoint);
     Frame* targetFrame = result.innerNonSharedNode() ? result.innerNonSharedNode()->document()->frame() : m_page->focusController()->focusedOrMainFrame();
 
     targetFrame->view()->setCursor(pointerCursor());
@@ -3603,7 +3603,7 @@ HRESULT STDMETHODCALLTYPE WebView::elementAtPoint(
     IntPoint webCorePoint = IntPoint(point->x, point->y);
     HitTestResult result = HitTestResult(webCorePoint);
     if (frame->contentRenderer())
-        result = frame->eventHandler()->hitTestResultAtPoint(webCorePoint, false);
+        result = frame->eventHandler()->hitTestResultAtPoint(webCorePoint);
     *elementDictionary = WebElementPropertyBag::createInstance(result);
     return S_OK;
 }
@@ -4677,6 +4677,11 @@ HRESULT WebView::notifyPreferencesChanged(IWebNotification* notification)
         return hr;
     RuntimeEnabledFeatures::setCSSRegionsEnabled(!!enabled);
 
+    hr = preferences->areSeamlessIFramesEnabled(&enabled);
+    if (FAILED(hr))
+        return hr;
+    RuntimeEnabledFeatures::setSeamlessIFramesEnabled(!!enabled);
+
     hr = preferences->privateBrowsingEnabled(&enabled);
     if (FAILED(hr))
         return hr;
@@ -5476,15 +5481,11 @@ void WebView::resetIME(Frame* targetFrame)
 void WebView::updateSelectionForIME()
 {
     Frame* targetFrame = m_page->focusController()->focusedOrMainFrame();
-    if (!targetFrame || !targetFrame->editor()->hasComposition())
-        return;
     
-    if (targetFrame->editor()->ignoreCompositionSelectionChange())
+    if (!targetFrame)
         return;
 
-    unsigned start;
-    unsigned end;
-    if (!targetFrame->editor()->getCompositionSelection(start, end))
+    if (!targetFrame->editor()->cancelCompositionIfSelectionIsInvalid())
         resetIME(targetFrame);
 }
 
@@ -7006,3 +7007,4 @@ HRESULT STDMETHODCALLTYPE WebView::selectedRangeForTesting(/* [out] */ UINT* loc
 
     return S_OK;
 }
+

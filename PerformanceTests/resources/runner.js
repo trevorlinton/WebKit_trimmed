@@ -153,7 +153,9 @@ if (window.testRunner) {
             return;
         }
         currentTest = test;
-        iterationCount = test.iterationCount || 20;
+        // FIXME: We should be using multiple instances of test runner on Dromaeo as well but it's too slow now.
+        // FIXME: Don't hard code the number of in-process iterations to use inside a test runner.
+        iterationCount = test.dromaeoIterationCount || (window.testRunner ? 5 : 20);
         logLines = window.testRunner ? [] : null;
         PerfTestRunner.log("Running " + iterationCount + " times");
         if (test.doNotIgnoreInitialRun)
@@ -166,6 +168,9 @@ if (window.testRunner) {
         PerfTestRunner.gc();
         window.setTimeout(function () {
             try {
+                if (currentTest.setup)
+                    currentTest.setup();
+
                 var measuredValue = runner();
             } catch (exception) {
                 logFatalError("Got an exception while running test.run with name=" + exception.name + ", message=" + exception.message);
@@ -223,10 +228,6 @@ if (window.testRunner) {
             testRunner.notifyDone();
     }
 
-    PerfTestRunner.iterationCount = function () {
-        return iterationCount;
-    }
-
     PerfTestRunner.prepareToMeasureValuesAsync = function (test) {
         PerfTestRunner.unit = test.unit;
         start(test);
@@ -257,8 +258,8 @@ if (window.testRunner) {
         var end = PerfTestRunner.now();
 
         if (returnValue - 0 === returnValue) {
-            if (returnValue <= 0)
-                PerfTestRunner.log("runFunction returned a non-positive value: " + returnValue);
+            if (returnValue < 0)
+                PerfTestRunner.log("runFunction returned a negative value: " + returnValue);
             return returnValue;
         }
 
@@ -274,9 +275,6 @@ if (window.testRunner) {
         var timeToRun = 750;
         var totalTime = 0;
         var numberOfRuns = 0;
-
-        if (currentTest.setup)
-            currentTest.setup();
 
         while (totalTime < timeToRun) {
             totalTime += callRunAndMeasureTime(callsPerIteration);

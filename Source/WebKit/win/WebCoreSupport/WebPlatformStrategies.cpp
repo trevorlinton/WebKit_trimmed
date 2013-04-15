@@ -26,6 +26,7 @@
 #include "config.h"
 #include "WebPlatformStrategies.h"
 
+#include "FrameLoader.h"
 #include "WebFrameNetworkingContext.h"
 #include <WebCore/Page.h>
 #include <WebCore/PageGroup.h>
@@ -73,6 +74,11 @@ PluginStrategy* WebPlatformStrategies::createPluginStrategy()
 }
 
 SharedWorkerStrategy* WebPlatformStrategies::createSharedWorkerStrategy()
+{
+    return this;
+}
+
+StorageStrategy* WebPlatformStrategies::createStorageStrategy()
 {
     return this;
 }

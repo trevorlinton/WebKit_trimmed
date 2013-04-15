@@ -36,6 +36,7 @@
 #include "PluginProcessCreationParameters.h"
 #include "PluginProcessProxyMessages.h"
 #include "WebProcessConnection.h"
+#include <WebCore/MemoryPressureHandler.h>
 #include <WebCore/NotImplemented.h>
 #include <WebCore/RunLoop.h>
 
@@ -85,6 +86,22 @@ PluginProcess::~PluginProcess()
 {
 }
 
+void PluginProcess::lowMemoryHandler(bool critical)
+{
+    UNUSED_PARAM(critical);
+    if (shared().shouldTerminate())
+        shared().terminate();
+}
+
+void PluginProcess::initializeProcess(const ChildProcessInitializationParameters& parameters)
+{
+    m_pluginPath = parameters.extraInitializationData.get("plugin-path");
+    platformInitializeProcess(parameters);
+
+    memoryPressureHandler().setLowMemoryHandler(lowMemoryHandler);
+    memoryPressureHandler().install();
+}
+
 void PluginProcess::removeWebProcessConnection(WebProcessConnection* webProcessConnection)
 {
     size_t vectorIndex = m_webProcessConnections.find(webProcessConnection);
@@ -119,14 +136,12 @@ NetscapePluginModule* PluginProcess::netscapePluginModule()
 
 bool PluginProcess::shouldTerminate()
 {
-    ASSERT(m_webProcessConnections.isEmpty());
-
-    return true;
+    return m_webProcessConnections.isEmpty();
 }
 
-void PluginProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageID messageID, CoreIPC::MessageDecoder& decoder)
+void PluginProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
 {
-    didReceivePluginProcessMessage(connection, messageID, decoder);
+    didReceivePluginProcessMessage(connection, decoder);
 }
 
 void PluginProcess::didClose(CoreIPC::Connection*)
@@ -144,7 +159,6 @@ void PluginProcess::initializePluginProcess(const PluginProcessCreationParameter
 {
     ASSERT(!m_pluginModule);
 
-    m_pluginPath = parameters.pluginPath;
     m_supportsAsynchronousPluginInitialization = parameters.supportsAsynchronousPluginInitialization;
     setMinimumLifetime(parameters.minimumLifetime);
     setTerminationTimeout(parameters.terminationTimeout);
@@ -216,8 +230,6 @@ void PluginProcess::createWebProcessConnection()
 
 void PluginProcess::getSitesWithData(uint64_t callbackID)
 {
-    LocalTerminationDisabler terminationDisabler(*this);
-
     Vector<String> sites;
     if (NetscapePluginModule* module = netscapePluginModule())
         sites = module->sitesWithData();
@@ -227,8 +239,6 @@ void PluginProcess::getSitesWithData(uint64_t callbackID)
 
 void PluginProcess::clearSiteData(const Vector<String>& sites, uint64_t flags, uint64_t maxAgeInSeconds, uint64_t callbackID)
 {
-    LocalTerminationDisabler terminationDisabler(*this);
-
     if (NetscapePluginModule* module = netscapePluginModule()) {
         if (sites.isEmpty()) {
             // Clear everything.
@@ -256,6 +266,16 @@ void PluginProcess::minimumLifetimeTimerFired()
 {
     enableTermination();
 }
+
+#if !PLATFORM(MAC)
+void PluginProcess::initializeProcessName(const ChildProcessInitializationParameters&)
+{
+}
+
+void PluginProcess::initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&)
+{
+}
+#endif
 
 } // namespace WebKit
 

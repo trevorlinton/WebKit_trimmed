@@ -24,6 +24,7 @@
 #include "PropertyOffset.h"
 #include "WriteBarrier.h"
 #include <wtf/HashTable.h>
+#include <wtf/MathExtras.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 #include <wtf/text/StringImpl.h>
@@ -50,9 +51,7 @@ namespace JSC {
 
 inline bool isPowerOf2(unsigned v)
 {
-    // Taken from http://www.cs.utk.edu/~vose/c-stuff/bithacks.html
-    
-    return !(v & (v - 1)) && v;
+    return hasOneBitSet(v);
 }
 
 inline unsigned nextPowerOf2(unsigned v)
@@ -158,7 +157,8 @@ public:
     find_iterator find(const KeyType&);
     find_iterator findWithString(const KeyType&);
     // Add a value to the table
-    std::pair<find_iterator, bool> add(const ValueType& entry);
+    enum EffectOnPropertyOffset { PropertyOffsetMayChange, PropertyOffsetMustNotChange };
+    std::pair<find_iterator, bool> add(const ValueType& entry, PropertyOffset&, EffectOnPropertyOffset);
     // Remove a value from the table.
     void remove(const find_iterator& iter);
     void remove(const KeyType& key);
@@ -235,7 +235,7 @@ private:
     unsigned m_deletedCount;
     OwnPtr< Vector<PropertyOffset> > m_deletedOffsets;
 
-    static const unsigned MinimumTableSize = 16;
+    static const unsigned MinimumTableSize = 8;
     static const unsigned EmptyEntryIndex = 0;
 };
 
@@ -390,12 +390,14 @@ inline PropertyTable::find_iterator PropertyTable::findWithString(const KeyType&
     }
 }
 
-inline std::pair<PropertyTable::find_iterator, bool> PropertyTable::add(const ValueType& entry)
+inline std::pair<PropertyTable::find_iterator, bool> PropertyTable::add(const ValueType& entry, PropertyOffset& offset, EffectOnPropertyOffset offsetEffect)
 {
     // Look for a value with a matching key already in the array.
     find_iterator iter = find(entry.key);
-    if (iter.first)
+    if (iter.first) {
+        RELEASE_ASSERT(iter.first->offset <= offset);
         return std::make_pair(iter, false);
+    }
 
     // Ref the key
     entry.key->ref();
@@ -414,6 +416,12 @@ inline std::pair<PropertyTable::find_iterator, bool> PropertyTable::add(const Va
     *iter.first = entry;
 
     ++m_keyCount;
+    
+    if (offsetEffect == PropertyOffsetMayChange)
+        offset = std::max(offset, entry.offset);
+    else
+        RELEASE_ASSERT(offset >= entry.offset);
+    
     return std::make_pair(iter, true);
 }
 
@@ -491,7 +499,7 @@ inline PropertyOffset PropertyTable::nextOffset(PropertyOffset inlineCapacity)
     if (hasDeletedOffset())
         return getDeletedOffset();
 
-    return propertyOffsetFor(size(), inlineCapacity);
+    return offsetForPropertyNumber(size(), inlineCapacity);
 }
 
 inline PassOwnPtr<PropertyTable> PropertyTable::copy(JSGlobalData& globalData, JSCell* owner, unsigned newCapacity)
@@ -588,7 +596,7 @@ inline size_t PropertyTable::dataSize()
 
 inline unsigned PropertyTable::sizeForCapacity(unsigned capacity)
 {
-    if (capacity < 8)
+    if (capacity < MinimumTableSize / 2)
         return MinimumTableSize;
     return nextPowerOf2(capacity + 1) * 2;
 }

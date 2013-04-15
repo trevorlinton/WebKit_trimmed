@@ -32,6 +32,7 @@
 #include "webkitwebview.h"
 
 #include "AXObjectCache.h"
+#include "ArchiveResource.h"
 #include "BackForwardListImpl.h"
 #include "CairoUtilities.h"
 #include "Chrome.h"
@@ -105,6 +106,7 @@
 #include "webkitwebinspectorprivate.h"
 #include "webkitwebpolicydecision.h"
 #include "webkitwebresource.h"
+#include "webkitwebresourceprivate.h"
 #include "webkitwebsettingsprivate.h"
 #include "webkitwebplugindatabaseprivate.h"
 #include "webkitwebwindowfeatures.h"
@@ -269,6 +271,7 @@ G_DEFINE_TYPE_WITH_CODE(WebKitWebView, webkit_web_view, GTK_TYPE_CONTAINER,
 
 static void webkit_web_view_settings_notify(WebKitWebSettings* webSettings, GParamSpec* pspec, WebKitWebView* webView);
 static void webkit_web_view_set_window_features(WebKitWebView* webView, WebKitWebWindowFeatures* webWindowFeatures);
+static void webkitWebViewDirectionChanged(WebKitWebView*, GtkTextDirection previousDirection, gpointer);
 
 #if ENABLE(CONTEXT_MENUS)
 static void PopupMenuPositionFunc(GtkMenu* menu, gint *x, gint *y, gboolean *pushIn, gpointer userData)
@@ -2238,7 +2241,8 @@ static void webkit_web_view_class_init(WebKitWebViewClass* webViewClass)
      * @web_view: the object on which the signal is emitted
      * @frame: the relevant frame
      * @message: the message text
-     * @confirmed: whether the dialog has been confirmed
+     * @confirmed: a pointer to a #gboolean where the callback should store
+     * whether the user confirmed the dialog, when handling this signal
      *
      * A JavaScript confirm dialog was created, providing Yes and No buttons.
      *
@@ -2645,6 +2649,7 @@ static void webkit_web_view_class_init(WebKitWebViewClass* webViewClass)
         webkit_marshal_BOOLEAN__STRING_OBJECT_ENUM, G_TYPE_BOOLEAN,
         3, G_TYPE_STRING, WEBKIT_TYPE_DOM_RANGE, WEBKIT_TYPE_INSERT_ACTION);
 
+    // Only exists for GTK+ API compatbiility.
     webkit_web_view_signals[SHOULD_DELETE_RANGE] = g_signal_new("should-delete-range", G_TYPE_FROM_CLASS(webViewClass),
         static_cast<GSignalFlags>(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
         G_STRUCT_OFFSET(WebKitWebViewClass, should_allow_editing_action), g_signal_accumulator_first_wins, 0,
@@ -3435,6 +3440,10 @@ static void webkit_web_view_update_settings(WebKitWebView* webView)
 
 #if USE(ACCELERATED_COMPOSITING)
     coreSettings->setAcceleratedCompositingEnabled(settingsPrivate->enableAcceleratedCompositing);
+    char* debugVisualsEnvironment = getenv("WEBKIT_SHOW_COMPOSITING_DEBUG_VISUALS");
+    bool showDebugVisuals = debugVisualsEnvironment && !strcmp(debugVisualsEnvironment, "1");
+    coreSettings->setShowDebugBorders(showDebugVisuals);
+    coreSettings->setShowRepaintCounter(showDebugVisuals);
 #endif
 
 #if ENABLE(WEB_AUDIO)
@@ -3659,7 +3668,7 @@ static void webkit_web_view_init(WebKitWebView* webView)
     // as visited link coloration (across pages) and changing popup window location will not work.
     // To keep the default behavior simple (and because no PageGroup API exist in WebKitGTK at the
     // time of writing this comment), we simply set all the pages to the same group.
-    priv->corePage->setGroupName("org.webkit.gtk.WebKitGTK");
+    priv->corePage->setGroupName(webkitPageGroupName());
 
     // We also add a simple wrapper class to provide the public
     // interface for the Web Inspector.
@@ -3696,6 +3705,8 @@ static void webkit_web_view_init(WebKitWebView* webView)
 #if USE(ACCELERATED_COMPOSITING)
     priv->acceleratedCompositingContext = AcceleratedCompositingContext::create(webView);
 #endif
+
+    g_signal_connect(webView, "direction-changed", G_CALLBACK(webkitWebViewDirectionChanged), 0);
 }
 
 GtkWidget* webkit_web_view_new(void)
@@ -5055,14 +5066,15 @@ void webkit_web_view_add_resource(WebKitWebView* webView, const char* identifier
     g_hash_table_insert(priv->subResources.get(), g_strdup(identifier), webResource);
 }
 
-void webkit_web_view_remove_resource(WebKitWebView* webView, const char* identifier)
+void webkitWebViewRemoveSubresource(WebKitWebView* webView, const char* identifier)
 {
-    WebKitWebViewPrivate* priv = webView->priv;
-    if (g_str_equal(identifier, priv->mainResourceIdentifier.data())) {
-        priv->mainResourceIdentifier = "";
-        priv->mainResource = 0;
-    } else
-      g_hash_table_remove(priv->subResources.get(), identifier);
+    ASSERT(identifier);
+
+    // Don't remove the main resource.
+    const CString& mainResource = webView->priv->mainResourceIdentifier;
+    if (!mainResource.isNull() && g_str_equal(identifier, mainResource.data()))
+        return;
+    g_hash_table_remove(webView->priv->subResources.get(), identifier);
 }
 
 WebKitWebResource* webkit_web_view_get_resource(WebKitWebView* webView, char* identifier)
@@ -5097,11 +5109,32 @@ void webkit_web_view_clear_resources(WebKitWebView* webView)
         g_hash_table_remove_all(priv->subResources.get());
 }
 
+static gboolean cleanupTemporarilyCachedSubresources(gpointer data)
+{
+    GList* subResources = static_cast<GList*>(data);
+    g_list_foreach(subResources, reinterpret_cast<GFunc>(g_object_unref), NULL);
+    g_list_free(subResources);
+    return FALSE;
+}
+
 GList* webkit_web_view_get_subresources(WebKitWebView* webView)
 {
-    WebKitWebViewPrivate* priv = webView->priv;
-    GList* subResources = g_hash_table_get_values(priv->subResources.get());
-    return g_list_remove(subResources, priv->mainResource.get());
+    g_return_val_if_fail(WEBKIT_IS_WEB_VIEW(webView), NULL);
+    GList* subResources = 0;
+    Vector<PassRefPtr<ArchiveResource> > coreSubResources;
+
+    core(webView)->mainFrame()->loader()->documentLoader()->getSubresources(coreSubResources);
+
+    for (unsigned i = 0; i < coreSubResources.size(); i++) {
+        WebKitWebResource* webResource = WEBKIT_WEB_RESOURCE(g_object_new(WEBKIT_TYPE_WEB_RESOURCE, NULL));
+        webkit_web_resource_init_with_core_resource(webResource, coreSubResources[i]);
+        subResources = g_list_append(subResources, webResource);
+    }
+
+    if (subResources)
+        g_timeout_add(1, cleanupTemporarilyCachedSubresources, g_list_copy(subResources));
+
+    return subResources;
 }
 
 /* From EventHandler.cpp */
@@ -5308,34 +5341,6 @@ webkit_web_view_get_snapshot(WebKitWebView* webView)
     return surface;
 }
 
-void webViewEnterFullscreen(WebKitWebView* webView, Node* node)
-{
-    if (!node->hasTagName(HTMLNames::videoTag))
-        return;
-
-#if ENABLE(VIDEO) && !defined(GST_API_VERSION_1)
-    HTMLMediaElement* videoElement = static_cast<HTMLMediaElement*>(node);
-    WebKitWebViewPrivate* priv = webView->priv;
-
-    // First exit Fullscreen for the old mediaElement.
-    if (priv->fullscreenVideoController)
-        priv->fullscreenVideoController->exitFullscreen();
-
-    priv->fullscreenVideoController = new FullscreenVideoController;
-    priv->fullscreenVideoController->setMediaElement(videoElement);
-    priv->fullscreenVideoController->enterFullscreen();
-#endif
-}
-
-void webViewExitFullscreen(WebKitWebView* webView)
-{
-#if ENABLE(VIDEO) && !defined(GST_API_VERSION_1)
-    WebKitWebViewPrivate* priv = webView->priv;
-    if (priv->fullscreenVideoController)
-        priv->fullscreenVideoController->exitFullscreen();
-#endif
-}
-
 #if ENABLE(ICONDATABASE)
 void webkitWebViewIconLoaded(WebKitFaviconDatabase* database, const char* frameURI, WebKitWebView* webView)
 {
@@ -5360,6 +5365,36 @@ void webkitWebViewRegisterForIconNotification(WebKitWebView* webView, bool shoul
             g_signal_handler_disconnect(database, webView->priv->iconLoadedHandler);
 }
 #endif
+
+void webkitWebViewDirectionChanged(WebKitWebView* webView, GtkTextDirection previousDirection, gpointer)
+{
+    g_return_if_fail(WEBKIT_IS_WEB_VIEW(webView));
+
+    GtkTextDirection direction = gtk_widget_get_direction(GTK_WIDGET(webView));
+
+    Frame* focusedFrame = core(webView)->focusController()->focusedFrame();
+    if (!focusedFrame)
+        return;
+
+    Editor* editor = focusedFrame->editor();
+    if (!editor || !editor->canEdit())
+        return;
+
+    switch (direction) {
+    case GTK_TEXT_DIR_NONE:
+        editor->setBaseWritingDirection(NaturalWritingDirection);
+        break;
+    case GTK_TEXT_DIR_LTR:
+        editor->setBaseWritingDirection(LeftToRightWritingDirection);
+        break;
+    case GTK_TEXT_DIR_RTL:
+        editor->setBaseWritingDirection(RightToLeftWritingDirection);
+        break;
+    default:
+        g_assert_not_reached();
+        return;
+    }
+}
 
 namespace WebKit {
 

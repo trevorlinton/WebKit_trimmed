@@ -76,6 +76,7 @@ WebInspector.TimelinePresentationModel._initRecordStyles = function()
     recordStyles[recordTypes.InvalidateLayout] = { title: WebInspector.UIString("Invalidate Layout"), category: categories["rendering"] };
     recordStyles[recordTypes.Layout] = { title: WebInspector.UIString("Layout"), category: categories["rendering"] };
     recordStyles[recordTypes.Paint] = { title: WebInspector.UIString("Paint"), category: categories["painting"] };
+    recordStyles[recordTypes.Rasterize] = { title: WebInspector.UIString("Rasterize"), category: categories["painting"] };
     recordStyles[recordTypes.ScrollLayer] = { title: WebInspector.UIString("Scroll"), category: categories["painting"] };
     recordStyles[recordTypes.DecodeImage] = { title: WebInspector.UIString("Image Decode"), category: categories["painting"] };
     recordStyles[recordTypes.ResizeImage] = { title: WebInspector.UIString("Image Resize"), category: categories["painting"] };
@@ -102,6 +103,10 @@ WebInspector.TimelinePresentationModel._initRecordStyles = function()
     recordStyles[recordTypes.RequestAnimationFrame] = { title: WebInspector.UIString("Request Animation Frame"), category: categories["scripting"] };
     recordStyles[recordTypes.CancelAnimationFrame] = { title: WebInspector.UIString("Cancel Animation Frame"), category: categories["scripting"] };
     recordStyles[recordTypes.FireAnimationFrame] = { title: WebInspector.UIString("Animation Frame Fired"), category: categories["scripting"] };
+    recordStyles[recordTypes.WebSocketCreate] = { title: WebInspector.UIString("Create WebSocket"), category: categories["scripting"] };
+    recordStyles[recordTypes.WebSocketSendHandshakeRequest] = { title: WebInspector.UIString("Send WebSocket Handshake"), category: categories["scripting"] };
+    recordStyles[recordTypes.WebSocketReceiveHandshakeResponse] = { title: WebInspector.UIString("Receive WebSocket Handshake"), category: categories["scripting"] };
+    recordStyles[recordTypes.WebSocketDestroy] = { title: WebInspector.UIString("Destroy WebSocket"), category: categories["scripting"] };
 
     WebInspector.TimelinePresentationModel._recordStylesMap = recordStyles;
     return recordStyles;
@@ -135,9 +140,8 @@ WebInspector.TimelinePresentationModel.isEventDivider = function(record)
     if (record.type === recordTypes.TimeStamp)
         return true;
     if (record.type === recordTypes.MarkDOMContent || record.type === recordTypes.MarkLoad) {
-        var mainFrame = WebInspector.resourceTreeModel.mainFrame;
-        if (mainFrame && mainFrame.id === record.frameId)
-            return true;
+        if (record.data && ((typeof record.data.isMainFrame) === "boolean"))
+            return record.data.isMainFrame;
     }
     return false;
 }
@@ -262,10 +266,12 @@ WebInspector.TimelinePresentationModel.prototype = {
         this._timerRecords = {};
         this._requestAnimationFrameRecords = {};
         this._timeRecords = {};
+        this._timeRecordStack = [];
         this._frames = [];
         this._minimumRecordTime = -1;
-        this._lastInvalidateLayout = {};
+        this._layoutInvalidateStack = {};
         this._lastScheduleStyleRecalculation = {};
+        this._webSocketCreateRecords = {};
     },
 
     addFrame: function(frame)
@@ -512,7 +518,10 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
     this._children = [];
     if (!hidden && parentRecord) {
         this.parent = parentRecord;
-        parentRecord.children.push(this);
+        if (this.isBackground && parentRecord === presentationModel._rootRecord)
+            WebInspector.TimelinePresentationModel.insertRetrospecitveRecord(parentRecord, this);
+        else
+            parentRecord.children.push(this);
     }
     if (origin)
         this._origin = origin;
@@ -585,7 +594,13 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
         break;
 
     case recordTypes.Time:
-        presentationModel._timeRecords[record.data["message"]] = this;
+        var message = record.data["message"];
+        var oldReference = presentationModel._timeRecords[message];
+        if (oldReference)
+            break;
+        presentationModel._timeRecords[message] = this;
+        if (origin)
+            presentationModel._timeRecordStack.push(this);
         break;
 
     case recordTypes.TimeEnd:
@@ -598,6 +613,18 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
             var intervalDuration = this.startTime - timeRecord.startTime;
             this.intervalDuration = intervalDuration;
             timeRecord.intervalDuration = intervalDuration;
+            if (!origin)
+                break;
+            var recordStack = presentationModel._timeRecordStack;
+            recordStack.splice(recordStack.indexOf(timeRecord), 1);
+            for (var index = recordStack.length; index; --index) {
+                var openRecord = recordStack[index - 1];
+                if (openRecord.startTime > timeRecord.startTime)
+                    continue;
+                timeRecord.parent.children.splice(timeRecord.parent.children.indexOf(timeRecord));
+                WebInspector.TimelinePresentationModel.insertRetrospecitveRecord(openRecord, timeRecord);
+                break;
+            }
         }
         break;
 
@@ -613,18 +640,57 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
         break;
 
     case recordTypes.InvalidateLayout:
-        presentationModel._lastInvalidateLayout[this.frameId] = this;
+        // Consider style recalculation as a reason for layout invalidation,
+        // but only if we had no earlier layout invalidation records.
+        var styleRecalcStack;
+        if (!presentationModel._layoutInvalidateStack[this.frameId]) {
+            for (var outerRecord = parentRecord; outerRecord; outerRecord = record.parent) {
+                if (outerRecord.type === recordTypes.RecalculateStyles) {
+                    styleRecalcStack = outerRecord.callSiteStackTrace;
+                    break;
+                }
+            }
+        }
+        presentationModel._layoutInvalidateStack[this.frameId] = styleRecalcStack || this.stackTrace;
         break;
 
     case recordTypes.Layout:
-        var invalidateLayoutRecord = presentationModel._lastInvalidateLayout[this.frameId];
-        if (invalidateLayoutRecord)
-            this.callSiteStackTrace = invalidateLayoutRecord.stackTrace || invalidateLayoutRecord.callSiteStackTrace;
+        var layoutInvalidateStack = presentationModel._layoutInvalidateStack[this.frameId];
+        if (layoutInvalidateStack)
+            this.callSiteStackTrace = layoutInvalidateStack;
         if (this.stackTrace)
             this.setHasWarning();
-        presentationModel._lastInvalidateLayout[this.frameId] = null;
+        presentationModel._layoutInvalidateStack[this.frameId] = null;
+        break;
+
+    case recordTypes.WebSocketCreate:
+        this.webSocketURL = record.data["url"];
+        if (typeof record.data["webSocketProtocol"] !== "undefined")
+            this.webSocketProtocol = record.data["webSocketProtocol"];
+        presentationModel._webSocketCreateRecords[record.data["identifier"]] = this;
+        break;
+   
+    case recordTypes.WebSocketSendHandshakeRequest:
+    case recordTypes.WebSocketReceiveHandshakeResponse:
+    case recordTypes.WebSocketDestroy:
+        var webSocketCreateRecord = presentationModel._webSocketCreateRecords[record.data["identifier"]];
+        if (webSocketCreateRecord) { // False if we started instrumentation in the middle of request.
+            this.webSocketURL = webSocketCreateRecord.webSocketURL;
+            if (typeof webSocketCreateRecord.webSocketProtocol !== "undefined")
+                this.webSocketProtocol = webSocketCreateRecord.webSocketProtocol;
+        }
         break;
     }
+}
+
+WebInspector.TimelinePresentationModel.insertRetrospecitveRecord = function(parent, record)
+{
+    function compareStartTime(value, record)
+    {
+        return value < record.startTime ? -1 : 1;
+    }
+    
+    parent.children.splice(insertionIndexForObjectInListSortedByFunction(record.startTime, parent.children, compareStartTime), 0, record);
 }
 
 WebInspector.TimelinePresentationModel.Record.prototype = {
@@ -724,6 +790,14 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     get endTime()
     {
         return WebInspector.TimelineModel.endTimeInSeconds(this._record);
+    },
+
+    /**
+     * @return {boolean}
+     */
+    get isBackground()
+    {
+        return !!this._record.thread;
     },
 
     /**
@@ -876,6 +950,17 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
                 if (typeof this.intervalDuration === "number")
                     contentHelper._appendTextRow(WebInspector.UIString("Interval Duration"), Number.secondsToString(this.intervalDuration, true));
                 break;
+            case recordTypes.WebSocketCreate:
+            case recordTypes.WebSocketSendHandshakeRequest:
+            case recordTypes.WebSocketReceiveHandshakeResponse:
+            case recordTypes.WebSocketDestroy:
+                if (typeof this.webSocketURL !== "undefined")
+                    contentHelper._appendTextRow(WebInspector.UIString("URL"), this.webSocketURL);
+                if (typeof this.webSocketProtocol !== "undefined")
+                    contentHelper._appendTextRow(WebInspector.UIString("WebSocket Protocol"), this.webSocketProtocol);
+                if (typeof this.data["message"] !== "undefined")
+                    contentHelper._appendTextRow(WebInspector.UIString("Message"), this.data["message"])
+                    break;
             default:
                 if (this.detailsNode())
                     contentHelper._appendElementRow(WebInspector.UIString("Details"), this.detailsNode().childNodes[1].cloneNode());
@@ -996,8 +1081,8 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
             break;
         }
 
-        if (typeof details === "string")
-            return this._createSpanWithText(details);
+        if (details && !(details instanceof Node))
+            return this._createSpanWithText("" + details);
 
         return details ? details : null;
     },
@@ -1032,11 +1117,15 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     },
 
     /**
-     * @param {string=} defaultValue
+     * @param {*=} defaultValue
+     * @return {Element|string}
      */
     _linkifyScriptLocation: function(defaultValue)
     {
-        return this.scriptName ? this._linkifyLocation(this.scriptName, this.scriptLine, 0) : defaultValue;
+        if (this.scriptName)
+            return this._linkifyLocation(this.scriptName, this.scriptLine, 0);
+        else
+            return defaultValue ? "" + defaultValue : null;
     },
 
     calculateAggregatedStats: function(categories)

@@ -36,7 +36,6 @@
 namespace CoreIPC {
     class Connection;
     class MessageDecoder;
-    class MessageID;
 }
 
 namespace WebCore {
@@ -52,10 +51,6 @@ class WebPage;
 struct WebPageCreationParameters;
 struct WebPreferencesStore;
 
-#if PLATFORM(WIN)
-struct WindowGeometry;
-#endif
-
 class DrawingArea {
     WTF_MAKE_NONCOPYABLE(DrawingArea);
 
@@ -63,10 +58,11 @@ public:
     static PassOwnPtr<DrawingArea> create(WebPage*, const WebPageCreationParameters&);
     virtual ~DrawingArea();
     
-    void didReceiveDrawingAreaMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
+    void didReceiveDrawingAreaMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
 
-    virtual void setNeedsDisplay(const WebCore::IntRect&) = 0;
-    virtual void scroll(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset) = 0;
+    virtual void setNeedsDisplay() = 0;
+    virtual void setNeedsDisplayInRect(const WebCore::IntRect&) = 0;
+    virtual void scroll(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollDelta) = 0;
 
     // FIXME: These should be pure virtual.
     virtual void pageBackgroundTransparencyChanged() { }
@@ -88,6 +84,9 @@ public:
     virtual void updatePreferences(const WebPreferencesStore&) { }
     virtual void mainFrameContentSizeChanged(const WebCore::IntSize&) { }
 
+    virtual void setExposedRect(const WebCore::FloatRect&) { }
+    virtual void mainFrameScrollabilityChanged(bool) { }
+
 #if USE(ACCELERATED_COMPOSITING)
     virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() { return 0; }
     virtual void setRootCompositingLayer(WebCore::GraphicsLayer*) = 0;
@@ -95,11 +94,7 @@ public:
 #endif
 
 #if USE(COORDINATED_GRAPHICS)
-    virtual void didReceiveCoordinatedLayerTreeHostMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&) = 0;
-#endif
-
-#if PLATFORM(WIN)
-    virtual void scheduleChildWindowGeometryUpdate(const WindowGeometry&) = 0;
+    virtual void didReceiveCoordinatedLayerTreeHostMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) = 0;
 #endif
 
     virtual void dispatchAfterEnsuringUpdatedScrollPosition(const Function<void ()>&);
@@ -122,7 +117,7 @@ private:
 
 #if PLATFORM(MAC)
     // Used by TiledCoreAnimationDrawingArea.
-    virtual void updateGeometry(const WebCore::IntSize& viewSize, double minimumLayoutWidth) { }
+    virtual void updateGeometry(const WebCore::IntSize& viewSize) { }
     virtual void setDeviceScaleFactor(float) { }
     virtual void setColorSpace(const ColorSpaceData&) { }
 #endif

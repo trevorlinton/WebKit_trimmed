@@ -535,7 +535,7 @@ void JIT::compileGetByIdHotPath(int baseVReg, Identifier* ident)
 
     emitJumpSlowCaseIfNotJSCell(regT0, baseVReg);
     
-    if (*ident == m_globalData->propertyNames->length && canBeOptimized()) {
+    if (*ident == m_globalData->propertyNames->length && shouldEmitProfiling()) {
         loadPtr(Address(regT0, JSCell::structureOffset()), regT1);
         emitArrayProfilingSiteForBytecodeIndex(regT1, regT2, m_bytecodeOffset);
     }
@@ -705,7 +705,7 @@ void JIT::privateCompilePutByIdTransition(StructureStubInfo* stubInfo, Structure
     // If we succeed in all of our checks, and the code was optimizable, then make sure we
     // decrement the rare case counter.
 #if ENABLE(VALUE_PROFILER)
-    if (m_codeBlock->canCompileWithDFG() >= DFG::ShouldProfile) {
+    if (m_codeBlock->canCompileWithDFG() >= DFG::MayInline) {
         sub32(
             TrustedImm32(1),
             AbsoluteAddress(&m_codeBlock->rareCaseProfileForBytecodeOffset(stubInfo->bytecodeIndex)->m_counter));
@@ -1272,26 +1272,6 @@ void JIT::emitWriteBarrier(RegisterID owner, RegisterID value, RegisterID scratc
 #if ENABLE(WRITE_BARRIER_PROFILING)
     emitCount(WriteBarrierCounters::jitCounterFor(useKind));
 #endif
-    
-#if ENABLE(GGC)
-    Jump filterCells;
-    if (mode == ShouldFilterImmediates)
-        filterCells = emitJumpIfNotJSCell(value);
-    move(owner, scratch);
-    andPtr(TrustedImm32(static_cast<int32_t>(MarkedBlock::blockMask)), scratch);
-    move(owner, scratch2);
-    // consume additional 8 bits as we're using an approximate filter
-    rshift32(TrustedImm32(MarkedBlock::atomShift + 8), scratch2);
-    andPtr(TrustedImm32(MarkedBlock::atomMask >> 8), scratch2);
-    Jump filter = branchTest8(Zero, BaseIndex(scratch, scratch2, TimesOne, MarkedBlock::offsetOfMarks()));
-    move(owner, scratch2);
-    rshift32(TrustedImm32(MarkedBlock::cardShift), scratch2);
-    andPtr(TrustedImm32(MarkedBlock::cardMask), scratch2);
-    store8(TrustedImm32(1), BaseIndex(scratch, scratch2, TimesOne, MarkedBlock::offsetOfCards()));
-    filter.link(this);
-    if (mode == ShouldFilterImmediates)
-        filterCells.link(this);
-#endif
 }
 
 void JIT::emitWriteBarrier(JSCell* owner, RegisterID value, RegisterID scratch, WriteBarrierMode mode, WriteBarrierUseKind useKind)
@@ -1304,17 +1284,6 @@ void JIT::emitWriteBarrier(JSCell* owner, RegisterID value, RegisterID scratch, 
     
 #if ENABLE(WRITE_BARRIER_PROFILING)
     emitCount(WriteBarrierCounters::jitCounterFor(useKind));
-#endif
-    
-#if ENABLE(GGC)
-    Jump filterCells;
-    if (mode == ShouldFilterImmediates)
-        filterCells = emitJumpIfNotJSCell(value);
-    uint8_t* cardAddress = Heap::addressOfCardFor(owner);
-    move(TrustedImmPtr(cardAddress), scratch);
-    store8(TrustedImm32(1), Address(scratch));
-    if (mode == ShouldFilterImmediates)
-        filterCells.link(this);
 #endif
 }
 
@@ -1374,7 +1343,7 @@ bool JIT::isDirectPutById(StructureStubInfo* stubInfo)
         return false;
     }
     default:
-        ASSERT_NOT_REACHED();
+        RELEASE_ASSERT_NOT_REACHED();
         return false;
     }
 }

@@ -59,6 +59,11 @@ public:
     virtual void clearBrowserCookies() { }
     virtual bool canMonitorMainThread() { return false; }
 
+    typedef void (*TraceEventCallback)(char phase, const unsigned char*, const char* name, unsigned long long id,
+        int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
+        unsigned char flags);
+    virtual void setTraceEventCallback(TraceEventCallback) { }
+
     virtual bool canOverrideDeviceMetrics() { return false; }
 
     virtual void overrideDeviceMetrics(int /*width*/, int /*height*/, float /*fontScaleFactor*/, bool /*fitWindow*/)
@@ -73,8 +78,14 @@ public:
     virtual bool overridesShowPaintRects() { return false; }
     virtual void setShowPaintRects(bool) { }
 
+    virtual bool canShowDebugBorders() { return false; }
+    virtual void setShowDebugBorders(bool) { }
+
     virtual bool canShowFPSCounter() { return false; }
     virtual void setShowFPSCounter(bool) { }
+
+    virtual bool canContinuouslyPaint() { return false; }
+    virtual void setContinuousPaintingEnabled(bool) { }
 
     virtual bool supportsFrameInstrumentation() { return false; }
 
@@ -82,6 +93,10 @@ public:
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) { }
 
     virtual bool captureScreenshot(String*) { return false; }
+
+    virtual bool handleJavaScriptDialog(bool) { return false; }
+
+    virtual bool canSetFileInputFiles() { return false; }
 
     static bool doDispatchMessageOnFrontendPage(Page* frontendPage, const String& message);
 };

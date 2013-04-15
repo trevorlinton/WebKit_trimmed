@@ -28,7 +28,6 @@
 #define WebChromeClient_h
 
 #include <WebCore/ChromeClient.h>
-#include <WebCore/Image.h>
 #include <WebCore/ViewportArguments.h>
 #include <wtf/text/WTFString.h>
 
@@ -112,7 +111,7 @@ private:
     virtual void invalidateRootView(const WebCore::IntRect&, bool) OVERRIDE;
     virtual void invalidateContentsAndRootView(const WebCore::IntRect&, bool) OVERRIDE;
     virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&, bool) OVERRIDE;
-    virtual void scroll(const WebCore::IntSize& scrollOffset, const WebCore::IntRect& scrollRect, const WebCore::IntRect& clipRect) OVERRIDE;
+    virtual void scroll(const WebCore::IntSize& scrollDelta, const WebCore::IntRect& scrollRect, const WebCore::IntRect& clipRect) OVERRIDE;
 #if USE(TILED_BACKING_STORE)
     virtual void delegatedScrollRequested(const WebCore::IntPoint& scrollOffset) OVERRIDE;
 #endif
@@ -133,7 +132,7 @@ private:
     virtual void print(WebCore::Frame*) OVERRIDE;
     
 #if ENABLE(SQL_DATABASE)
-    virtual void exceededDatabaseQuota(WebCore::Frame*, const String& databaseName) OVERRIDE;
+    virtual void exceededDatabaseQuota(WebCore::Frame*, const String& databaseName, WebCore::DatabaseDetails) OVERRIDE;
 #endif
 
     virtual void reachedMaxAppCacheSize(int64_t spaceNeeded) OVERRIDE;
@@ -194,16 +193,8 @@ private:
     }
 #endif
 
-#if PLATFORM(WIN) && USE(AVFOUNDATION)
-    virtual WebCore::GraphicsDeviceAdapter* graphicsDeviceAdapter() const OVERRIDE;
-#endif
-
 #if ENABLE(TOUCH_EVENTS)
     virtual void needTouchEvents(bool) OVERRIDE;
-#endif
-
-#if PLATFORM(WIN)
-    virtual void setLastSetCursorToCurrentCursor() OVERRIDE;
 #endif
 
 #if ENABLE(FULLSCREEN_API)
@@ -221,12 +212,16 @@ private:
     virtual void notifyScrollerThumbIsVisibleInRect(const WebCore::IntRect&) OVERRIDE;
     virtual void recommendedScrollbarStyleDidChange(int32_t newStyle) OVERRIDE;
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const OVERRIDE;
+
+    virtual WebCore::Color underlayColor() const OVERRIDE;
     
     virtual void numWheelEventHandlersChanged(unsigned) OVERRIDE;
 
     virtual void logDiagnosticMessage(const String& message, const String& description, const String& success) OVERRIDE;
 
-    virtual PassRefPtr<WebCore::Image> plugInStartLabelImage(WebCore::RenderSnapshottedPlugIn::LabelSize) const OVERRIDE;
+    virtual String plugInStartLabelTitle() const OVERRIDE;
+    virtual String plugInStartLabelSubtitle() const OVERRIDE;
+    virtual String plugInExtraStyleSheet() const OVERRIDE;
 
     String m_cachedToolTip;
     mutable RefPtr<WebFrame> m_cachedFrameSetLargestFrame;

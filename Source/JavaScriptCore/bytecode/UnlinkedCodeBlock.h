@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,10 +32,12 @@
 #include "ExpressionRangeInfo.h"
 #include "Identifier.h"
 #include "JSCell.h"
+#include "JSString.h"
 #include "LineInfo.h"
-#include "Nodes.h"
+#include "ParserModes.h"
 #include "RegExp.h"
 #include "SpecialPointer.h"
+#include "SymbolTable.h"
 #include "Weak.h"
 
 #include <wtf/RefCountedArray.h>
@@ -58,6 +60,7 @@ class UnlinkedFunctionCodeBlock;
 typedef unsigned UnlinkedValueProfile;
 typedef unsigned UnlinkedArrayProfile;
 typedef unsigned UnlinkedArrayAllocationProfile;
+typedef unsigned UnlinkedObjectAllocationProfile;
 typedef unsigned UnlinkedLLIntCallLinkInfo;
 
 struct ExecutableInfo {
@@ -92,7 +95,7 @@ public:
     {
         return (kind == CodeForCall) ? m_symbolTableForCall.get() : m_symbolTableForConstruct.get();
     }
-    size_t parameterCount() const { return m_parameters->size(); }
+    size_t parameterCount() const;
     bool isInStrictContext() const { return m_isInStrictContext; }
     FunctionNameIsInScopeToggle functionNameIsInScopeToggle() const { return m_functionNameIsInScopeToggle; }
 
@@ -138,8 +141,8 @@ public:
 
 private:
     UnlinkedFunctionExecutable(JSGlobalData*, Structure*, const SourceCode&, FunctionBodyNode*);
-    Weak<UnlinkedFunctionCodeBlock> m_codeBlockForCall;
-    Weak<UnlinkedFunctionCodeBlock> m_codeBlockForConstruct;
+    WriteBarrier<UnlinkedFunctionCodeBlock> m_codeBlockForCall;
+    WriteBarrier<UnlinkedFunctionCodeBlock> m_codeBlockForConstruct;
 
     unsigned m_numCapturedVariables : 29;
     bool m_forceUsesArguments : 1;
@@ -398,6 +401,8 @@ public:
     unsigned numberOfArrayProfiles() { return m_arrayProfileCount; }
     UnlinkedArrayAllocationProfile addArrayAllocationProfile() { return m_arrayAllocationProfileCount++; }
     unsigned numberOfArrayAllocationProfiles() { return m_arrayAllocationProfileCount; }
+    UnlinkedObjectAllocationProfile addObjectAllocationProfile() { return m_objectAllocationProfileCount++; }
+    unsigned numberOfObjectAllocationProfiles() { return m_objectAllocationProfileCount; }
     UnlinkedValueProfile addValueProfile() { return m_valueProfileCount++; }
     unsigned numberOfValueProfiles() { return m_valueProfileCount; }
 
@@ -525,6 +530,7 @@ private:
     unsigned m_putToBaseOperationCount;
     unsigned m_arrayProfileCount;
     unsigned m_arrayAllocationProfileCount;
+    unsigned m_objectAllocationProfileCount;
     unsigned m_valueProfileCount;
     unsigned m_llintCallLinkInfoCount;
 
@@ -671,9 +677,7 @@ public:
 };
 
 class UnlinkedFunctionCodeBlock : public UnlinkedCodeBlock {
-private:
-    friend class CodeCache;
-
+public:
     static UnlinkedFunctionCodeBlock* create(JSGlobalData* globalData, CodeType codeType, const ExecutableInfo& info)
     {
         UnlinkedFunctionCodeBlock* instance = new (NotNull, allocateCell<UnlinkedFunctionCodeBlock>(globalData->heap)) UnlinkedFunctionCodeBlock(globalData, globalData->unlinkedFunctionCodeBlockStructure.get(), codeType, info);
@@ -681,7 +685,6 @@ private:
         return instance;
     }
 
-public:
     typedef UnlinkedCodeBlock Base;
     static void destroy(JSCell*);
 

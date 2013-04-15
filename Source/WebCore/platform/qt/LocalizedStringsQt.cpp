@@ -379,13 +379,19 @@ String AXHeadingText()
     return String();
 }
 
-String AXDefinitionListTermText()
+String AXDefinitionText()
 {
     notImplemented();
     return String();
 }
 
-String AXDefinitionListDefinitionText()
+String AXDescriptionListTermText()
+{
+    notImplemented();
+    return String();
+}
+
+String AXDescriptionListDetailText()
 {
     notImplemented();
     return String();
@@ -579,7 +585,7 @@ String localizedMediaControlElementHelpText(const String& name)
 
 String localizedMediaTimeDescription(float time)
 {
-    if (!isfinite(time))
+    if (!std::isfinite(time))
         return QCoreApplication::translate("QWebPage", "Indefinite time", "Media time description");
 
     int seconds = (int)fabsf(time);
@@ -715,6 +721,18 @@ String validationMessageBadInputForNumberText()
 {
     notImplemented();
     return validationMessageTypeMismatchText();
+}
+
+String snapshottedPlugInLabelTitle()
+{
+    notImplemented();
+    return String();
+}
+
+String snapshottedPlugInLabelSubtitle()
+{
+    notImplemented();
+    return String();
 }
 
 String localizedString(const char* key)

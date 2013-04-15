@@ -109,11 +109,6 @@ WebInspector.ExtensionServer.prototype = {
         this._postNotification(WebInspector.extensionAPI.Events.InspectedURLChanged, url);
     },
 
-    _mainFrameNavigated: function(event)
-    {
-        this._postNotification(WebInspector.extensionAPI.Events.Reset);
-    },
-
     startAuditRun: function(category, auditRun)
     {
         this._clientObjects[auditRun.id] = auditRun;
@@ -236,13 +231,12 @@ WebInspector.ExtensionServer.prototype = {
         var panel = WebInspector.panel(message.panel);
         if (!panel)
             return this._status.E_NOTFOUND(message.panel);
-        if (!panel.sidebarElement || !panel.sidebarPanes)
+        if (!panel.addExtensionSidebarPane)
             return this._status.E_NOTSUPPORTED();
         var id = message.id;
         var sidebar = new WebInspector.ExtensionSidebarPane(message.title, message.id);
         this._clientObjects[id] = sidebar;
-        panel.sidebarPanes[id] = sidebar;
-        panel.sidebarElement.appendChild(sidebar.element);
+        panel.addExtensionSidebarPane(id, sidebar);
 
         return this._status.OK();
     },
@@ -291,7 +285,7 @@ WebInspector.ExtensionServer.prototype = {
     _handleOpenURL: function(port, details)
     {
         var url = /** @type {string} */ (details.url);
-        var contentProvider = WebInspector.workspace.uiSourceCodeForURL(url) || WebInspector.resourceForURL(url);
+        var contentProvider = WebInspector.workspace.uiSourceCodeForOriginURL(url) || WebInspector.resourceForURL(url);
         if (!contentProvider)
             return false;
             
@@ -334,15 +328,13 @@ WebInspector.ExtensionServer.prototype = {
          */
         function callback(error, resultPayload, wasThrown)
         {
-            var result = {};
-            if (error) {
-                result.isException = true;
-                result.value = error.toString();
-            }  else
-                result.value = resultPayload.value;
-
-            if (wasThrown)
-                result.isException = true;
+            var result;
+            if (error)
+                result = this._status.E_PROTOCOLERROR(error.toString());
+            else if (wasThrown)
+                result = { isException: true, value: resultPayload.description };
+            else
+                result = { value: resultPayload.value };
       
             this._dispatchCallback(message.requestId, port, result);
         }
@@ -446,7 +438,8 @@ WebInspector.ExtensionServer.prototype = {
             if (!resources[contentProvider.contentURL()])
                 resources[contentProvider.contentURL()] = this._makeResource(contentProvider);
         }
-        WebInspector.workspace.uiSourceCodes().forEach(pushResourceData.bind(this));
+        var uiSourceCodes = WebInspector.workspace.uiSourceCodesForProjectType(WebInspector.projectTypes.Network);
+        uiSourceCodes.forEach(pushResourceData.bind(this));
         WebInspector.resourceTreeModel.forAllResources(pushResourceData.bind(this));
         return Object.values(resources);
     },
@@ -483,7 +476,7 @@ WebInspector.ExtensionServer.prototype = {
     _onGetResourceContent: function(message, port)
     {
         var url = /** @type {string} */ (message.url);
-        var contentProvider = WebInspector.workspace.uiSourceCodeForURL(url) || WebInspector.resourceForURL(url);
+        var contentProvider = WebInspector.workspace.uiSourceCodeForOriginURL(url) || WebInspector.resourceForURL(url);
         if (!contentProvider)
             return this._status.E_NOTFOUND(url);
         this._getResourceContent(contentProvider, message, port);
@@ -501,7 +494,7 @@ WebInspector.ExtensionServer.prototype = {
         }
 
         var url = /** @type {string} */ (message.url);
-        var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
+        var uiSourceCode = WebInspector.workspace.uiSourceCodeForOriginURL(url);
         if (!uiSourceCode) {
             var resource = WebInspector.resourceTreeModel.resourceForURL(url);
             if (!resource)
@@ -609,7 +602,6 @@ WebInspector.ExtensionServer.prototype = {
 
         WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged,
             this._inspectedURLChanged, this);
-        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
         this._initDone = true;
         if (this._pendingExtensions) {
             this._pendingExtensions.forEach(this._innerAddExtension, this);
@@ -823,6 +815,7 @@ WebInspector.ExtensionStatus = function()
     this.E_BADARGTYPE = makeStatus.bind(null, "E_BADARGTYPE", "Invalid type for argument %s: got %s, expected %s");
     this.E_NOTFOUND = makeStatus.bind(null, "E_NOTFOUND", "Object not found: %s");
     this.E_NOTSUPPORTED = makeStatus.bind(null, "E_NOTSUPPORTED", "Object does not support requested operation: %s");
+    this.E_PROTOCOLERROR = makeStatus.bind(null, "E_PROTOCOLERROR", "Inspector protocol error: %s");
     this.E_FAILED = makeStatus.bind(null, "E_FAILED", "Operation failed: %s");
 }
 

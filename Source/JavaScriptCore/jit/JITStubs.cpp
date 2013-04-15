@@ -58,6 +58,7 @@
 #include "JSWithScope.h"
 #include "LegacyProfiler.h"
 #include "NameInstance.h"
+#include "ObjectConstructor.h"
 #include "ObjectPrototype.h"
 #include "Operations.h"
 #include "Parser.h"
@@ -67,6 +68,7 @@
 #include "RepatchBuffer.h"
 #include "SamplingTool.h"
 #include "Strong.h"
+#include "StructureRareDataInlines.h"
 #include <wtf/StdLibExtras.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -280,11 +282,13 @@ extern "C" {
 #define PRESERVED_S0_OFFSET         64
 #define PRESERVED_S1_OFFSET         68
 #define PRESERVED_S2_OFFSET         72
-#define PRESERVED_RETURN_ADDRESS_OFFSET 76
-#define THUNK_RETURN_ADDRESS_OFFSET 80
-#define REGISTER_FILE_OFFSET        84
-#define GLOBAL_DATA_OFFSET         100
-#define STACK_LENGTH               104
+#define PRESERVED_S3_OFFSET         76
+#define PRESERVED_S4_OFFSET         80
+#define PRESERVED_RETURN_ADDRESS_OFFSET 84
+#define THUNK_RETURN_ADDRESS_OFFSET 88
+#define REGISTER_FILE_OFFSET        92
+#define GLOBAL_DATA_OFFSET         108
+#define STACK_LENGTH               112
 #elif CPU(SH4)
 #define SYMBOL_STRING(name) #name
 /* code (r4), JSStack* (r5), CallFrame* (r6), void* unused1 (r7), void* unused2(sp), JSGlobalData (sp)*/
@@ -433,6 +437,13 @@ SYMBOL_STRING(ctiOpThrowNotCaught) ":" "\n"
     "ret" "\n"
 );
 
+#elif COMPILER(MSVC) && CPU(X86_64)
+
+// These ASSERTs remind you that, if you change the layout of JITStackFrame, you
+// need to change the assembly trampolines in JITStubsMSVC64.asm to match.
+COMPILE_ASSERT(offsetof(struct JITStackFrame, code) % 16 == 0x0, JITStackFrame_maintains_16byte_stack_alignment);
+COMPILE_ASSERT(offsetof(struct JITStackFrame, savedRBX) == 0x58, JITStackFrame_stub_argument_space_matches_ctiTrampoline);
+
 #else
     #error "JIT not supported on this platform."
 #endif
@@ -451,6 +462,8 @@ asm (
 SYMBOL_STRING(ctiTrampoline) ":" "\n"
     "addiu $29,$29,-" STRINGIZE_VALUE_OF(STACK_LENGTH) "\n"
     "sw    $31," STRINGIZE_VALUE_OF(PRESERVED_RETURN_ADDRESS_OFFSET) "($29)" "\n"
+    "sw    $20," STRINGIZE_VALUE_OF(PRESERVED_S4_OFFSET) "($29)" "\n"
+    "sw    $19," STRINGIZE_VALUE_OF(PRESERVED_S3_OFFSET) "($29)" "\n"
     "sw    $18," STRINGIZE_VALUE_OF(PRESERVED_S2_OFFSET) "($29)" "\n"
     "sw    $17," STRINGIZE_VALUE_OF(PRESERVED_S1_OFFSET) "($29)" "\n"
     "sw    $16," STRINGIZE_VALUE_OF(PRESERVED_S0_OFFSET) "($29)" "\n"
@@ -467,12 +480,17 @@ SYMBOL_STRING(ctiTrampoline) ":" "\n"
     "lw    $16," STRINGIZE_VALUE_OF(PRESERVED_S0_OFFSET) "($29)" "\n"
     "lw    $17," STRINGIZE_VALUE_OF(PRESERVED_S1_OFFSET) "($29)" "\n"
     "lw    $18," STRINGIZE_VALUE_OF(PRESERVED_S2_OFFSET) "($29)" "\n"
+    "lw    $19," STRINGIZE_VALUE_OF(PRESERVED_S3_OFFSET) "($29)" "\n"
+    "lw    $20," STRINGIZE_VALUE_OF(PRESERVED_S4_OFFSET) "($29)" "\n"
     "lw    $31," STRINGIZE_VALUE_OF(PRESERVED_RETURN_ADDRESS_OFFSET) "($29)" "\n"
     "jr    $31" "\n"
     "addiu $29,$29," STRINGIZE_VALUE_OF(STACK_LENGTH) "\n"
 ".set reorder" "\n"
 ".set macro" "\n"
 ".end " SYMBOL_STRING(ctiTrampoline) "\n"
+".globl " SYMBOL_STRING(ctiTrampolineEnd) "\n"
+HIDE_SYMBOL(ctiTrampolineEnd) "\n"
+SYMBOL_STRING(ctiTrampolineEnd) ":" "\n"
 );
 
 asm (
@@ -485,8 +503,8 @@ asm (
 ".ent " SYMBOL_STRING(ctiVMThrowTrampoline) "\n"
 SYMBOL_STRING(ctiVMThrowTrampoline) ":" "\n"
 #if WTF_MIPS_PIC
-    "lw    $28," STRINGIZE_VALUE_OF(PRESERVED_GP_OFFSET) "($29)" "\n"
 ".set macro" "\n"
+".cpload $31" "\n"
     "la    $25," SYMBOL_STRING(cti_vm_throw) "\n"
 ".set nomacro" "\n"
     "bal " SYMBOL_STRING(cti_vm_throw) "\n"
@@ -498,6 +516,8 @@ SYMBOL_STRING(ctiVMThrowTrampoline) ":" "\n"
     "lw    $16," STRINGIZE_VALUE_OF(PRESERVED_S0_OFFSET) "($29)" "\n"
     "lw    $17," STRINGIZE_VALUE_OF(PRESERVED_S1_OFFSET) "($29)" "\n"
     "lw    $18," STRINGIZE_VALUE_OF(PRESERVED_S2_OFFSET) "($29)" "\n"
+    "lw    $19," STRINGIZE_VALUE_OF(PRESERVED_S3_OFFSET) "($29)" "\n"
+    "lw    $20," STRINGIZE_VALUE_OF(PRESERVED_S4_OFFSET) "($29)" "\n"
     "lw    $31," STRINGIZE_VALUE_OF(PRESERVED_RETURN_ADDRESS_OFFSET) "($29)" "\n"
     "jr    $31" "\n"
     "addiu $29,$29," STRINGIZE_VALUE_OF(STACK_LENGTH) "\n"
@@ -518,6 +538,8 @@ SYMBOL_STRING(ctiOpThrowNotCaught) ":" "\n"
     "lw    $16," STRINGIZE_VALUE_OF(PRESERVED_S0_OFFSET) "($29)" "\n"
     "lw    $17," STRINGIZE_VALUE_OF(PRESERVED_S1_OFFSET) "($29)" "\n"
     "lw    $18," STRINGIZE_VALUE_OF(PRESERVED_S2_OFFSET) "($29)" "\n"
+    "lw    $19," STRINGIZE_VALUE_OF(PRESERVED_S3_OFFSET) "($29)" "\n"
+    "lw    $20," STRINGIZE_VALUE_OF(PRESERVED_S4_OFFSET) "($29)" "\n"
     "lw    $31," STRINGIZE_VALUE_OF(PRESERVED_RETURN_ADDRESS_OFFSET) "($29)" "\n"
     "jr    $31" "\n"
     "addiu $29,$29," STRINGIZE_VALUE_OF(STACK_LENGTH) "\n"
@@ -776,6 +798,50 @@ __asm void ctiOpThrowNotCaught()
     #define CTI_SAMPLER 0
 #endif
 
+void performPlatformSpecificJITAssertions(JSGlobalData* globalData)
+{
+    if (!globalData->canUseJIT())
+        return;
+
+#if CPU(ARM_THUMB2)
+    // Unfortunate the arm compiler does not like the use of offsetof on JITStackFrame (since it contains non POD types),
+    // and the OBJECT_OFFSETOF macro does not appear constantish enough for it to be happy with its use in COMPILE_ASSERT
+    // macros.
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedReturnAddress) == PRESERVED_RETURN_ADDRESS_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR4) == PRESERVED_R4_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR5) == PRESERVED_R5_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR6) == PRESERVED_R6_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR7) == PRESERVED_R7_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR8) == PRESERVED_R8_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR9) == PRESERVED_R9_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR10) == PRESERVED_R10_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR11) == PRESERVED_R11_OFFSET);
+
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, stack) == REGISTER_FILE_OFFSET);
+    // The fifth argument is the first item already on the stack.
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, unused1) == FIRST_STACK_ARGUMENT);
+
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, thunkReturnAddress) == THUNK_RETURN_ADDRESS_OFFSET);
+
+#elif CPU(ARM_TRADITIONAL)
+
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, thunkReturnAddress) == THUNK_RETURN_ADDRESS_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedR4) == PRESERVEDR4_OFFSET);
+
+
+#elif CPU(MIPS)
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedGP) == PRESERVED_GP_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedS0) == PRESERVED_S0_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedS1) == PRESERVED_S1_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedS2) == PRESERVED_S2_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, preservedReturnAddress) == PRESERVED_RETURN_ADDRESS_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, thunkReturnAddress) == THUNK_RETURN_ADDRESS_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, stack) == REGISTER_FILE_OFFSET);
+    ASSERT(OBJECT_OFFSETOF(struct JITStackFrame, globalData) == GLOBAL_DATA_OFFSET);
+
+#endif
+}
+
 NEVER_INLINE static void tryCachePutByID(CallFrame* callFrame, CodeBlock* codeBlock, ReturnAddressPtr returnAddress, JSValue baseValue, const PutPropertySlot& slot, StructureStubInfo* stubInfo, bool direct)
 {
     // The interpreter checks for recursion here; I do not believe this can occur in CTI.
@@ -874,10 +940,9 @@ NEVER_INLINE static void tryCacheGetByID(CallFrame* callFrame, CodeBlock* codeBl
     // Cache hit: Specialize instruction and ref Structures.
 
     if (slot.slotBase() == baseValue) {
-        // set this up, so derefStructures can do it's job.
         stubInfo->initGetByIdSelf(callFrame->globalData(), codeBlock->ownerExecutable(), structure);
         if ((slot.cachedPropertyType() != PropertySlot::Value)
-            || !MacroAssembler::isCompactPtrAlignedAddressOffset(offsetRelativeToPatchedStorage(slot.cachedOffset())))
+            || !MacroAssembler::isCompactPtrAlignedAddressOffset(maxOffsetRelativeToPatchedStorage(slot.cachedOffset())))
             ctiPatchCallByReturnAddress(codeBlock, returnAddress, FunctionPtr(cti_op_get_by_id_self_fail));
         else
             JIT::patchGetByIdSelf(codeBlock, stubInfo, structure, slot.cachedOffset(), returnAddress);
@@ -979,7 +1044,7 @@ struct StackHack {
 // handling code out of line as possible.
 static NEVER_INLINE void returnToThrowTrampoline(JSGlobalData* globalData, ReturnAddressPtr exceptionLocation, ReturnAddressPtr& returnAddressSlot)
 {
-    ASSERT(globalData->exception);
+    RELEASE_ASSERT(globalData->exception);
     globalData->exceptionLocation = exceptionLocation;
     returnAddressSlot = ReturnAddressPtr(FunctionPtr(ctiVMThrowTrampoline));
 }
@@ -1067,9 +1132,9 @@ template<typename T> static T throwExceptionFromOpCall(JITStackFrame& jitStackFr
         ".globl " SYMBOL_STRING(cti_##op) "\n" \
         ".ent " SYMBOL_STRING(cti_##op) "\n" \
         SYMBOL_STRING(cti_##op) ":" "\n" \
-        "lw    $28," STRINGIZE_VALUE_OF(PRESERVED_GP_OFFSET) "($29)" "\n" \
-        "sw    $31," STRINGIZE_VALUE_OF(THUNK_RETURN_ADDRESS_OFFSET) "($29)" "\n" \
         ".set macro" "\n" \
+        ".cpload $25" "\n" \
+        "sw    $31," STRINGIZE_VALUE_OF(THUNK_RETURN_ADDRESS_OFFSET) "($29)" "\n" \
         "la    $25," SYMBOL_STRING(JITStubThunked_##op) "\n" \
         ".set nomacro" "\n" \
         ".reloc 1f,R_MIPS_JALR," SYMBOL_STRING(JITStubThunked_##op) "\n" \
@@ -1243,6 +1308,7 @@ DEFINE_STUB_FUNCTION(EncodedJSValue, op_create_this)
 {
     STUB_INIT_STACK_FRAME(stackFrame);
     CallFrame* callFrame = stackFrame.callFrame;
+    size_t inlineCapacity = stackFrame.args[0].int32();
 
     JSFunction* constructor = jsCast<JSFunction*>(callFrame->callee());
 #if !ASSERT_DISABLED
@@ -1250,7 +1316,7 @@ DEFINE_STUB_FUNCTION(EncodedJSValue, op_create_this)
     ASSERT(constructor->methodTable()->getConstructData(constructor, constructData) == ConstructTypeJS);
 #endif
 
-    Structure* structure = constructor->cachedInheritorID(callFrame);
+    Structure* structure = constructor->allocationProfile(callFrame, inlineCapacity)->structure();
     JSValue result = constructEmptyObject(callFrame, structure);
 
     return JSValue::encode(result);
@@ -1338,7 +1404,7 @@ DEFINE_STUB_FUNCTION(JSObject*, op_new_object)
 {
     STUB_INIT_STACK_FRAME(stackFrame);
 
-    return constructEmptyObject(stackFrame.callFrame);
+    return constructEmptyObject(stackFrame.callFrame, stackFrame.args[0].structure());
 }
 
 DEFINE_STUB_FUNCTION(void, op_put_by_id_generic)
@@ -1573,7 +1639,7 @@ static PolymorphicAccessStructureList* getPolymorphicAccessStructureListSlot(JSG
             stubInfo->u.getByIdProtoList.listSize++;
         break;
     default:
-        ASSERT_NOT_REACHED();
+        RELEASE_ASSERT_NOT_REACHED();
     }
     
     ASSERT(listIndex <= POLYMORPHIC_LIST_CACHE_SIZE);
@@ -2165,6 +2231,7 @@ DEFINE_STUB_FUNCTION(void*, vm_lazyLinkClosureCall)
     if (shouldLink) {
         ASSERT(codePtr);
         JIT::compileClosureCall(globalData, callLinkInfo, callerCodeBlock, calleeCodeBlock, structure, executable, codePtr);
+        callLinkInfo->hasSeenClosure = true;
     } else
         JIT::linkSlowCall(callerCodeBlock, callLinkInfo);
 
@@ -2898,7 +2965,7 @@ DEFINE_STUB_FUNCTION(int, op_eq_strings)
     return string1->value(stackFrame.callFrame) == string2->value(stackFrame.callFrame);
 #else
     UNUSED_PARAM(args);
-    ASSERT_NOT_REACHED();
+    RELEASE_ASSERT_NOT_REACHED();
     return 0;
 #endif
 }

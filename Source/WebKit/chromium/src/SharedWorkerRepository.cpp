@@ -40,7 +40,8 @@
 #include "ExceptionCode.h"
 #include "InspectorInstrumentation.h"
 #include "MessagePortChannel.h"
-#include "PlatformMessagePortChannel.h"
+#include "PlatformMessagePortChannelChromium.h"
+#include "ResourceResponse.h"
 #include "ScriptExecutionContext.h"
 #include "SharedWorker.h"
 #include "WebContentSecurityPolicy.h"
@@ -49,7 +50,6 @@
 #include "WebKit.h"
 #include "WebSharedWorker.h"
 #include "WebSharedWorkerRepository.h"
-#include "platform/WebKitPlatformSupport.h"
 #include "WorkerScriptLoader.h"
 #include "WorkerScriptLoaderClient.h"
 

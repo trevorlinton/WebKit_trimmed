@@ -57,10 +57,6 @@ static Frame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context
     v8::HandleScope handle_scope;
     // Test that context has associated global dom window object.
     v8::Handle<v8::Object> global = context->Global();
-    if (global.IsEmpty())
-        return 0;
-
-    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
     if (global.IsEmpty()) {
         v8::Context::Scope context_scope(node::g_context);
         global = node::g_context->Global();
@@ -68,7 +64,7 @@ static Frame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context
         if (val_window->IsUndefined())
             return 0;
         v8::Local<v8::Object> window = v8::Local<v8::Object>::Cast(val_window);
-        global = window->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+        global = window->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), worldTypeInMainThread(context->GetIsolate())));
         if (global.IsEmpty())
             return 0;
         DOMWindow* win = V8DOMWindow::toNative(global);
@@ -76,6 +72,10 @@ static Frame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context
             return 0;
         return win->frame();
     }
+
+    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), worldTypeInMainThread(context->GetIsolate())));
+    if (global.IsEmpty())
+        return 0;
 
     return toFrameIfNotDetached(context);
 }
@@ -121,7 +121,7 @@ void PageScriptDebugServer::rescanScripts(Frame* frame)
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(deprecatedV8Integer(i))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8Integer(i, context->GetIsolate()))));
 }
 
 void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* page)

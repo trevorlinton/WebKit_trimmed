@@ -36,6 +36,7 @@
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "ElementShadow.h"
+#include "FocusController.h"
 #include "FormController.h"
 #include "HTMLDataListElement.h"
 #include "HTMLInputElement.h"
@@ -73,10 +74,17 @@ void BaseMultipleFieldsDateAndTimeInputType::didFocusOnControl()
 void BaseMultipleFieldsDateAndTimeInputType::editControlValueChanged()
 {
     RefPtr<HTMLInputElement> input(element());
-    input->setValueInternal(sanitizeValue(m_dateTimeEditElement->value()), DispatchNoEvent);
-    input->setNeedsStyleRecalc();
-    input->dispatchFormControlInputEvent();
-    input->dispatchFormControlChangeEvent();
+    String oldValue = input->value();
+    String newValue = sanitizeValue(m_dateTimeEditElement->value());
+    // Even if oldValue is null and newValue is "", we should assume they are same.
+    if ((oldValue.isEmpty() && newValue.isEmpty()) || oldValue == newValue)
+        input->setNeedsValidityCheck();
+    else {
+        input->setValueInternal(newValue, DispatchNoEvent);
+        input->setNeedsStyleRecalc();
+        input->dispatchFormControlInputEvent();
+        input->dispatchFormControlChangeEvent();
+    }
     input->notifyFormStateChanged();
 }
 
@@ -133,7 +141,7 @@ bool BaseMultipleFieldsDateAndTimeInputType::isPickerIndicatorOwnerDisabledOrRea
 void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(const String& value)
 {
     if (element()->isValidValue(value)) {
-        element()->setValue(value, DispatchChangeEvent);
+        element()->setValue(value, DispatchInputAndChangeEvent);
         return;
     }
 
@@ -181,21 +189,30 @@ void BaseMultipleFieldsDateAndTimeInputType::blur()
         m_dateTimeEditElement->blurByOwner();
 }
 
-RenderObject* BaseMultipleFieldsDateAndTimeInputType::createRenderer(RenderArena* arena, RenderStyle* style) const
+PassRefPtr<RenderStyle> BaseMultipleFieldsDateAndTimeInputType::customStyleForRenderer(PassRefPtr<RenderStyle> originalStyle)
 {
-    return InputType::createRenderer(arena, style);
+    EDisplay originalDisplay = originalStyle->display();
+    EDisplay newDisplay = originalDisplay;
+    if (originalDisplay == INLINE || originalDisplay == INLINE_BLOCK)
+        newDisplay = INLINE_FLEX;
+    else if (originalDisplay == BLOCK)
+        newDisplay = FLEX;
+    TextDirection contentDirection = element()->locale().isRTL() ? RTL : LTR;
+    if (originalStyle->direction() == contentDirection && originalDisplay == newDisplay)
+        return originalStyle;
+
+    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
+    style->setDirection(contentDirection);
+    style->setDisplay(newDisplay);
+    return style.release();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::createShadowSubtree()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, dateAndTimeInputContainerPseudoId, ("-webkit-date-and-time-container", AtomicString::ConstructFromLiteral));
-
     ASSERT(element()->shadow());
 
     Document* document = element()->document();
-    RefPtr<HTMLDivElement> container = HTMLDivElement::create(document);
-    element()->userAgentShadowRoot()->appendChild(container);
-    container->setPseudo(dateAndTimeInputContainerPseudoId);
+    ContainerNode* container = element()->userAgentShadowRoot();
 
     RefPtr<DateTimeEditElement> dateTimeEditElement(DateTimeEditElement::create(document, *this));
     m_dateTimeEditElement = dateTimeEditElement.get();
@@ -242,9 +259,16 @@ void BaseMultipleFieldsDateAndTimeInputType::destroyShadowSubtree()
     BaseDateAndTimeInputType::destroyShadowSubtree();
 }
 
-void BaseMultipleFieldsDateAndTimeInputType::focus(bool)
+void BaseMultipleFieldsDateAndTimeInputType::handleFocusEvent(Node* oldFocusedNode, FocusDirection direction)
 {
-    if (m_dateTimeEditElement)
+    if (!m_dateTimeEditElement)
+        return;
+    if (direction == FocusDirectionBackward) {
+        if (element()->document()->page())
+            element()->document()->page()->focusController()->advanceFocus(direction, 0);
+    } else if (direction == FocusDirectionNone) {
+        m_dateTimeEditElement->focusByOwner(oldFocusedNode);
+    } else
         m_dateTimeEditElement->focusByOwner();
 }
 
@@ -287,12 +311,12 @@ bool BaseMultipleFieldsDateAndTimeInputType::hasBadInput() const
 
 bool BaseMultipleFieldsDateAndTimeInputType::isKeyboardFocusable(KeyboardEvent*) const
 {
-    return false;
+    return element()->isTextFormControlFocusable();
 }
 
 bool BaseMultipleFieldsDateAndTimeInputType::isMouseFocusable() const
 {
-    return false;
+    return element()->isTextFormControlFocusable();
 }
 
 AtomicString BaseMultipleFieldsDateAndTimeInputType::localeIdentifier() const
@@ -310,11 +334,6 @@ void BaseMultipleFieldsDateAndTimeInputType::readonlyAttributeChanged()
     m_spinButtonElement->releaseCapture();
     if (m_dateTimeEditElement)
         m_dateTimeEditElement->readOnlyStateChanged();
-}
-
-bool BaseMultipleFieldsDateAndTimeInputType::isTextField() const
-{
-    return false;
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::restoreFormControlState(const FormControlState& state)
@@ -358,10 +377,6 @@ void BaseMultipleFieldsDateAndTimeInputType::updateInnerTextValue()
     if (!m_dateTimeEditElement)
         return;
 
-    AtomicString direction = element()->locale().isRTL() ? AtomicString("rtl", AtomicString::ConstructFromLiteral) : AtomicString("ltr", AtomicString::ConstructFromLiteral);
-    if (Element* container = ElementTraversal::firstWithin(element()->userAgentShadowRoot()))
-        container->setAttribute(HTMLNames::dirAttr, direction);
-
     DateTimeEditElement::LayoutParameters layoutParameters(element()->locale(), createStepRange(AnyIsDefaultStep));
 
     DateComponents date;
@@ -370,6 +385,10 @@ void BaseMultipleFieldsDateAndTimeInputType::updateInnerTextValue()
         setMillisecondToDateComponents(layoutParameters.stepRange.minimum().toDouble(), &date);
 
     setupLayoutParameters(layoutParameters, date);
+
+    const AtomicString pattern = m_dateTimeEditElement->fastGetAttribute(HTMLNames::patternAttr);
+    if (!pattern.isEmpty())
+        layoutParameters.dateTimeFormat = pattern;
 
     if (hasValue)
         m_dateTimeEditElement->setValueAsDate(layoutParameters, date);

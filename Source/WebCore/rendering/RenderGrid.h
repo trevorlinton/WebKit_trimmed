@@ -30,29 +30,100 @@
 
 namespace WebCore {
 
+class GridTrack;
+
 class RenderGrid : public RenderBlock {
 public:
-    RenderGrid(Node*);
+    RenderGrid(Element*);
     virtual ~RenderGrid();
 
     virtual const char* renderName() const OVERRIDE;
 
     virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0) OVERRIDE;
-    virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual bool avoidsFloats() const OVERRIDE { return true; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
 
 private:
     virtual bool isRenderGrid() const OVERRIDE { return true; }
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
+    virtual void computePreferredLogicalWidths() OVERRIDE;
 
-    class GridTrack;
+    LayoutUnit computePreferredTrackWidth(const Length&, size_t) const;
+
+    struct GridCoordinate {
+        // HashMap requires a default constuctor.
+        GridCoordinate()
+            : columnIndex(0)
+            , rowIndex(0)
+        {
+        }
+
+        GridCoordinate(size_t row, size_t column)
+            : columnIndex(column)
+            , rowIndex(row)
+        {
+        }
+
+        size_t columnIndex;
+        size_t rowIndex;
+    };
+    class GridIterator;
     enum TrackSizingDirection { ForColumns, ForRows };
-    void computedUsedBreadthOfGridTracks(TrackSizingDirection, Vector<GridTrack>&);
-    void layoutGridItems();
+    void computedUsedBreadthOfGridTracks(TrackSizingDirection, Vector<GridTrack>& columnTracks, Vector<GridTrack>& rowTracks);
+    LayoutUnit computeUsedBreadthOfMinLength(TrackSizingDirection, const Length&) const;
+    LayoutUnit computeUsedBreadthOfMaxLength(TrackSizingDirection, const Length&) const;
+    LayoutUnit computeUsedBreadthOfSpecifiedLength(TrackSizingDirection, const Length&) const;
+    void resolveContentBasedTrackSizingFunctions(TrackSizingDirection, Vector<GridTrack>& columnTracks, Vector<GridTrack>& rowTracks, LayoutUnit& availableLogicalSpace);
 
+    void growGrid(TrackSizingDirection);
+    void insertItemIntoGrid(RenderBox*, size_t rowTrack, size_t columnTrack);
+    void placeItemsOnGrid();
+    void placeSpecifiedMajorAxisItemsOnGrid(Vector<RenderBox*>);
+    void placeAutoMajorAxisItemsOnGrid(Vector<RenderBox*>);
+    void placeAutoMajorAxisItemOnGrid(RenderBox*);
+    const GridPosition& autoPlacementMajorAxisPositionForChild(const RenderBox*) const;
+    const GridPosition& autoPlacementMinorAxisPositionForChild(const RenderBox*) const;
+    TrackSizingDirection autoPlacementMajorAxisDirection() const;
+    TrackSizingDirection autoPlacementMinorAxisDirection() const;
+
+    void layoutGridItems();
+    void clearGrid();
+
+    typedef LayoutUnit (RenderGrid::* SizingFunction)(RenderBox*, TrackSizingDirection, Vector<GridTrack>&);
+    typedef LayoutUnit (GridTrack::* AccumulatorGetter)() const;
+    typedef void (GridTrack::* AccumulatorGrowFunction)(LayoutUnit);
+    void resolveContentBasedTrackSizingFunctionsForItems(TrackSizingDirection, Vector<GridTrack>& columnTracks, Vector<GridTrack>& rowTracks, size_t, SizingFunction, AccumulatorGetter, AccumulatorGrowFunction);
+    void distributeSpaceToTracks(Vector<GridTrack*>&, Vector<GridTrack*>* tracksForGrowthAboveMaxBreadth, AccumulatorGetter, AccumulatorGrowFunction, LayoutUnit& availableLogicalSpace);
+
+    const GridTrackSize& gridTrackSize(TrackSizingDirection, size_t);
+    size_t maximumIndexInDirection(TrackSizingDirection) const;
+
+    LayoutUnit logicalContentHeightForChild(RenderBox*, Vector<GridTrack>&);
+    LayoutUnit minContentForChild(RenderBox*, TrackSizingDirection, Vector<GridTrack>& columnTracks);
+    LayoutUnit maxContentForChild(RenderBox*, TrackSizingDirection, Vector<GridTrack>& columnTracks);
     LayoutPoint findChildLogicalPosition(RenderBox*, const Vector<GridTrack>& columnTracks, const Vector<GridTrack>& rowTracks);
-    size_t resolveGridPosition(const GridPosition&) const;
+    GridCoordinate cachedGridCoordinate(const RenderBox*) const;
+    size_t resolveGridPositionFromStyle(const GridPosition&) const;
+
+#ifndef NDEBUG
+    bool tracksAreWiderThanMinTrackBreadth(TrackSizingDirection, const Vector<GridTrack>&);
+    bool gridWasPopulated() const { return !m_grid.isEmpty() && !m_grid[0].isEmpty(); }
+#endif
+
+    size_t gridColumnCount() const
+    {
+        ASSERT(gridWasPopulated());
+        return m_grid[0].size();
+    }
+    size_t gridRowCount() const
+    {
+        ASSERT(gridWasPopulated());
+        return m_grid.size();
+    }
+
+    Vector<Vector<Vector<RenderBox*, 1> > > m_grid;
+    HashMap<const RenderBox*, GridCoordinate> m_gridItemCoordinate;
 };
 
 } // namespace WebCore

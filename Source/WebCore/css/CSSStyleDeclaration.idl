@@ -20,6 +20,7 @@
 
 // Introduced in DOM Level 2:
 [
+    JSCustomHeader,
     JSCustomMarkFunction,
     JSGenerateIsReachable,
     JSCustomGetOwnPropertySlotAndDescriptor,
@@ -29,7 +30,8 @@
 #endif
     IndexedGetter,
     CustomEnumerateProperty,
-    V8DependentLifetime
+    V8DependentLifetime,
+    V8SkipVTableValidation
 ] interface CSSStyleDeclaration {
              [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString        cssText
                  setter raises(DOMException);

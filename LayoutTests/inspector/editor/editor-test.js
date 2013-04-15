@@ -1,19 +1,58 @@
 function initialize_EditorTests()
 {
 
-InspectorTest.createTestEditor = function(lineCount, clientHeight, chunkSize)
+InspectorTest.createTestEditor = function(clientHeight, chunkSize, textEditorDelegate)
 {
     WebInspector.debugDefaultTextEditor = true;
-    var textEditor = new WebInspector.DefaultTextEditor("", new WebInspector.TextEditorDelegate());
+    var textEditor = new WebInspector.DefaultTextEditor("", textEditorDelegate || new WebInspector.TextEditorDelegate());
     textEditor.overrideViewportForTest(0, clientHeight || 100, chunkSize || 10);
     textEditor.show(WebInspector.inspectorView.element);
+    return textEditor;
+};
+
+InspectorTest.fillEditorWithText = function(textEditor, lineCount)
+{
     var textModel = textEditor._textModel;
     var lines = [];
     for (var i = 0; i < lineCount; ++i)
         lines.push(i);
     textModel.setText(lines.join("\n"));
-    return textEditor;
-};
+}
+
+InspectorTest.textWithSelection = function(text, selection)
+{
+    if (!selection)
+        return text;
+
+    function lineWithCursor(line, column, cursorChar)
+    {
+        return line.substring(0, column) + cursorChar + line.substring(column);
+    }
+
+    var lines = text.split("\n");
+    selection = selection.normalize();
+    var endCursorChar = selection.isEmpty() ? "|" : "<";
+    lines[selection.endLine] = lineWithCursor(lines[selection.endLine], selection.endColumn, endCursorChar);
+    if (!selection.isEmpty()) {
+        lines[selection.startLine] = lineWithCursor(lines[selection.startLine], selection.startColumn, ">");
+    }
+    return lines.join("\n");
+}
+
+InspectorTest.insertTextLine = function(line)
+{
+    function enter()
+    {
+        eventSender.keyDown("\n");
+    }
+
+    function innerInsertTextLine()
+    {
+        textInputController.insertText(line);
+    }
+    setTimeout(innerInsertTextLine);
+    setTimeout(enter);
+}
 
 InspectorTest.dumpEditorChunks = function(textEditor)
 {
@@ -48,6 +87,14 @@ InspectorTest.dumpEditorDOM = function(textEditor)
             prefix += " ";
         InspectorTest.addResult(prefix + node.outerHTML);
     }
+};
+
+InspectorTest.dumpEditorHTML = function(textEditor, mainPanelOnly)
+{
+    var element = mainPanelOnly ? textEditor._mainPanel.element : textEditor.element;
+    var dumpedHTML = element.innerHTML.replace(/<div/g, "\n<div");
+    var dumpedHTML = dumpedHTML.replace(/height: [0-9]+/g, "height: <number>");
+    InspectorTest.addResult(dumpedHTML);
 };
 
 InspectorTest.getLineElement = function(textEditor, lineNumber)

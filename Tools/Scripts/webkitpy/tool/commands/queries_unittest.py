@@ -27,7 +27,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import unittest2 as unittest
 
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.common.net.bugzilla import Bugzilla
@@ -173,7 +173,7 @@ class PrintExpectationsTest(unittest.TestCase):
             command.execute(options, tests, tool)
         finally:
             stdout, _, _ = oc.restore_output()
-        self.assertEqual(stdout, expected_stdout)
+        self.assertMultiLineEqual(stdout, expected_stdout)
 
     def test_basic(self):
         self.run_test(['failures/expected/text.html', 'failures/expected/image.html'],
@@ -223,7 +223,8 @@ class PrintExpectationsTest(unittest.TestCase):
 
     def test_paths(self):
         self.run_test([],
-                      ('LayoutTests/platform/test/TestExpectations\n'
+                      ('LayoutTests/TestExpectations\n'
+                       'LayoutTests/platform/test/TestExpectations\n'
                        'LayoutTests/platform/test-win-xp/TestExpectations\n'),
                       paths=True)
 
@@ -263,7 +264,7 @@ class PrintBaselinesTest(unittest.TestCase):
         self.capture_output()
         command.execute(MockOptions(all=False, include_virtual_tests=False, csv=False, platform=None), ['passes/text.html'], self.tool)
         stdout, _, _ = self.restore_output()
-        self.assertEqual(stdout,
+        self.assertMultiLineEqual(stdout,
                           ('// For test-win-xp\n'
                            'passes/text-expected.png\n'
                            'passes/text-expected.txt\n'))
@@ -274,7 +275,7 @@ class PrintBaselinesTest(unittest.TestCase):
         self.capture_output()
         command.execute(MockOptions(all=False, include_virtual_tests=False, csv=False, platform='test-win-*'), ['passes/text.html'], self.tool)
         stdout, _, _ = self.restore_output()
-        self.assertEqual(stdout,
+        self.assertMultiLineEqual(stdout,
                           ('// For test-win-vista\n'
                            'passes/text-expected.png\n'
                            'passes/text-expected.txt\n'
@@ -293,6 +294,6 @@ class PrintBaselinesTest(unittest.TestCase):
         self.capture_output()
         command.execute(MockOptions(all=False, platform='*xp', csv=True, include_virtual_tests=False), ['passes/text.html'], self.tool)
         stdout, _, _ = self.restore_output()
-        self.assertEqual(stdout,
+        self.assertMultiLineEqual(stdout,
                           ('test-win-xp,passes/text.html,None,png,passes/text-expected.png,None\n'
                            'test-win-xp,passes/text.html,None,txt,passes/text-expected.txt,None\n'))

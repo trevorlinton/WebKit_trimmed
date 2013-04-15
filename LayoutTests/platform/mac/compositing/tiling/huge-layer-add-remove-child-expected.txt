@@ -6,11 +6,13 @@ First (no children):
   (children 1
     (GraphicsLayer
       (bounds 785.00 5129.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 86.00)
           (bounds 502.00 5002.00)
           (usingTiledLayer 1)
+          (contentsOpaque 1)
           (drawsContent 1)
         )
       )
@@ -25,16 +27,19 @@ Second (child added):
   (children 1
     (GraphicsLayer
       (bounds 785.00 5129.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 86.00)
           (bounds 502.00 5002.00)
           (usingTiledLayer 1)
+          (contentsOpaque 1)
           (drawsContent 1)
           (children 1
             (GraphicsLayer
               (position 51.00 401.00)
               (bounds 200.00 200.00)
+              (contentsOpaque 1)
             )
           )
         )
@@ -50,11 +55,13 @@ Third (child removed):
   (children 1
     (GraphicsLayer
       (bounds 785.00 5129.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 8.00 86.00)
           (bounds 502.00 5002.00)
           (usingTiledLayer 1)
+          (contentsOpaque 1)
           (drawsContent 1)
         )
       )

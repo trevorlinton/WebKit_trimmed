@@ -112,8 +112,9 @@ void XMLDocumentParser::insert(const SegmentedString&)
     ASSERT_NOT_REACHED();
 }
 
-void XMLDocumentParser::append(const SegmentedString& source)
+void XMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
 {
+    SegmentedString source(inputSource);
     if (m_sawXSLTransform || !m_sawFirstElement)
         m_originalSourceForTransform.append(source);
 
@@ -146,7 +147,7 @@ void XMLDocumentParser::enterText()
     ASSERT(m_bufferedText.size() == 0);
 #endif
     ASSERT(!m_leafTextNode);
-    m_leafTextNode = Text::create(document(), "");
+    m_leafTextNode = Text::create(m_currentNode->document(), "");
     m_currentNode->parserAppendChild(m_leafTextNode.get());
 }
 
@@ -167,8 +168,7 @@ void XMLDocumentParser::exitText()
         return;
 
 #if !USE(QXMLSTREAM)
-    ExceptionCode ec = 0;
-    m_leafTextNode->appendData(toString(m_bufferedText.data(), m_bufferedText.size()), ec);
+    m_leafTextNode->appendData(toString(m_bufferedText.data(), m_bufferedText.size()), IGNORE_EXCEPTION);
     Vector<xmlChar> empty;
     m_bufferedText.swap(empty);
 #endif
@@ -227,11 +227,6 @@ void XMLDocumentParser::finish()
         m_finishCalled = true;
     else
         end();
-}
-
-bool XMLDocumentParser::finishWasCalled()
-{
-    return m_finishCalled;
 }
 
 void XMLDocumentParser::insertErrorMessageBlock()

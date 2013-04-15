@@ -28,6 +28,7 @@
 #define HistoryItem_h
 
 #include "IntPoint.h"
+#include "SerializedScriptValue.h"
 #include <wtf/HashMap.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -58,7 +59,6 @@ class HistoryItem;
 class Image;
 class KURL;
 class ResourceRequest;
-class SerializedScriptValue;
 
 typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
 
@@ -145,7 +145,7 @@ public:
     void setIsTargetItem(bool);
     
     void setStateObject(PassRefPtr<SerializedScriptValue> object);
-    SerializedScriptValue* stateObject() const { return m_stateObject.get(); }
+    PassRefPtr<SerializedScriptValue> stateObject() const { return m_stateObject; }
 
     void setItemSequenceNumber(long long number) { m_itemSequenceNumber = number; }
     long long itemSequenceNumber() const { return m_itemSequenceNumber; }
@@ -201,7 +201,7 @@ public:
     QVariant userData() const { return m_userData; }
     void setUserData(const QVariant& userData) { m_userData = userData; }
 
-    bool restoreState(QDataStream& buffer, int version);
+    static PassRefPtr<HistoryItem> restoreState(QDataStream& buffer, int version);
     QDataStream& saveState(QDataStream& out, int version) const;
 #endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,17 +34,20 @@
 #include "ExecutableAllocator.h"
 #include "Heap.h"
 #include "Intrinsic.h"
-#include "JITStubs.h"
 #include "JITThunks.h"
+#include "JITThunks.h"
+#include "JSCJSValue.h"
 #include "JSLock.h"
-#include "JSValue.h"
 #include "LLIntData.h"
+#include "MacroAssemblerCodeRef.h"
 #include "NumericStrings.h"
 #include "ProfilerDatabase.h"
 #include "PrivateName.h"
+#include "PrototypeMap.h"
 #include "SmallStrings.h"
 #include "Strong.h"
 #include "Terminator.h"
+#include "ThunkGenerators.h"
 #include "TimeoutChecker.h"
 #include "TypedArrayDescriptor.h"
 #include "WeakRandom.h"
@@ -67,6 +70,7 @@ namespace JSC {
     class CodeBlock;
     class CodeCache;
     class CommonIdentifiers;
+    class ExecState;
     class HandleStack;
     class IdentifierTable;
     class Interpreter;
@@ -78,6 +82,8 @@ namespace JSC {
     class NativeExecutable;
     class ParserArena;
     class RegExpCache;
+    class SourceProvider;
+    class SourceProviderCache;
     class Stringifier;
     class Structure;
 #if ENABLE(REGEXP_TRACING)
@@ -87,6 +93,12 @@ namespace JSC {
     class UnlinkedEvalCodeBlock;
     class UnlinkedFunctionExecutable;
     class UnlinkedProgramCodeBlock;
+
+#if ENABLE(DFG_JIT)
+    namespace DFG {
+    class LongLivedState;
+    }
+#endif // ENABLE(DFG_JIT)
 
     struct HashTable;
     struct Instruction;
@@ -131,14 +143,18 @@ namespace JSC {
             return result;
         }
 
-        static size_t allocationSize(size_t bufferSize) { return sizeof(size_t) + bufferSize; }
+        static size_t allocationSize(size_t bufferSize) { return sizeof(ScratchBuffer) + bufferSize; }
         void setActiveLength(size_t activeLength) { m_activeLength = activeLength; }
         size_t activeLength() const { return m_activeLength; };
         size_t* activeLengthPtr() { return &m_activeLength; };
         void* dataBuffer() { return m_buffer; }
 
         size_t m_activeLength;
+#if CPU(MIPS) && (defined WTF_MIPS_ARCH_REV && WTF_MIPS_ARCH_REV == 2)
+        void* m_buffer[0] __attribute__((aligned(8)));
+#else
         void* m_buffer[0];
+#endif
     };
 #if COMPILER(MSVC)
 #pragma warning(pop)
@@ -186,10 +202,14 @@ namespace JSC {
         // The heap should be just after executableAllocator and before other members to ensure that it's
         // destructed after all the objects that reference it.
         Heap heap;
+        
+#if ENABLE(DFG_JIT)
+        OwnPtr<DFG::LongLivedState> m_dfgState;
+#endif // ENABLE(DFG_JIT)
 
         GlobalDataType globalDataType;
         ClientData* clientData;
-        CallFrame* topCallFrame;
+        ExecState* topCallFrame;
 
         const HashTable* arrayConstructorTable;
         const HashTable* arrayPrototypeTable;
@@ -212,6 +232,7 @@ namespace JSC {
         const HashTable* stringConstructorTable;
         
         Strong<Structure> structureStructure;
+        Strong<Structure> structureRareDataStructure;
         Strong<Structure> debuggerActivationStructure;
         Strong<Structure> interruptedExecutionErrorStructure;
         Strong<Structure> terminatedExecutionErrorStructure;
@@ -284,9 +305,14 @@ namespace JSC {
         bool canUseRegExpJIT() { return false; } // interpreter only
 #endif
 
-        PrivateName m_inheritorIDKey;
+        SourceProviderCache* addSourceProviderCache(SourceProvider*);
+        void clearSourceProviderCaches();
+
+        PrototypeMap prototypeMap;
 
         OwnPtr<ParserArena> parserArena;
+        typedef HashMap<RefPtr<SourceProvider>, RefPtr<SourceProviderCache> > SourceProviderCacheMap;
+        SourceProviderCacheMap sourceProviderCacheMap;
         OwnPtr<Keywords> keywords;
         Interpreter* interpreter;
 #if ENABLE(JIT)
@@ -309,7 +335,7 @@ namespace JSC {
 
         ReturnAddressPtr exceptionLocation;
         JSValue hostCallReturnValue;
-        CallFrame* callFrameForThrow;
+        ExecState* callFrameForThrow;
         void* targetMachinePCForThrow;
         Instruction* targetInterpreterPCForThrow;
 #if ENABLE(DFG_JIT)
@@ -452,8 +478,6 @@ namespace JSC {
         CodeCache* codeCache() { return m_codeCache.get(); }
 
         JS_EXPORT_PRIVATE void discardAllCode();
-
-        void *m_apiData;
 
     private:
         friend class LLIntOffsetsExtractor;

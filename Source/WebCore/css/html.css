@@ -81,7 +81,7 @@ layer {
     display: block
 }
 
-article, aside, footer, header, hgroup, nav, section {
+article, aside, footer, header, hgroup, main, nav, section {
     display: block
 }
 
@@ -393,7 +393,8 @@ fieldset {
     -webkit-padding-start: 0.75em;
     -webkit-padding-end: 0.75em;
     -webkit-padding-after: 0.625em;
-    border: 2px groove ThreeDFace
+    border: 2px groove ThreeDFace;
+    min-width: -webkit-min-content;
 }
 
 button {
@@ -486,54 +487,60 @@ datalist {
 #if defined(ENABLE_INPUT_MULTIPLE_FIELDS_UI) && ENABLE_INPUT_MULTIPLE_FIELDS_UI
 #if defined(ENABLE_INPUT_TYPE_DATE) && ENABLE_INPUT_TYPE_DATE
 input[type="date"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
 #endif
 #if defined(ENABLE_INPUT_TYPE_DATETIME) && ENABLE_INPUT_TYPE_DATETIME
 input[type="datetime"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
 #endif
 #if defined(ENABLE_INPUT_TYPE_DATETIMELOCAL) && ENABLE_INPUT_TYPE_DATETIMELOCAL
 input[type="datetime-local"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
 #endif
 #if defined(ENABLE_INPUT_TYPE_MONTH) && ENABLE_INPUT_TYPE_MONTH
 input[type="month"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
 #endif
 #if defined(ENABLE_INPUT_TYPE_TIME) && ENABLE_INPUT_TYPE_TIME
 input[type="time"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
 #endif
 #if defined(ENABLE_INPUT_TYPE_WEEK) && ENABLE_INPUT_TYPE_WEEK
 input[type="week"] {
-    -webkit-align-items: stretch;
+    -webkit-align-items: center;
     display: -webkit-inline-flex;
     font-family: monospace;
+    overflow: hidden;
     padding: 0;
     -webkit-padding-start: 1px;
 }
@@ -543,6 +550,14 @@ input::-webkit-datetime-edit {
     -webkit-flex: 1;
     -webkit-user-modify: read-only !important;
     display: inline-block;
+    min-width: 0;
+    overflow: hidden;
+}
+
+input::-webkit-datetime-edit-fields-wrapper {
+    -webkit-user-modify: read-only !important;
+    display: inline-block;
+    padding: 1px 0;
     white-space: pre;
 }
 
@@ -579,12 +594,15 @@ input::-webkit-datetime-edit-year-field:focus {
     outline: none;
 }
 
-input::-webkit-datetime-edit-year-field[readonly],
-input::-webkit-datetime-edit-ampm-field[readonly],
-input::-webkit-datetime-edit-hour-field[readonly],
-input::-webkit-datetime-edit-millisecond-field[readonly],
-input::-webkit-datetime-edit-minute-field[readonly],
-input::-webkit-datetime-edit-second-field[readonly] {
+input::-webkit-datetime-edit-year-field[disabled],
+input::-webkit-datetime-edit-month-field[disabled],
+input::-webkit-datetime-edit-week-field[disabled],
+input::-webkit-datetime-edit-day-field[disabled],
+input::-webkit-datetime-edit-ampm-field[disabled],
+input::-webkit-datetime-edit-hour-field[disabled],
+input::-webkit-datetime-edit-millisecond-field[disabled],
+input::-webkit-datetime-edit-minute-field[disabled],
+input::-webkit-datetime-edit-second-field[disabled] {
     color: GrayText;
 }
 
@@ -594,12 +612,6 @@ input::-webkit-datetime-edit-text {
     -webkit-user-modify: read-only !important;
     display: inline;
     font: inherit !important;
-}
-
-input::-webkit-date-and-time-container {
-    -webkit-align-items: center;
-    -webkit-flex: 1;
-    display: -webkit-inline-flex;
 }
 
 input[type="date"]::-webkit-inner-spin-button,
@@ -781,7 +793,7 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 input[type="button"], input[type="submit"], input[type="reset"], input[type="file"]::-webkit-file-upload-button, button {
-    -webkit-box-align: center;
+    -webkit-align-items: flex-start;
     text-align: center;
     cursor: default;
     color: ButtonText;
@@ -902,6 +914,7 @@ input[type="color"][list]::-webkit-color-swatch {
 
 #if defined(ENABLE_CALENDAR_PICKER) && ENABLE_CALENDAR_PICKER
 input::-webkit-calendar-picker-indicator {
+    display: inline-block;
     width: 0.66em;
     height: 0.66em;
     padding: 0.17em 0.34em;
@@ -1113,10 +1126,6 @@ progress::-webkit-progress-value {
 #endif
 
 /* inline elements */
-
-img {
-    display: inline-block;
-}
 
 u, ins {
     text-decoration: underline

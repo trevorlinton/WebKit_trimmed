@@ -26,8 +26,7 @@
 #ifndef RenderSnapshottedPlugIn_h
 #define RenderSnapshottedPlugIn_h
 
-#include "RenderEmbeddedObject.h"
-
+#include "RenderBlock.h"
 #include "RenderImageResource.h"
 #include "Timer.h"
 
@@ -35,21 +34,17 @@ namespace WebCore {
 
 class HTMLPlugInImageElement;
 
-class RenderSnapshottedPlugIn : public RenderEmbeddedObject {
+class RenderSnapshottedPlugIn : public RenderBlock {
 public:
-    RenderSnapshottedPlugIn(HTMLPlugInImageElement*);
+    explicit RenderSnapshottedPlugIn(HTMLPlugInImageElement*);
     virtual ~RenderSnapshottedPlugIn();
-
-    enum LabelSize {
-        LabelSizeSmall,
-        LabelSizeLarge,
-        NoLabel,
-    };
 
     void updateSnapshot(PassRefPtr<Image>);
 
     void handleEvent(Event*);
-    void hoverDelayTimerFired(DeferrableOneShotTimer<RenderSnapshottedPlugIn>*);
+    void showLabelDelayTimerFired(Timer<RenderSnapshottedPlugIn>*);
+
+    void setShouldShowLabelAutomatically(bool = true);
 
 private:
     HTMLPlugInImageElement* plugInImageElement() const;
@@ -58,23 +53,33 @@ private:
     virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const OVERRIDE;
     virtual bool isSnapshottedPlugIn() const OVERRIDE { return true; }
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
-    void paintReplacedSnapshot(PaintInfo&, const LayoutPoint&);
-    void paintLabel(PaintInfo&, const LayoutPoint&);
+    void paintSnapshot(PaintInfo&, const LayoutPoint&);
+    void paintSnapshotWithLabel(PaintInfo&, const LayoutPoint&);
+    void paintSnapshotImage(Image*, PaintInfo&, const LayoutPoint&);
     void repaintLabel();
 
-    LayoutRect tryToFitStartLabel(LabelSize, const LayoutRect& contentBox) const;
-    Image* startLabelImage(LabelSize) const;
+    virtual void layout() OVERRIDE;
+
+    enum ShowReason {
+        UserMousedOver,
+        ShouldShowAutomatically
+    };
+
+    void resetDelayTimer(ShowReason);
 
     OwnPtr<RenderImageResource> m_snapshotResource;
     bool m_shouldShowLabel;
-    DeferrableOneShotTimer<RenderSnapshottedPlugIn> m_hoverDelayTimer;
+    bool m_shouldShowLabelAutomatically;
+    bool m_showedLabelOnce;
+    ShowReason m_showReason;
+    Timer<RenderSnapshottedPlugIn> m_showLabelDelayTimer;
+    OwnPtr<RenderImageResource> m_snapshotResourceForLabel;
 };
 
 inline RenderSnapshottedPlugIn* toRenderSnapshottedPlugIn(RenderObject* object)
 {
-    ASSERT(!object || object->isSnapshottedPlugIn());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSnapshottedPlugIn());
     return static_cast<RenderSnapshottedPlugIn*>(object);
 }
 

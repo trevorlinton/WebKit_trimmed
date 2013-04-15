@@ -35,6 +35,7 @@
 #include "JSArray.h"
 #include "JSFunction.h"
 #include "Interpreter.h"
+#include "Operations.h"
 #include "ResultType.h"
 #include "SamplingTool.h"
 
@@ -640,6 +641,8 @@ void JIT::emit_op_post_inc(Instruction* currentInstruction)
     emitFastArithIntToImmNoCheck(regT1, regT1);
     emitPutVirtualRegister(srcDst, regT1);
     emitPutVirtualRegister(result);
+    if (canBeOptimizedOrInlined())
+        killLastResultRegister();
 }
 
 void JIT::emitSlow_op_post_inc(Instruction* currentInstruction, Vector<SlowCaseEntry>::iterator& iter)
@@ -667,6 +670,8 @@ void JIT::emit_op_post_dec(Instruction* currentInstruction)
     emitFastArithIntToImmNoCheck(regT1, regT1);
     emitPutVirtualRegister(srcDst, regT1);
     emitPutVirtualRegister(result);
+    if (canBeOptimizedOrInlined())
+        killLastResultRegister();
 }
 
 void JIT::emitSlow_op_post_dec(Instruction* currentInstruction, Vector<SlowCaseEntry>::iterator& iter)
@@ -794,7 +799,7 @@ void JIT::emit_op_mod(Instruction* currentInstruction)
 
 void JIT::emitSlow_op_mod(Instruction* currentInstruction, Vector<SlowCaseEntry>::iterator& iter)
 {
-    ASSERT_NOT_REACHED();
+    RELEASE_ASSERT_NOT_REACHED();
 }
 
 #endif // CPU(X86) || CPU(X86_64)

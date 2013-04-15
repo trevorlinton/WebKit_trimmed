@@ -21,7 +21,8 @@
 [
     JSGenerateToNativeObject,
     JSInlineGetOwnPropertySlot,
-    V8CustomToJSObject
+    V8CustomToJSObject,
+    V8SkipVTableValidation
 ] interface Element : Node {
 
     // DOM Level 1 Core
@@ -39,6 +40,12 @@
     Attr removeAttributeNode(in [Optional=DefaultIsUndefined] Attr oldAttr)
         raises(DOMException);
     NodeList getElementsByTagName(in [Optional=DefaultIsUndefined] DOMString name);
+
+#if !defined(LANGUAGE_OBJECTIVE_C)
+    // For ObjC this is defined on Node for legacy support.
+    readonly attribute NamedNodeMap     attributes;
+    boolean            hasAttributes();
+#endif
 
     // DOM Level 2 Core
 
@@ -116,7 +123,7 @@
     readonly attribute unsigned long childElementCount;
 
     // ShadowAware API
-#if defined(ENABLE_SHADOW_DOM) && ENABLE_SHADOW_DOM
+#if defined(ENABLE_SHADOW_DOM) && ENABLE_SHADOW_DOM && defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
     [Reflect=pseudo, V8EnabledAtRuntime=shadowDOM, ImplementedAs=pseudo] attribute DOMString webkitPseudo;
     [V8EnabledAtRuntime=shadowDOM, ImplementedAs=createShadowRoot] ShadowRoot webkitCreateShadowRoot() raises(DOMException);
     [V8EnabledAtRuntime=shadowDOM, ImplementedAs=shadowRoot] readonly attribute ShadowRoot webkitShadowRoot;

@@ -37,7 +37,7 @@
 
 namespace WebCore {
 
-class AbstractDatabase;
+class DatabaseBackendBase;
 class ScriptExecutionContext;
 
 // The implementation of this class is in the WebKit API (Chromium source tree)
@@ -45,16 +45,16 @@ class ScriptExecutionContext;
 class DatabaseObserver {
 public:
     static bool canEstablishDatabase(ScriptExecutionContext*, const String&, const String&, unsigned long);
-    static void databaseOpened(AbstractDatabase*);
-    static void databaseModified(AbstractDatabase*);
-    static void databaseClosed(AbstractDatabase*);
+    static void databaseOpened(DatabaseBackendBase*);
+    static void databaseModified(DatabaseBackendBase*);
+    static void databaseClosed(DatabaseBackendBase*);
 
-    static void reportOpenDatabaseResult(AbstractDatabase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
-    static void reportChangeVersionResult(AbstractDatabase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
-    static void reportStartTransactionResult(AbstractDatabase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
-    static void reportCommitTransactionResult(AbstractDatabase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
-    static void reportExecuteStatementResult(AbstractDatabase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
-    static void reportVacuumDatabaseResult(AbstractDatabase*, int sqliteErrorCode);
+    static void reportOpenDatabaseResult(DatabaseBackendBase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
+    static void reportChangeVersionResult(DatabaseBackendBase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
+    static void reportStartTransactionResult(DatabaseBackendBase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
+    static void reportCommitTransactionResult(DatabaseBackendBase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
+    static void reportExecuteStatementResult(DatabaseBackendBase*, int callsite, int webSqlErrorCode, int sqliteErrorCode);
+    static void reportVacuumDatabaseResult(DatabaseBackendBase*, int sqliteErrorCode);
 };
 
 }

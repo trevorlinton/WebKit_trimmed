@@ -33,6 +33,11 @@ deviceHeight type=int, initial=0
 # since the memory used won't be released until the Page is destroyed.
 sessionStorageQuota type=unsigned, initial=StorageMap::noQuota
 
+minimumFontSize type=int, initial=0, setNeedsStyleRecalcInAllFrames=1
+minimumLogicalFontSize type=int, initial=0, setNeedsStyleRecalcInAllFrames=1
+defaultFontSize type=int, initial=0, setNeedsStyleRecalcInAllFrames=1
+defaultFixedFontSize type=int, initial=0, setNeedsStyleRecalcInAllFrames=1
+
 editingBehaviorType type=EditingBehaviorType, initial=editingBehaviorTypeForPlatform()
 maximumHTMLParserDOMTreeDepth type=unsigned, initial=defaultMaximumHTMLParserDOMTreeDepth
 
@@ -49,6 +54,13 @@ supportsMultipleWindows initial=true
 javaScriptCanAccessClipboard initial=false
 shouldPrintBackgrounds initial=false
 usesDashboardBackwardCompatibilityMode initial=false, conditional=DASHBOARD_SUPPORT
+
+screenFontSubstitutionEnabled initial=true, setNeedsStyleRecalcInAllFrames=1
+textAreasAreResizable initial=false, setNeedsStyleRecalcInAllFrames=1
+authorAndUserStylesEnabled initial=true, setNeedsStyleRecalcInAllFrames=1
+acceleratedCompositingEnabled initial=true, setNeedsStyleRecalcInAllFrames=1
+showDebugBorders initial=false, setNeedsStyleRecalcInAllFrames=1
+showRepaintCounter initial=false, setNeedsStyleRecalcInAllFrames=1
 
 # This is a quirk we are pro-actively applying to old applications. It changes keyboard event dispatching,
 # making keyIdentifier available on keypress events, making charCode available on keydown/keyup events,
@@ -82,6 +94,7 @@ cssGridLayoutEnabled initial=false
 downloadableBinaryFontsEnabled initial=true
 
 xssAuditorEnabled initial=false
+unsafePluginPastingEnabled initial=true
 acceleratedCompositingFor3DTransformsEnabled initial=true
 acceleratedCompositingForVideoEnabled initial=true
 acceleratedCompositingForPluginsEnabled initial=true
@@ -92,14 +105,16 @@ acceleratedCompositingForOverflowScrollEnabled initial=false
 
 # Works only in conjunction with forceCompositingMode.
 acceleratedCompositingForScrollableFramesEnabled initial=false
+compositedScrollingForFramesEnabled initial=false
 
 experimentalNotificationsEnabled initial=false
 webGLEnabled initial=false
-webGLErrorsToConsoleEnabled initial=false
+webGLErrorsToConsoleEnabled initial=true
 openGLMultisamplingEnabled initial=true
 privilegedWebGLExtensionsEnabled initial=false
 accelerated2dCanvasEnabled initial=false
 deferred2dCanvasEnabled initial=false
+antialiased2dCanvasEnabled initial=true
 loadDeferringEnabled initial=true
 webAudioEnabled initial=false
 paginateDuringLayoutEnabled initial=false
@@ -150,6 +165,12 @@ needsDidFinishLoadOrderQuirk initial=false
 fixedPositionCreatesStackingContext initial=false
 syncXHRInDocumentsEnabled initial=true
 cookieEnabled initial=true
+mediaEnabled initial=true
+applicationChromeMode initial=false
+DOMPasteAllowed initial=false
+
+threadedHTMLParser initial=false, conditional=THREADED_HTML_PARSER
+useThreadedHTMLParserForDataURLs initial=false, conditional=THREADED_HTML_PARSER
 
 # When enabled, window.blur() does not change focus, and
 # window.focus() only changes focus when invoked from the context that
@@ -157,6 +178,7 @@ cookieEnabled initial=true
 windowFocusRestricted initial=true
 
 diagnosticLoggingEnabled initial=false
+applyDeviceScaleFactorInCompositor initial=true
 applyPageScaleFactorInCompositor initial=false
 plugInSnapshottingEnabled initial=false
 frameFlatteningEnabled initial=false
@@ -168,3 +190,9 @@ spatialNavigationEnabled initial=false
 # This setting adds a means to enable/disable touch initiated drag & drop. If
 # enabled, the user can initiate drag using long press.
 touchDragDropEnabled initial=false
+
+unifiedTextCheckerEnabled initial=defaultUnifiedTextCheckerEnabled
+
+logsPageMessagesToSystemConsoleEnabled initial=false
+
+smartInsertDeleteEnabled initial=true

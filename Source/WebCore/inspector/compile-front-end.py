@@ -76,21 +76,26 @@ modules = [
             "DebuggerModel.js",
             "DebuggerScriptMapping.js",
             "FileManager.js",
+            "FileMapping.js",
+            "FileSystemMapping.js",
             "FileSystemModel.js",
+            "FileSystemProjectDelegate.js",
             "FileUtils.js",
             "HAREntry.js",
             "IndexedDBModel.js",
             "InspectorBackend.js",
+            "IsolatedFileSystemManager.js",
+            "IsolatedFileSystem.js",
             "Linkifier.js",
             "NetworkLog.js",
             "NetworkUISourceCodeProvider.js",
-            "NetworkWorkspaceProvider.js",
             "PresentationConsoleMessageHelper.js",
             "RuntimeModel.js",
             "SASSSourceMapping.js",
             "Script.js",
             "ScriptFormatter.js",
             "ScriptSnippetModel.js",
+            "SimpleWorkspaceProvider.js",
             "SnippetStorage.js",
             "SourceMapping.js",
             "StylesSourceMapping.js",
@@ -122,6 +127,7 @@ modules = [
             "DataGrid.js",
             "DefaultTextEditor.js",
             "Dialog.js",
+            "DockController.js",
             "Drawer.js",
             "EmptyView.js",
             "GoToLineDialog.js",
@@ -147,15 +153,18 @@ modules = [
             "SplitView.js",
             "SidebarView.js",
             "StatusBarButton.js",
+            "SuggestBox.js",
             "TabbedPane.js",
             "TextEditor.js",
             "TextEditorHighlighter.js",
             "TextEditorModel.js",
             "TextPrompt.js",
+            "TextUtils.js",
             "TimelineGrid.js",
             "Toolbar.js",
             "UIUtils.js",
             "View.js",
+            "ViewportControl.js",
             "treeoutline.js",
         ]
     },
@@ -270,7 +279,9 @@ modules = [
         "name": "timeline",
         "dependencies": ["components"],
         "sources": [
+            "DOMCountersGraph.js",
             "MemoryStatistics.js",
+            "NativeMemoryGraph.js",
             "TimelineModel.js",
             "TimelineOverviewPane.js",
             "TimelinePanel.js",
@@ -284,6 +295,7 @@ modules = [
         "dependencies": ["components"],
         "sources": [
             "AuditCategories.js",
+            "AuditController.js",
             "AuditFormatters.js",
             "AuditLauncherView.js",
             "AuditResultView.js",
@@ -320,11 +332,12 @@ modules = [
     },
     {
         "name": "profiler",
-        "dependencies": ["components"],
+        "dependencies": ["components", "workers"],
         "sources": [
             "BottomUpProfileDataGridTree.js",
             "CPUProfileView.js",
             "CSSSelectorProfileView.js",
+            "FlameChart.js",
             "HeapSnapshot.js",
             "HeapSnapshotDataGrids.js",
             "HeapSnapshotGridNodes.js",
@@ -334,10 +347,11 @@ modules = [
             "HeapSnapshotWorker.js",
             "HeapSnapshotWorkerDispatcher.js",
             "JSHeapSnapshot.js",
-            "NativeHeapGraph.js",
+            "NativeHeapSnapshot.js",
             "NativeMemorySnapshotView.js",
             "ProfileDataGridTree.js",
             "ProfilesPanel.js",
+            "ProfilesPanelDescriptor.js",
             "ProfileLauncherView.js",
             "TopDownProfileDataGridTree.js",
             "CanvasProfileView.js",
@@ -345,19 +359,12 @@ modules = [
     },
     {
         "name": "host_stub",
-        "dependencies": ["ui"],
+        "dependencies": ["components", "profiler", "timeline"],
         "sources": [
             "InspectorFrontendAPI.js",
             "InspectorFrontendHostStub.js",
         ]
-    },
-    {
-        "name": "inspector",
-        "dependencies": ["components"],
-        "sources": [
-            "DockController.js",
-        ]
-    },
+    }
 ]
 
 modules_by_name = {}
@@ -417,6 +424,7 @@ if not process_recursively:
     os.system("cat  " + inspector_path + "/" + "InjectedScriptSource.js" + " >> " + inspector_path + "/" + "InjectedScriptSourceTmp.js")
     command = compiler_command
     command += "    --externs " + inspector_path + "/" + "InjectedScriptExterns.js" + " \\\n"
+    command += "    --externs " + protocol_externs_path + " \\\n"
     command += "    --module " + jsmodule_name_prefix + "injected_script" + ":" + "1" + " \\\n"
     command += "        --js " + inspector_path + "/" + "InjectedScriptSourceTmp.js" + " \\\n"
     command += "\n"
@@ -428,6 +436,7 @@ if not process_recursively:
     os.system("cat  " + inspector_path + "/" + "InjectedScriptCanvasModuleSource.js" + " >> " + inspector_path + "/" + "InjectedScriptCanvasModuleSourceTmp.js")
     command = compiler_command
     command += "    --externs " + inspector_path + "/" + "InjectedScriptExterns.js" + " \\\n"
+    command += "    --externs " + protocol_externs_path + " \\\n"
     command += "    --module " + jsmodule_name_prefix + "injected_script" + ":" + "1" + " \\\n"
     command += "        --js " + inspector_path + "/" + "InjectedScriptCanvasModuleSourceTmp.js" + " \\\n"
     command += "\n"

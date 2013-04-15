@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import unittest2 as unittest
 
 from webkitpy.common.net.bugzilla import Attachment
 from webkitpy.common.system.outputcapture import OutputCapture
@@ -37,7 +37,7 @@ from webkitpy.tool.mocktool import MockTool
 
 
 class MockQueueEngine(object):
-    def __init__(self, name, queue, wakeup_event):
+    def __init__(self, name, queue, wakeup_event, seconds_to_sleep):
         pass
 
     def run(self):

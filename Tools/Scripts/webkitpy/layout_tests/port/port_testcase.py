@@ -34,7 +34,7 @@ import os
 import socket
 import sys
 import time
-import unittest
+import unittest2 as unittest
 
 from webkitpy.common.system.executive_mock import MockExecutive
 from webkitpy.common.system.filesystem_mock import MockFileSystem
@@ -424,7 +424,8 @@ class PortTestCase(unittest.TestCase):
         for path in port.expectations_files():
             port._filesystem.write_text_file(path, '')
         ordered_dict = port.expectations_dict()
-        self.assertEqual(port.path_to_test_expectations_file(), ordered_dict.keys()[0])
+        self.assertEqual(port.path_to_generic_test_expectations_file(), ordered_dict.keys()[0])
+        self.assertEqual(port.path_to_test_expectations_file(), ordered_dict.keys()[1])
 
         options = MockOptions(additional_expectations=['/tmp/foo', '/tmp/bar'])
         port = self.make_port(options=options)
@@ -433,7 +434,7 @@ class PortTestCase(unittest.TestCase):
         port._filesystem.write_text_file('/tmp/foo', 'foo')
         port._filesystem.write_text_file('/tmp/bar', 'bar')
         ordered_dict = port.expectations_dict()
-        self.assertEqual(ordered_dict.keys()[-2:], options.additional_expectations)  # pylint: disable-msg=E1101
+        self.assertEqual(ordered_dict.keys()[-2:], options.additional_expectations)  # pylint: disable=E1101
         self.assertEqual(ordered_dict.values()[-2:], ['foo', 'bar'])
 
     def test_path_to_test_expectations_file(self):
@@ -458,6 +459,7 @@ class PortTestCase(unittest.TestCase):
             "fast/canvas/webgl",  # Requires WebGLShader
             "compositing/webgl",  # Requires WebGLShader
             "http/tests/canvas/webgl",  # Requires WebGLShader
+            "webgl",  # Requires WebGLShader
             "mhtml",  # Requires MHTMLArchive
             "fast/css/variables",  # Requires CSS Variables
             "inspector/styles/variables",  # Requires CSS Variables
@@ -473,7 +475,7 @@ class PortTestCase(unittest.TestCase):
 000000000124f670 s __ZZN7WebCore13GraphicsLayer13addChildBelowEPS0_S1_E19__PRETTY_FUNCTION__
 """
         # Note 'compositing' is not in the list of skipped directories (hence the parsing of GraphicsLayer worked):
-        expected_directories = set(['mathml', 'transforms/3d', 'compositing/webgl', 'fast/canvas/webgl', 'animations/3d', 'mhtml', 'http/tests/canvas/webgl', 'fast/css/variables', 'inspector/styles/variables'])
+        expected_directories = set(['mathml', 'transforms/3d', 'compositing/webgl', 'fast/canvas/webgl', 'animations/3d', 'webgl', 'mhtml', 'http/tests/canvas/webgl', 'fast/css/variables', 'inspector/styles/variables'])
         result_directories = set(TestWebKitPort(symbols_string=symbols_string)._skipped_tests_for_unsupported_features(test_list=['mathml/foo.html']))
         self.assertEqual(result_directories, expected_directories)
 
@@ -506,17 +508,17 @@ class PortTestCase(unittest.TestCase):
         def platform_dirs(port):
             return [port.host.filesystem.basename(port.host.filesystem.dirname(f)) for f in port.expectations_files()]
 
-        self.assertEqual(platform_dirs(port), ['testwebkitport'])
+        self.assertEqual(platform_dirs(port), ['LayoutTests', 'testwebkitport'])
 
         port = TestWebKitPort(port_name="testwebkitport-version")
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version'])
+        self.assertEqual(platform_dirs(port), ['LayoutTests', 'testwebkitport', 'testwebkitport-version'])
 
         port = TestWebKitPort(port_name="testwebkitport-version-wk2")
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version', 'wk2', 'testwebkitport-wk2'])
+        self.assertEqual(platform_dirs(port), ['LayoutTests', 'testwebkitport', 'testwebkitport-version', 'wk2', 'testwebkitport-wk2'])
 
         port = TestWebKitPort(port_name="testwebkitport-version",
                               options=MockOptions(additional_platform_directory=["internal-testwebkitport"]))
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version', 'internal-testwebkitport'])
+        self.assertEqual(platform_dirs(port), ['LayoutTests', 'testwebkitport', 'testwebkitport-version', 'internal-testwebkitport'])
 
     def test_root_option(self):
         port = TestWebKitPort()
@@ -589,7 +591,8 @@ MOCK output of child process
         self._assert_config_file_for_platform(port, 'linux3', 'apache2-httpd.conf')
 
         port._is_redhat_based = lambda: True
-        self._assert_config_file_for_platform(port, 'linux2', 'fedora-httpd.conf')
+        port._apache_version = lambda: '2.2'
+        self._assert_config_file_for_platform(port, 'linux2', 'fedora-httpd-2.2.conf')
 
         port = TestWebKitPort()
         port._is_debian_based = lambda: True

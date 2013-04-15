@@ -33,13 +33,12 @@ class TestObj;
 class WebDOMDictionary;
 class WebDOMDocument;
 class WebDOMEventListener;
-class WebDOMIDBKey;
 class WebDOMNode;
+class WebDOMObject;
 class WebDOMSVGPoint;
 class WebDOMString;
 class WebDOMTestObj;
 class WebDOMa;
-class WebDOMany;
 class WebDOMb;
 class WebDOMbool;
 class WebDOMd;
@@ -130,8 +129,8 @@ public:
     int conditionalAttr3() const;
     void setConditionalAttr3(int);
 #endif
-    WebDOMany anyAttribute() const;
-    void setAnyAttribute(const WebDOMany&);
+    WebDOMObject anyAttribute() const;
+    void setAnyAttribute(const WebDOMObject&);
     WebDOMDocument contentDocument() const;
     WebDOMSVGPoint mutablePoint() const;
     void setMutablePoint(const WebDOMSVGPoint&);
@@ -155,7 +154,6 @@ public:
     WebDOMTestObj objMethodWithArgs(int longArg, const WebDOMString& strArg, const WebDOMTestObj& objArg);
     WebDOMTestObj methodThatRequiresAllArgsAndThrows(const WebDOMString& strArg, const WebDOMTestObj& objArg);
     void serializedValue(const WebDOMString& serializedArg);
-    void idbKey(const WebDOMIDBKey& key);
     void optionsObject(const WebDOMDictionary& oo, const WebDOMDictionary& ooo);
     void methodWithException();
     void addEventListener(const WebDOMString& type, const WebDOMEventListener& listener, bool useCapture);

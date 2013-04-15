@@ -31,11 +31,11 @@
 #ifndef WebView_h
 #define WebView_h
 
+#include "../../../Platform/chromium/public/WebString.h"
+#include "../../../Platform/chromium/public/WebVector.h"
 #include "WebDragOperation.h"
 #include "WebPageVisibilityState.h"
 #include "WebWidget.h"
-#include "platform/WebString.h"
-#include "platform/WebVector.h"
 
 namespace WebKit {
 
@@ -229,6 +229,10 @@ public:
     WEBKIT_EXPORT static double zoomLevelToZoomFactor(double zoomLevel);
     WEBKIT_EXPORT static double zoomFactorToZoomLevel(double factor);
 
+    // Sets the initial page scale to the given factor. This scale setting overrides
+    // page scale set in the page's viewport meta tag.
+    virtual void setInitialPageScaleOverride(float) = 0;
+
     // Gets the scale factor of the page, where 1.0 is the normal size, > 1.0
     // is scaled up, < 1.0 is scaled down.
     virtual float pageScaleFactor() const = 0;
@@ -407,6 +411,9 @@ public:
 
     virtual void performCustomContextMenuAction(unsigned action) = 0;
 
+    // Shows a context menu for the currently focused element.
+    virtual void showContextMenu() = 0;
+
 
     // Popup menu ----------------------------------------------------------
 
@@ -472,6 +479,7 @@ public:
 
     virtual void setShowPaintRects(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
+    virtual void setContinuousPaintingEnabled(bool) = 0;
 
     // Benchmarking support -------------------------------------------------
 

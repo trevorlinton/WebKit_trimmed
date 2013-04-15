@@ -108,11 +108,6 @@ void TestRunner::keepWebHistory()
     // FIXME: implement
 }
 
-JSValueRef TestRunner::computedStyleIncludingVisitedInfo(JSContextRef context, JSValueRef value)
-{
-    return DumpRenderTreeSupportGtk::computedStyleIncludingVisitedInfo(context, value);
-}
-
 size_t TestRunner::webHistoryItemCount()
 {
     WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
@@ -125,11 +120,6 @@ size_t TestRunner::webHistoryItemCount()
     // considered in DRT tests
     return webkit_web_back_forward_list_get_back_length(list) +
             webkit_web_back_forward_list_get_forward_length(list);
-}
-
-unsigned TestRunner::workerThreadCount() const
-{
-    return DumpRenderTreeSupportGtk::workerThreadCount();
 }
 
 JSRetainPtr<JSStringRef> TestRunner::platformName() const
@@ -387,15 +377,6 @@ void TestRunner::setXSSAuditorEnabled(bool flag)
     g_object_set(G_OBJECT(settings), "enable-xss-auditor", flag, NULL);
 }
 
-void TestRunner::setFrameFlatteningEnabled(bool flag)
-{
-    WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
-    ASSERT(view);
-
-    WebKitWebSettings* settings = webkit_web_view_get_settings(view);
-    g_object_set(G_OBJECT(settings), "enable-frame-flattening", flag, NULL);
-}
-
 void TestRunner::setSpatialNavigationEnabled(bool flag)
 {
     WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
@@ -426,11 +407,6 @@ void TestRunner::setAllowFileAccessFromFileURLs(bool flag)
 void TestRunner::setAuthorAndUserStylesEnabled(bool flag)
 {
     // FIXME: implement
-}
-
-void TestRunner::setAutofilled(JSContextRef context, JSValueRef nodeObject, bool isAutofilled)
-{
-    DumpRenderTreeSupportGtk::setAutofilled(context, nodeObject, isAutofilled);
 }
 
 void TestRunner::setMockDeviceOrientation(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma)
@@ -720,31 +696,6 @@ void TestRunner::setAppCacheMaximumSize(unsigned long long size)
     webkit_application_cache_set_maximum_size(size);
 }
 
-bool TestRunner::pauseAnimationAtTimeOnElementWithId(JSStringRef animationName, double time, JSStringRef elementId)
-{    
-    gchar* name = JSStringCopyUTF8CString(animationName);
-    gchar* element = JSStringCopyUTF8CString(elementId);
-    bool returnValue = DumpRenderTreeSupportGtk::pauseAnimation(mainFrame, name, time, element);
-    g_free(name);
-    g_free(element);
-    return returnValue;
-}
-
-bool TestRunner::pauseTransitionAtTimeOnElementWithId(JSStringRef propertyName, double time, JSStringRef elementId)
-{    
-    gchar* name = JSStringCopyUTF8CString(propertyName);
-    gchar* element = JSStringCopyUTF8CString(elementId);
-    bool returnValue = DumpRenderTreeSupportGtk::pauseTransition(mainFrame, name, time, element);
-    g_free(name);
-    g_free(element);
-    return returnValue;
-}
-
-unsigned TestRunner::numberOfActiveAnimations() const
-{
-    return DumpRenderTreeSupportGtk::numberOfActiveAnimations(mainFrame);
-}
-
 static gboolean booleanFromValue(gchar* value)
 {
     return !g_ascii_strcasecmp(value, "true") || !g_ascii_strcasecmp(value, "1");
@@ -823,7 +774,8 @@ void TestRunner::overridePreference(JSStringRef key, JSStringRef value)
 
 void TestRunner::addUserScript(JSStringRef source, bool runAtStart, bool allFrames)
 {
-    printf("TestRunner::addUserScript not implemented.\n");
+    GOwnPtr<gchar> sourceCode(JSStringCopyUTF8CString(source));
+    DumpRenderTreeSupportGtk::addUserScript(mainFrame, sourceCode.get(), runAtStart, allFrames);
 }
 
 void TestRunner::addUserStyleSheet(JSStringRef source, bool allFrames)
@@ -907,16 +859,6 @@ void TestRunner::setWebViewEditable(bool)
 {
 }
 
-JSRetainPtr<JSStringRef> TestRunner::markerTextForListItem(JSContextRef context, JSValueRef nodeObject) const
-{
-    CString markerTextGChar = DumpRenderTreeSupportGtk::markerTextForListItem(mainFrame, context, nodeObject);
-    if (markerTextGChar.isNull())
-        return 0;
-
-    JSRetainPtr<JSStringRef> markerText(Adopt, JSStringCreateWithUTF8CString(markerTextGChar.data()));
-    return markerText;
-}
-
 void TestRunner::authenticateSession(JSStringRef, JSStringRef, JSStringRef)
 {
 }
@@ -930,15 +872,21 @@ void TestRunner::setSerializeHTTPLoads(bool serialize)
     DumpRenderTreeSupportGtk::setSerializeHTTPLoads(serialize);
 }
 
-void TestRunner::setMinimumTimerInterval(double minimumTimerInterval)
-{
-    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
-    DumpRenderTreeSupportGtk::setMinimumTimerInterval(webView, minimumTimerInterval);
-}
-
 void TestRunner::setTextDirection(JSStringRef direction)
 {
-    // FIXME: Implement.
+    GOwnPtr<gchar> writingDirection(JSStringCopyUTF8CString(direction));
+
+    WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
+    ASSERT(view);
+
+    if (g_str_equal(writingDirection.get(), "auto"))
+        gtk_widget_set_direction(GTK_WIDGET(view), GTK_TEXT_DIR_NONE);
+    else if (g_str_equal(writingDirection.get(), "ltr"))
+        gtk_widget_set_direction(GTK_WIDGET(view), GTK_TEXT_DIR_LTR);
+    else if (g_str_equal(writingDirection.get(), "rtl"))
+        gtk_widget_set_direction(GTK_WIDGET(view), GTK_TEXT_DIR_RTL);
+    else
+        fprintf(stderr, "TestRunner::setTextDirection called with unknown direction: '%s'.\n", writingDirection.get());
 }
 
 void TestRunner::addChromeInputField()
@@ -988,16 +936,6 @@ void TestRunner::setPageVisibility(const char*)
 }
 
 void TestRunner::setAutomaticLinkDetectionEnabled(bool)
-{
-    // FIXME: Implement this.
-}
-
-void TestRunner::sendWebIntentResponse(JSStringRef)
-{
-    // FIXME: Implement this.
-}
-
-void TestRunner::deliverWebIntent(JSStringRef, JSStringRef, JSStringRef)
 {
     // FIXME: Implement this.
 }

@@ -30,6 +30,7 @@
 
 /**
  * @constructor
+ * @extends {WebInspector.Object}
  */
 WebInspector.DockController = function()
 {
@@ -50,6 +51,10 @@ WebInspector.DockController.State = {
     Undocked: "undocked"
 }
 
+WebInspector.DockController.Events = {
+    DockSideChanged: "DockSideChanged"
+}
+
 WebInspector.DockController.prototype = {
     /**
      * @return {Element}
@@ -57,6 +62,14 @@ WebInspector.DockController.prototype = {
     get element()
     {
         return this._dockToggleButton.element;
+    },
+
+    /**
+     * @return {string}
+     */
+    dockSide: function()
+    {
+        return this._dockSide;
     },
 
     /**
@@ -76,6 +89,7 @@ WebInspector.DockController.prototype = {
         else
             WebInspector.userMetrics.WindowUndocked.record();
         this._updateUI();
+        this.dispatchEventToListeners(WebInspector.DockController.Events.DockSideChanged, this._dockSide);
     },
 
     /**
@@ -108,14 +122,12 @@ WebInspector.DockController.prototype = {
             break;
         }
 
-        if (WebInspector.toolbar)
-            WebInspector.toolbar.setDockedToBottom(this._dockSide === WebInspector.DockController.State.DockedToBottom);
         if (WebInspector.settings.showToolbarIcons.get())
             document.body.addStyleClass("show-toolbar-icons");
         else
             document.body.removeStyleClass("show-toolbar-icons");
 
-        if (this._isDockingUnavailable) {
+        if (this._isDockingUnavailable && this._dockSide === WebInspector.DockController.State.Undocked) {
             this._dockToggleButton.state = "undock";
             this._dockToggleButton.setEnabled(false);
             return;
@@ -176,5 +188,12 @@ WebInspector.DockController.prototype = {
         case "undock": action = "undocked"; break;
         }
         InspectorFrontendHost.requestSetDockSide(action);
-    }
+    },
+
+    __proto__: WebInspector.Object.prototype
 }
+
+/**
+ * @type {?WebInspector.DockController}
+ */
+WebInspector.dockController = null;

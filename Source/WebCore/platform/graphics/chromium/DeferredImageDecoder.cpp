@@ -110,7 +110,8 @@ ImageFrame* DeferredImageDecoder::frameBufferAtIndex(size_t index)
     if (s_enabled
         && m_actualDecoder
         && m_actualDecoder->repetitionCount() == cAnimationNone
-        && m_actualDecoder->isSizeAvailable()) {
+        && m_actualDecoder->isSizeAvailable()
+        && m_actualDecoder->frameCount() == 1) {
 
         m_size = m_actualDecoder->size();
         m_filenameExtension = m_actualDecoder->filenameExtension();
@@ -180,10 +181,7 @@ void DeferredImageDecoder::clearFrameBufferCache(size_t clearBeforeFrame)
 
 bool DeferredImageDecoder::frameHasAlphaAtIndex(size_t index) const
 {
-    // FIXME: Synchronize this state with ImageDecodingStore when image is
-    // actually decoded. Return true here is correct in terms of rendering but
-    // may not go through some optimized rendering code path.
-    return m_actualDecoder ? m_actualDecoder->frameHasAlphaAtIndex(index) : true;
+    return m_actualDecoder ? m_actualDecoder->frameHasAlphaAtIndex(index) : m_frameGenerator->hasAlpha();
 }
 
 unsigned DeferredImageDecoder::frameBytesAtIndex(size_t index) const

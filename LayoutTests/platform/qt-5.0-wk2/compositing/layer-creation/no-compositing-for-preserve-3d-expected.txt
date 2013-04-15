@@ -6,6 +6,7 @@ This layer should be composited.
   (children 1
     (GraphicsLayer
       (bounds 785.00 614.00)
+      (contentsOpaque 1)
       (children 1
         (GraphicsLayer
           (position 18.00 392.00)
@@ -16,6 +17,7 @@ This layer should be composited.
             (GraphicsLayer
               (position 31.00 50.00)
               (bounds 100.00 100.00)
+              (contentsOpaque 1)
               (transform [0.98 0.00 -0.17 0.00] [0.00 1.00 0.00 0.00] [0.17 0.00 0.98 0.00] [0.00 0.00 0.00 1.00])
             )
           )

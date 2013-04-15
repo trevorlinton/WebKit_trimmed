@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1999-2000 Harri Porten (porten@kde.org)
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2009 Google Inc. All rights reserved.
  * Copyright (C) 2007-2009 Torch Mobile, Inc.
  * Copyright (C) 2010 &yet, LLC. (nate@andyet.net)
@@ -74,6 +74,7 @@
 
 #include "JSObject.h"
 #include "JSScope.h"
+#include "Operations.h"
 
 #include <algorithm>
 #include <limits.h>
@@ -195,7 +196,7 @@ static double getDSTOffset(ExecState* exec, double ms, double utcOffset)
 double getUTCOffset(ExecState* exec)
 {
     double utcOffset = exec->globalData().cachedUTCOffset;
-    if (!isnan(utcOffset))
+    if (!std::isnan(utcOffset))
         return utcOffset;
     exec->globalData().cachedUTCOffset = calculateUTCOffset();
     return exec->globalData().cachedUTCOffset;
@@ -246,14 +247,14 @@ double parseDateFromNullTerminatedCharacters(ExecState* exec, const char* dateSt
     bool haveTZ;
     int offset;
     double ms = WTF::parseDateFromNullTerminatedCharacters(dateString, haveTZ, offset);
-    if (isnan(ms))
+    if (std::isnan(ms))
         return QNaN;
 
     // fall back to local timezone
     if (!haveTZ) {
         double utcOffset = getUTCOffset(exec);
         double dstOffset = getDSTOffset(exec, ms, utcOffset);
-        offset = static_cast<int>((utcOffset + dstOffset) / WTF::msPerMinute);
+        offset = (utcOffset + dstOffset) / WTF::msPerMinute;
     }
     return ms - (offset * WTF::msPerMinute);
 }
@@ -263,7 +264,7 @@ double parseDate(ExecState* exec, const String& date)
     if (date == exec->globalData().cachedDateString)
         return exec->globalData().cachedDateStringValue;
     double value = parseES5DateFromNullTerminatedCharacters(date.utf8().data());
-    if (isnan(value))
+    if (std::isnan(value))
         value = parseDateFromNullTerminatedCharacters(exec, date.utf8().data());
     exec->globalData().cachedDateString = date;
     exec->globalData().cachedDateStringValue = value;

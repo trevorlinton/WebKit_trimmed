@@ -33,6 +33,8 @@
 
 #include <wtf/FastAllocBase.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/PassRefPtr.h>
+#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
@@ -47,6 +49,7 @@ class InspectorDOMStorageAgent;
 class InspectorDatabaseAgent;
 class InspectorDebuggerAgent;
 class InspectorFileSystemAgent;
+class InspectorHeapProfilerAgent;
 class InspectorLayerTreeAgent;
 class InspectorPageAgent;
 class InspectorProfilerAgent;
@@ -59,43 +62,16 @@ class PageRuntimeAgent;
 class WorkerContext;
 class WorkerRuntimeAgent;
 
-class InstrumentingAgents {
+class InstrumentingAgents : public RefCounted<InstrumentingAgents> {
     WTF_MAKE_NONCOPYABLE(InstrumentingAgents);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    InstrumentingAgents()
-        : m_inspectorAgent(0)
-        , m_inspectorPageAgent(0)
-        , m_inspectorCSSAgent(0)
-#if USE(ACCELERATED_COMPOSITING)
-        , m_inspectorLayerTreeAgent(0)
-#endif
-        , m_inspectorConsoleAgent(0)
-        , m_inspectorDOMAgent(0)
-        , m_inspectorResourceAgent(0)
-        , m_pageRuntimeAgent(0)
-        , m_workerRuntimeAgent(0)
-        , m_inspectorTimelineAgent(0)
-        , m_inspectorDOMStorageAgent(0)
-#if ENABLE(SQL_DATABASE)
-        , m_inspectorDatabaseAgent(0)
-#endif
-#if ENABLE(FILE_SYSTEM)
-        , m_inspectorFileSystemAgent(0)
-#endif
-        , m_inspectorApplicationCacheAgent(0)
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-        , m_inspectorDebuggerAgent(0)
-        , m_pageDebuggerAgent(0)
-        , m_inspectorDOMDebuggerAgent(0)
-        , m_inspectorProfilerAgent(0)
-#endif
-#if ENABLE(WORKERS)
-        , m_inspectorWorkerAgent(0)
-#endif
-        , m_inspectorCanvasAgent(0)
-    { }
+    static PassRefPtr<InstrumentingAgents> create()
+    {
+        return adoptRef(new InstrumentingAgents());
+    }
     ~InstrumentingAgents() { }
+    void reset();
 
     InspectorAgent* inspectorAgent() const { return m_inspectorAgent; }
     void setInspectorAgent(InspectorAgent* agent) { m_inspectorAgent = agent; }
@@ -152,6 +128,9 @@ public:
 
     InspectorProfilerAgent* inspectorProfilerAgent() const { return m_inspectorProfilerAgent; }
     void setInspectorProfilerAgent(InspectorProfilerAgent* agent) { m_inspectorProfilerAgent = agent; }
+
+    InspectorHeapProfilerAgent* inspectorHeapProfilerAgent() const { return m_inspectorHeapProfilerAgent; }
+    void setInspectorHeapProfilerAgent(InspectorHeapProfilerAgent* agent) { m_inspectorHeapProfilerAgent = agent; }
 #endif
 
 #if ENABLE(WORKERS)
@@ -168,6 +147,8 @@ public:
 #endif
 
 private:
+    InstrumentingAgents();
+
     InspectorAgent* m_inspectorAgent;
     InspectorPageAgent* m_inspectorPageAgent;
     InspectorCSSAgent* m_inspectorCSSAgent;
@@ -193,6 +174,7 @@ private:
     PageDebuggerAgent* m_pageDebuggerAgent;
     InspectorDOMDebuggerAgent* m_inspectorDOMDebuggerAgent;
     InspectorProfilerAgent* m_inspectorProfilerAgent;
+    InspectorHeapProfilerAgent* m_inspectorHeapProfilerAgent;
 #endif
 #if ENABLE(WORKERS)
     InspectorWorkerAgent* m_inspectorWorkerAgent;

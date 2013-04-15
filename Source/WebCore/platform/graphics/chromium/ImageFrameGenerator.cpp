@@ -48,6 +48,7 @@ skia::ImageOperations::ResizeMethod resizeMethod()
 ImageFrameGenerator::ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer> data, bool allDataReceived)
     : m_fullSize(fullSize)
     , m_decodeFailedAndEmpty(false)
+    , m_hasAlpha(true)
 {
     setData(data.get(), allDataReceived);
 }
@@ -112,8 +113,13 @@ const ScaledImageFragment* ImageFrameGenerator::tryToScale(const ScaledImageFrag
     if (!fullSizeImage && !ImageDecodingStore::instance()->lockCache(this, m_fullSize, ImageDecodingStore::CacheMustBeComplete, &fullSizeImage))
         return 0;
 
-    SkBitmap scaledBitmap = skia::ImageOperations::Resize(
-        fullSizeImage->bitmap(), resizeMethod(), scaledSize.width(), scaledSize.height());
+    DiscardablePixelRefAllocator allocator;
+    // This call allocates the DiscardablePixelRef and lock/unlocks it
+    // afterwards. So the memory allocated to the scaledBitmap can be
+    // discarded after this call. Need to lock the scaledBitmap and
+    // check the pixels before using it next time.
+    SkBitmap scaledBitmap = skia::ImageOperations::Resize(fullSizeImage->bitmap(), resizeMethod(), scaledSize.width(), scaledSize.height(), &allocator);
+
     OwnPtr<ScaledImageFragment> scaledImage = ScaledImageFragment::create(scaledSize, scaledBitmap, fullSizeImage->isComplete());
 
     ImageDecodingStore::instance()->unlockCache(this, fullSizeImage);
@@ -136,9 +142,21 @@ const ScaledImageFragment* ImageFrameGenerator::tryToResumeDecodeAndScale(const 
     ASSERT(cachedDecoder);
 
     if (m_data.hasNewData()) {
+        // For single frame images, the above ImageDecodingStore::lockCache()
+        // call should lock the pixelRef. As a result, this lockFrameBuffers()
+        // call should always succeed.
+        // TODO: this does not work for the multiframe images, which are not
+        // yet supported by this class.
+        bool frameBuffersLocked = cachedDecoder->lockFrameBuffers();
+        ASSERT_UNUSED(frameBuffersLocked, frameBuffersLocked);
         // Only do decoding if there is new data.
         OwnPtr<ScaledImageFragment> fullSizeImage = decode(&cachedDecoder);
         cachedImage = ImageDecodingStore::instance()->overwriteAndLockCache(this, cachedImage, fullSizeImage.release());
+        // If the image is partially decoded, unlock the frames so that it
+        // can be evicted from the memory. For fully decoded images,
+        // ImageDecodingStore should have deleted the decoder here.
+        if (!cachedImage->isComplete())
+            cachedDecoder->unlockFrameBuffers();
     }
 
     if (m_fullSize == scaledSize)
@@ -165,6 +183,10 @@ const ScaledImageFragment* ImageFrameGenerator::tryToDecodeAndScale(const SkISiz
 
     const ScaledImageFragment* cachedFullSizeImage = ImageDecodingStore::instance()->insertAndLockCache(
         this, fullSizeImage.release(), decoderContainer.release());
+    // The newly created SkBitmap in the decoder is locked. Unlock it here
+    // if the image is partially decoded.
+    if (!cachedFullSizeImage->isComplete())
+        decoder->unlockFrameBuffers();
 
     if (m_fullSize == scaledSize)
         return cachedFullSizeImage;
@@ -189,7 +211,14 @@ PassOwnPtr<ScaledImageFragment> ImageFrameGenerator::decode(ImageDecoder** decod
             return nullptr;
     }
 
+    // TODO: this is very ugly. We need to refactor the way how we can pass a
+    // memory allocator to image decoders.
+    (*decoder)->setMemoryAllocator(&m_allocator);
     (*decoder)->setData(data, allDataReceived);
+    // If this call returns a newly allocated DiscardablePixelRef, then
+    // ImageFrame::m_bitmap and the contained DiscardablePixelRef are locked.
+    // They will be unlocked after the image fragment is inserted into
+    // ImageDecodingStore.
     ImageFrame* frame = (*decoder)->frameBufferAtIndex(0);
     (*decoder)->setData(0, false); // Unref SharedBuffer from ImageDecoder.
 
@@ -198,9 +227,19 @@ PassOwnPtr<ScaledImageFragment> ImageFrameGenerator::decode(ImageDecoder** decod
 
     bool isComplete = frame->status() == ImageFrame::FrameComplete;
     SkBitmap fullSizeBitmap = frame->getSkBitmap();
+    {
+        MutexLocker lock(m_alphaMutex);
+        m_hasAlpha = !fullSizeBitmap.isOpaque();
+    }
     ASSERT(fullSizeBitmap.width() == m_fullSize.width() && fullSizeBitmap.height() == m_fullSize.height());
 
     return ScaledImageFragment::create(m_fullSize, fullSizeBitmap, isComplete);
+}
+
+bool ImageFrameGenerator::hasAlpha()
+{
+    MutexLocker lock(m_alphaMutex);
+    return m_hasAlpha;
 }
 
 } // namespace WebCore

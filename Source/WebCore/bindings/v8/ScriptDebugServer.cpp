@@ -100,6 +100,7 @@ public:
 
         String wrappedScript = makeString("(", preprocessorScript, ")");
         v8::Handle<v8::String> preprocessor = v8::String::New(wrappedScript.utf8().data(), wrappedScript.utf8().length());
+
         v8::Handle<v8::Script> script = v8::Script::Compile(preprocessor);
 
         if (tryCatch.HasCaught())
@@ -113,7 +114,7 @@ public:
         m_preprocessorFunction.set(v8::Handle<v8::Function>::Cast(preprocessorFunction));
     }
 
-    String preprocessSourceCode(const String& sourceCode)
+    String preprocessSourceCode(const String& sourceCode, const String& sourceName)
     {
         v8::HandleScope scope;
 
@@ -124,11 +125,14 @@ public:
         v8::Context::Scope contextScope(context);
 
         v8::Handle<v8::String> sourceCodeString = v8::String::New(sourceCode.utf8().data(), sourceCode.utf8().length());
-        v8::Handle<v8::Value> argv[] = { sourceCodeString };
+
+        v8::Handle<v8::String> sourceNameString = v8::String::New(sourceName.utf8().data(), sourceName.utf8().length());
+        v8::Handle<v8::Value> argv[] = { sourceCodeString, sourceNameString };
 
         v8::TryCatch tryCatch;
         RecursionScopeSuppression suppressionScope;
-        v8::Handle<v8::Value> resultValue = m_preprocessorFunction->Call(context->Global(), 1, argv);
+        v8::Handle<v8::Value> resultValue = m_preprocessorFunction->Call(context->Global(), 2, argv);
+
         if (tryCatch.HasCaught())
             return sourceCode;
 
@@ -168,10 +172,10 @@ String ScriptDebugServer::setBreakpoint(const String& sourceID, const ScriptBrea
     v8::Context::Scope contextScope(debuggerContext);
 
     v8::Local<v8::Object> args = v8::Object::New();
-    args->Set(v8::String::NewSymbol("sourceID"), deprecatedV8String(sourceID));
-    args->Set(v8::String::NewSymbol("lineNumber"), deprecatedV8Integer(scriptBreakpoint.lineNumber));
-    args->Set(v8::String::NewSymbol("columnNumber"), deprecatedV8Integer(scriptBreakpoint.columnNumber));
-    args->Set(v8::String::NewSymbol("condition"), deprecatedV8String(scriptBreakpoint.condition));
+    args->Set(v8::String::NewSymbol("sourceID"), v8String(sourceID, debuggerContext->GetIsolate()));
+    args->Set(v8::String::NewSymbol("lineNumber"), v8Integer(scriptBreakpoint.lineNumber, debuggerContext->GetIsolate()));
+    args->Set(v8::String::NewSymbol("columnNumber"), v8Integer(scriptBreakpoint.columnNumber, debuggerContext->GetIsolate()));
+    args->Set(v8::String::NewSymbol("condition"), v8String(scriptBreakpoint.condition, debuggerContext->GetIsolate()));
 
     v8::Handle<v8::Function> setBreakpointFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::NewSymbol("setBreakpoint")));
     v8::Handle<v8::Value> breakpointId = v8::Debug::Call(setBreakpointFunction, args);
@@ -189,7 +193,7 @@ void ScriptDebugServer::removeBreakpoint(const String& breakpointId)
     v8::Context::Scope contextScope(debuggerContext);
 
     v8::Local<v8::Object> args = v8::Object::New();
-    args->Set(v8::String::NewSymbol("breakpointId"), deprecatedV8String(breakpointId));
+    args->Set(v8::String::NewSymbol("breakpointId"), v8String(breakpointId, debuggerContext->GetIsolate()));
 
     v8::Handle<v8::Function> removeBreakpointFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::NewSymbol("removeBreakpoint")));
     v8::Debug::Call(removeBreakpointFunction, args);
@@ -324,10 +328,11 @@ bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& ne
     v8::HandleScope scope;
 
     OwnPtr<v8::Context::Scope> contextScope;
+    v8::Handle<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     if (!isPaused())
-        contextScope = adoptPtr(new v8::Context::Scope(v8::Debug::GetDebugContext()));
+        contextScope = adoptPtr(new v8::Context::Scope(debuggerContext));
 
-    v8::Handle<v8::Value> argv[] = { deprecatedV8String(sourceID), deprecatedV8String(newContent), v8Boolean(preview) };
+    v8::Handle<v8::Value> argv[] = { v8String(sourceID, debuggerContext->GetIsolate()), v8String(newContent, debuggerContext->GetIsolate()), v8Boolean(preview) };
 
     v8::Local<v8::Value> v8result;
     {
@@ -381,7 +386,7 @@ ScriptValue ScriptDebugServer::currentCallFrame()
 
     RefPtr<JavaScriptCallFrame> currentCallFrame = JavaScriptCallFrame::create(v8::Debug::GetDebugContext(), v8::Handle<v8::Object>::Cast(currentCallFrameV8));
     v8::Context::Scope contextScope(m_pausedContext);
-    return ScriptValue(toV8(currentCallFrame.release()));
+    return ScriptValue(toV8(currentCallFrame.release(), v8::Handle<v8::Object>(), m_pausedContext->GetIsolate()));
 }
 
 void ScriptDebugServer::interruptAndRun(PassOwnPtr<Task> task, v8::Isolate* isolate)
@@ -455,18 +460,25 @@ void ScriptDebugServer::handleV8DebugEvent(const v8::Debug::EventDetails& eventD
     if (listener) {
         v8::HandleScope scope;
         if (event == v8::BeforeCompile) {
+
             if (!m_scriptPreprocessor)
                 return;
 
             OwnPtr<ScriptPreprocessor> preprocessor(m_scriptPreprocessor.release());
-            v8::Context::Scope contextScope(v8::Debug::GetDebugContext());
+            v8::Local<v8::Context> debugContext = v8::Debug::GetDebugContext();
+            v8::Context::Scope contextScope(debugContext);
             v8::Handle<v8::Function> getScriptSourceFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::New("getScriptSource")));
             v8::Handle<v8::Value> argv[] = { eventDetails.GetEventData() };
             v8::Handle<v8::Value> script = getScriptSourceFunction->Call(m_debuggerScript.get(), 1, argv);
 
+            v8::Handle<v8::Function> getScriptNameFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::New("getScriptName")));
+            v8::Handle<v8::Value> argv1[] = { eventDetails.GetEventData() };
+            v8::Handle<v8::Value> scriptName = getScriptNameFunction->Call(m_debuggerScript.get(), 1, argv1);
+
             v8::Handle<v8::Function> setScriptSourceFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::New("setScriptSource")));
-            String patchedScript = preprocessor->preprocessSourceCode(toWebCoreStringWithUndefinedOrNullCheck(script));
-            v8::Handle<v8::Value> argv2[] = { eventDetails.GetEventData(), v8String(patchedScript) };
+            String patchedScript = preprocessor->preprocessSourceCode(toWebCoreStringWithUndefinedOrNullCheck(script), toWebCoreStringWithUndefinedOrNullCheck(scriptName));
+
+            v8::Handle<v8::Value> argv2[] = { eventDetails.GetEventData(), v8String(patchedScript, debugContext->GetIsolate()) };
             setScriptSourceFunction->Call(m_debuggerScript.get(), 2, argv2);
             m_scriptPreprocessor = preprocessor.release();
         } else if (event == v8::AfterCompile) {
@@ -534,7 +546,7 @@ void ScriptDebugServer::ensureDebuggerScriptCompiled()
         v8::Context::Scope contextScope(debuggerContext);
         String debuggerScriptSource(reinterpret_cast<const char*>(DebuggerScriptSource_js), sizeof(DebuggerScriptSource_js));
         V8RecursionScope::MicrotaskSuppression recursionScope;
-        m_debuggerScript.set(v8::Handle<v8::Object>::Cast(v8::Script::Compile(deprecatedV8String(debuggerScriptSource))->Run()));
+        m_debuggerScript.set(v8::Handle<v8::Object>::Cast(v8::Script::Compile(v8String(debuggerScriptSource, debuggerContext->GetIsolate()))->Run()));
     }
 }
 
@@ -555,6 +567,21 @@ v8::Local<v8::Value> ScriptDebugServer::getInternalProperties(v8::Handle<v8::Obj
     return callDebuggerMethod("getInternalProperties", 1, argv);
 }
 
+v8::Local<v8::Value> ScriptDebugServer::setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue)
+{
+    v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
+    if (m_debuggerScript.get().IsEmpty())
+        return *(v8::ThrowException(v8::String::New("Debugging is not enabled.")));
+
+    v8::Handle<v8::Value> argv[] = {
+        functionValue,
+        v8::Handle<v8::Value>(v8::Integer::New(scopeNumber)),
+        v8String(variableName, debuggerContext->GetIsolate()),
+        newValue
+    };
+    return callDebuggerMethod("setFunctionVariableValue", 4, argv);
+}
+
 
 bool ScriptDebugServer::isPaused()
 {
@@ -569,10 +596,10 @@ void ScriptDebugServer::compileScript(ScriptState* state, const String& expressi
         return;
     v8::Context::Scope contextScope(context);
 
-    v8::Handle<v8::String> code = deprecatedV8String(expression);
+    v8::Handle<v8::String> code = v8String(expression, context->GetIsolate());
     v8::TryCatch tryCatch;
 
-    v8::ScriptOrigin origin(deprecatedV8String(sourceURL), deprecatedV8Integer(0), deprecatedV8Integer(0));
+    v8::ScriptOrigin origin(v8String(sourceURL, context->GetIsolate()), v8Integer(0, context->GetIsolate()), v8Integer(0, context->GetIsolate()));
     v8::Handle<v8::Script> script = v8::Script::New(code, &origin);
 
     if (tryCatch.HasCaught()) {

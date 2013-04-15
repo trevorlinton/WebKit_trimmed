@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -79,10 +79,13 @@ public:
     // Must be called from the scrolling thread. Handles the wheel event.
     void handleWheelEvent(const PlatformWheelEvent&);
 
+    void setMainFrameIsRubberBanding(bool);
+    bool isRubberBandInProgress();
+
     void invalidate();
     void commitNewTreeState(PassOwnPtr<ScrollingStateTree>);
 
-    void setMainFramePinState(bool pinnedToTheLeft, bool pinnedToTheRight);
+    void setMainFramePinState(bool pinnedToTheLeft, bool pinnedToTheRight, bool pinnedToTheTop, bool pinnedToTheBottom);
 
     void updateMainFrameScrollPosition(const IntPoint& scrollPosition, SetOrSyncScrollingLayerPosition = SyncScrollingLayerPosition);
     IntPoint mainFrameScrollPosition();
@@ -94,10 +97,17 @@ public:
     bool canGoBack();
     bool canGoForward();
 
+    bool rubberBandsAtBottom();
+    void setRubberBandsAtBottom(bool);
+    bool rubberBandsAtTop();
+    void setRubberBandsAtTop(bool);
+
     bool willWheelEventStartSwipeGesture(const PlatformWheelEvent&);
 
     void setScrollingPerformanceLoggingEnabled(bool flag);
     bool scrollingPerformanceLoggingEnabled();
+
+    ScrollingTreeScrollingNode* rootNode() const { return m_rootNode.get(); }
 
 private:
     explicit ScrollingTree(ScrollingCoordinator*);
@@ -121,14 +131,15 @@ private:
     bool m_canGoForward;
     bool m_mainFramePinnedToTheLeft;
     bool m_mainFramePinnedToTheRight;
+    bool m_rubberBandsAtBottom;
+    bool m_rubberBandsAtTop;
+    bool m_mainFramePinnedToTheTop;
+    bool m_mainFramePinnedToTheBottom;
+    bool m_mainFrameIsRubberBanding;
 
     bool m_scrollingPerformanceLoggingEnabled;
     
     bool m_isHandlingProgrammaticScroll;
-
-#if PLATFORM(MAC)
-    RetainPtr<CALayer> m_debugInfoLayer;
-#endif
 };
 
 } // namespace WebCore

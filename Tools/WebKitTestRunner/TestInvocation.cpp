@@ -103,6 +103,7 @@ TestInvocation::TestInvocation(const std::string& pathOrURL)
     : m_url(AdoptWK, createWKURL(pathOrURL.c_str()))
     , m_pathOrURL(pathOrURL)
     , m_dumpPixels(false)
+    , m_timeout(0)
     , m_gotInitialResponse(false)
     , m_gotFinalMessage(false)
     , m_gotRepaint(false)
@@ -119,6 +120,11 @@ void TestInvocation::setIsPixelTest(const std::string& expectedPixelHash)
 {
     m_dumpPixels = true;
     m_expectedPixelHash = expectedPixelHash;
+}
+
+void TestInvocation::setCustomTimeout(int timeout)
+{
+    m_timeout = timeout;
 }
 
 static const unsigned w3cSVGWidth = 480;
@@ -168,29 +174,35 @@ static void updateTiledDrawingForCurrentTest(const char* pathOrURL)
 #endif
 }
 
-#if ENABLE(CSS_DEVICE_ADAPTATION)
 static bool shouldUseFixedLayout(const char* pathOrURL)
 {
-    return strstr(pathOrURL, "device-adapt/") || strstr(pathOrURL, "device-adapt\\");
-}
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+    if (strstr(pathOrURL, "device-adapt/") || strstr(pathOrURL, "device-adapt\\"))
+        return true;
 #endif
+
+#if USE(TILED_BACKING_STORE) && PLATFORM(EFL)
+    if (strstr(pathOrURL, "sticky/") || strstr(pathOrURL, "sticky\\"))
+        return true;
+#endif
+    return false;
+
+    UNUSED_PARAM(pathOrURL);
+}
 
 static void updateLayoutType(const char* pathOrURL)
 {
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     WKRetainPtr<WKMutableDictionaryRef> viewOptions = adoptWK(WKMutableDictionaryCreate());
     WKRetainPtr<WKStringRef> useFixedLayoutKey = adoptWK(WKStringCreateWithUTF8CString("UseFixedLayout"));
     WKRetainPtr<WKBooleanRef> useFixedLayoutValue = adoptWK(WKBooleanCreate(shouldUseFixedLayout(pathOrURL)));
     WKDictionaryAddItem(viewOptions.get(), useFixedLayoutKey.get(), useFixedLayoutValue.get());
 
     TestController::shared().ensureViewSupportsOptions(viewOptions.get());
-#else
-    UNUSED_PARAM(pathOrURL);
-#endif
 }
 
 void TestInvocation::invoke()
 {
+    TestController::TimeoutDuration timeoutToUse = TestController::LongTimeout;
     sizeWebViewForCurrentTest(m_pathOrURL.c_str());
     updateLayoutType(m_pathOrURL.c_str());
     updateTiledDrawingForCurrentTest(m_pathOrURL.c_str());
@@ -212,6 +224,10 @@ void TestInvocation::invoke()
     WKRetainPtr<WKBooleanRef> useWaitToDumpWatchdogTimerValue = adoptWK(WKBooleanCreate(TestController::shared().useWaitToDumpWatchdogTimer()));
     WKDictionaryAddItem(beginTestMessageBody.get(), useWaitToDumpWatchdogTimerKey.get(), useWaitToDumpWatchdogTimerValue.get());
 
+    WKRetainPtr<WKStringRef> timeoutKey = adoptWK(WKStringCreateWithUTF8CString("Timeout"));
+    WKRetainPtr<WKUInt64Ref> timeoutValue = adoptWK(WKUInt64Create(m_timeout));
+    WKDictionaryAddItem(beginTestMessageBody.get(), timeoutKey.get(), timeoutValue.get());
+
     WKContextPostMessageToInjectedBundle(TestController::shared().context(), messageName.get(), beginTestMessageBody.get());
 
     TestController::shared().runUntil(m_gotInitialResponse, TestController::ShortTimeout);
@@ -230,7 +246,13 @@ void TestInvocation::invoke()
 
     WKPageLoadURL(TestController::shared().mainWebView()->page(), m_url.get());
 
-    TestController::shared().runUntil(m_gotFinalMessage, TestController::shared().useWaitToDumpWatchdogTimer() ? TestController::LongTimeout : TestController::NoTimeout);
+    if (TestController::shared().useWaitToDumpWatchdogTimer()) {
+        if (m_timeout > 0)
+            timeoutToUse = TestController::CustomTimeout;
+    } else
+        timeoutToUse = TestController::NoTimeout;
+    TestController::shared().runUntil(m_gotFinalMessage, timeoutToUse);
+
     if (!m_gotFinalMessage) {
         m_errorMessage = "Timed out waiting for final message from web process\n";
         m_webProcessIsUnresponsive = true;
@@ -518,6 +540,22 @@ void TestInvocation::didReceiveMessageFromInjectedBundle(WKStringRef messageName
         return;
     }
 
+    if (WKStringIsEqualToUTF8CString(messageName, "SetVisibilityState")) {
+        ASSERT(WKGetTypeID(messageBody) == WKDictionaryGetTypeID());
+        WKDictionaryRef messageBodyDictionary = static_cast<WKDictionaryRef>(messageBody);
+
+        WKRetainPtr<WKStringRef> visibilityStateKeyWK(AdoptWK, WKStringCreateWithUTF8CString("visibilityState"));
+        WKUInt64Ref visibilityStateWK = static_cast<WKUInt64Ref>(WKDictionaryGetItemForKey(messageBodyDictionary, visibilityStateKeyWK.get()));
+        WKPageVisibilityState visibilityState = static_cast<WKPageVisibilityState>(WKUInt64GetValue(visibilityStateWK));
+
+        WKRetainPtr<WKStringRef> isInitialKeyWK(AdoptWK, WKStringCreateWithUTF8CString("isInitialState"));
+        WKBooleanRef isInitialWK = static_cast<WKBooleanRef>(WKDictionaryGetItemForKey(messageBodyDictionary, isInitialKeyWK.get()));
+        bool isInitialState = WKBooleanGetValue(isInitialWK);
+
+        TestController::shared().setVisibilityState(visibilityState, isInitialState);
+        return;
+    }
+
     if (WKStringIsEqualToUTF8CString(messageName, "ProcessWorkQueue")) {
         if (TestController::shared().workQueueManager().processWorkQueue()) {
             WKRetainPtr<WKStringRef> messageName = adoptWK(WKStringCreateWithUTF8CString("WorkQueueProcessedCallback"));
@@ -590,6 +628,27 @@ void TestInvocation::didReceiveMessageFromInjectedBundle(WKStringRef messageName
         return;
     }
 
+    if (WKStringIsEqualToUTF8CString(messageName, "SetHandlesAuthenticationChallenge")) {
+        ASSERT(WKGetTypeID(messageBody) == WKBooleanGetTypeID());
+        WKBooleanRef value = static_cast<WKBooleanRef>(messageBody);
+        TestController::shared().setHandlesAuthenticationChallenges(WKBooleanGetValue(value));
+        return;
+    }
+
+    if (WKStringIsEqualToUTF8CString(messageName, "SetAuthenticationUsername")) {
+        ASSERT(WKGetTypeID(messageBody) == WKStringGetTypeID());
+        WKStringRef username = static_cast<WKStringRef>(messageBody);
+        TestController::shared().setAuthenticationUsername(toWTFString(username));
+        return;
+    }
+
+    if (WKStringIsEqualToUTF8CString(messageName, "SetAuthenticationPassword")) {
+        ASSERT(WKGetTypeID(messageBody) == WKStringGetTypeID());
+        WKStringRef password = static_cast<WKStringRef>(messageBody);
+        TestController::shared().setAuthenticationPassword(toWTFString(password));
+        return;
+    }
+
     ASSERT_NOT_REACHED();
 }
 
@@ -610,6 +669,11 @@ WKRetainPtr<WKTypeRef> TestInvocation::didReceiveSynchronousMessageFromInjectedB
 
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+void TestInvocation::outputText(const WTF::String& text)
+{
+    m_textOutput.append(text);
 }
 
 } // namespace WTR

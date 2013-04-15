@@ -52,8 +52,9 @@ using namespace WebKit;
 namespace WebCore {
 
 // ResourceHandleInternal -----------------------------------------------------
-ResourceHandleInternal::ResourceHandleInternal(const ResourceRequest& request, ResourceHandleClient* client)
-    : m_request(request)
+ResourceHandleInternal::ResourceHandleInternal(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client)
+    : m_context(context)
+    , m_request(request)
     , m_owner(0)
     , m_client(client)
     , m_state(ConnectionStateNew)
@@ -86,6 +87,11 @@ void ResourceHandleInternal::cancel()
 void ResourceHandleInternal::setDefersLoading(bool value)
 {
     m_loader->setDefersLoading(value);
+}
+
+void ResourceHandleInternal::didChangePriority(WebURLRequest::Priority newPriority)
+{
+    m_loader->didChangePriority(newPriority);
 }
 
 bool ResourceHandleInternal::allowStoredCredentials() const
@@ -173,11 +179,8 @@ ResourceHandleInternal* ResourceHandleInternal::FromResourceHandle(ResourceHandl
 
 // ResourceHandle -------------------------------------------------------------
 
-ResourceHandle::ResourceHandle(const ResourceRequest& request,
-                               ResourceHandleClient* client,
-                               bool defersLoading,
-                               bool shouldContentSniff)
-    : d(adoptPtr(new ResourceHandleInternal(request, client)))
+ResourceHandle::ResourceHandle(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
+    : d(adoptPtr(new ResourceHandleInternal(context, request, client)))
 {
     d->setOwner(this);
 
@@ -191,17 +194,22 @@ PassRefPtr<ResourceHandle> ResourceHandle::create(NetworkingContext* context,
                                                   bool shouldContentSniff)
 {
     RefPtr<ResourceHandle> newHandle = adoptRef(new ResourceHandle(
-        request, client, defersLoading, shouldContentSniff));
+        context, request, client, defersLoading, shouldContentSniff));
 
-    if (newHandle->start(context))
+    if (newHandle->start())
         return newHandle.release();
 
     return 0;
 }
 
-ResourceRequest& ResourceHandle::firstRequest()
+ResourceRequest& ResourceHandle::firstRequest() const
 {
     return d->request();
+}
+
+NetworkingContext* ResourceHandle::context() const
+{
+    return d->context();
 }
 
 ResourceHandleClient* ResourceHandle::client() const
@@ -219,9 +227,9 @@ void ResourceHandle::setDefersLoading(bool value)
     d->setDefersLoading(value);
 }
 
-bool ResourceHandle::start(NetworkingContext* context)
+bool ResourceHandle::start()
 {
-    if (!context)
+    if (!d->context())
         return false;
 
     d->start();
@@ -276,20 +284,9 @@ void ResourceHandle::loadResourceSynchronously(NetworkingContext* context,
     data.append(dataOut.data(), dataOut.size());
 }
 
-// static
-bool ResourceHandle::willLoadFromCache(ResourceRequest& request, Frame*)
+void ResourceHandle::didChangePriority(ResourceLoadPriority newPriority)
 {
-    // This method is used to determine if a POST request can be repeated from
-    // cache, but you cannot really know until you actually try to read from the
-    // cache. Even if we checked now, something else could come along and wipe
-    // out the cache entry by the time we fetch it.
-    //
-    // So, we always say yes here, to prevent the FrameLoader from initiating a
-    // reload. Then in FrameLoaderClientImpl::dispatchWillSendRequest, we
-    // fix-up the cache policy of the request to force a load from the cache.
-    //
-    ASSERT(request.httpMethod() == "POST");
-    return true;
+    d->didChangePriority(static_cast<WebURLRequest::Priority>(newPriority));
 }
 
 // static

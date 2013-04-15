@@ -126,9 +126,7 @@ String DateTimeNumericFieldElement::formatValue(int value) const
 
 void DateTimeNumericFieldElement::handleKeyboardEvent(KeyboardEvent* keyboardEvent)
 {
-    if (isReadOnly())
-        return;
-
+    ASSERT(!isDisabled());
     if (keyboardEvent->type() != eventNames().keypressEvent)
         return;
 
@@ -162,19 +160,19 @@ bool DateTimeNumericFieldElement::hasValue() const
     return m_hasValue;
 }
 
+void DateTimeNumericFieldElement::initialize(const AtomicString& pseudo, const String& axHelpText)
+{
+    DateTimeFieldElement::initialize(pseudo, axHelpText, m_range.minimum, m_range.maximum);
+}
+
 int DateTimeNumericFieldElement::maximum() const
 {
     return m_range.maximum;
 }
 
-int DateTimeNumericFieldElement::minimum() const
-{
-    return m_range.minimum;
-}
-
 void DateTimeNumericFieldElement::setEmptyValue(EventBehavior eventBehavior)
 {
-    if (isReadOnly())
+    if (isDisabled())
         return;
 
     m_hasValue = false;

@@ -30,6 +30,7 @@
 #include "MediaControlsApple.h"
 
 #include "Chrome.h"
+#include "ExceptionCodePlaceholder.h"
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "MediaControlElements.h"
@@ -273,6 +274,18 @@ void MediaControlsApple::setMediaController(MediaControllerInterface* controller
         m_closedCaptionsContainer->setMediaController(controller);
 }
 
+void MediaControlsApple::defaultEventHandler(Event* event)
+{
+    if (event->type() == eventNames().clickEvent) {
+        if (m_closedCaptionsContainer && m_closedCaptionsContainer->isShowing()) {
+            m_closedCaptionsContainer->hide();
+            event->setDefaultHandled();
+        }
+    }
+
+    MediaControls::defaultEventHandler(event);
+}
+
 void MediaControlsApple::hide()
 {
     MediaControls::hide();
@@ -310,7 +323,7 @@ void MediaControlsApple::reset()
         m_fullScreenButton->hide();
 
     float duration = m_mediaController->duration();
-    if (isfinite(duration) || page->theme()->hasOwnDisabledStateHandlingFor(MediaSliderPart)) {
+    if (std::isfinite(duration) || page->theme()->hasOwnDisabledStateHandlingFor(MediaSliderPart)) {
         m_timeline->setDuration(duration);
         m_timelineContainer->show();
         m_timeline->setPosition(m_mediaController->currentTime());
@@ -377,10 +390,9 @@ void MediaControlsApple::updateCurrentTimeDisplay()
         return;
 
     // Allow the theme to format the time.
-    ExceptionCode ec;
-    m_currentTimeDisplay->setInnerText(page->theme()->formatMediaControlsCurrentTime(now, duration), ec);
+    m_currentTimeDisplay->setInnerText(page->theme()->formatMediaControlsCurrentTime(now, duration), IGNORE_EXCEPTION);
     m_currentTimeDisplay->setCurrentValue(now);
-    m_timeRemainingDisplay->setInnerText(page->theme()->formatMediaControlsRemainingTime(now, duration), ec);
+    m_timeRemainingDisplay->setInnerText(page->theme()->formatMediaControlsRemainingTime(now, duration), IGNORE_EXCEPTION);
     m_timeRemainingDisplay->setCurrentValue(now - duration);
 }
 
@@ -500,6 +512,12 @@ void MediaControlsApple::closedCaptionTracksChanged()
 {
     if (m_closedCaptionsTrackList)
         m_closedCaptionsTrackList->resetTrackListMenu();
+    if (m_toggleClosedCaptionsButton) {
+        if (m_mediaController->hasClosedCaptions())
+            m_toggleClosedCaptionsButton->show();
+        else
+            m_toggleClosedCaptionsButton->hide();
+    }
 }
 
 }

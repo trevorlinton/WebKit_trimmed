@@ -59,7 +59,7 @@ class StickyPositionViewportConstraints;
 
 class RenderBoxModelObject : public RenderLayerModelObject {
 public:
-    RenderBoxModelObject(Node*);
+    RenderBoxModelObject(ContainerNode*);
     virtual ~RenderBoxModelObject();
     
     LayoutSize relativePositionOffset() const;
@@ -70,6 +70,7 @@ public:
     LayoutSize stickyPositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? stickyPositionOffset() : stickyPositionOffset().transposedSize(); }
 
     LayoutSize offsetForInFlowPosition() const;
+    LayoutSize paintOffset() const;
 
     // IE extensions. Used to calculate offsetWidth/Height.  Overridden by inlines (RenderFlow)
     // to return the remaining width on a given line (and the height of a single line).
@@ -80,25 +81,27 @@ public:
 
     int pixelSnappedOffsetLeft() const { return roundToInt(offsetLeft()); }
     int pixelSnappedOffsetTop() const { return roundToInt(offsetTop()); }
-    int pixelSnappedOffsetWidth() const;
-    int pixelSnappedOffsetHeight() const;
+    virtual int pixelSnappedOffsetWidth() const;
+    virtual int pixelSnappedOffsetHeight() const;
 
     virtual void updateFromStyle() OVERRIDE;
 
     virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns(); }
 
+    virtual bool isOpaqueInRect(const LayoutRect& localRect) const OVERRIDE { return foregroundIsOpaqueInRect(localRect) || backgroundIsOpaqueInRect(localRect); }
+
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
 
     // These return the CSS computed padding values.
-    LayoutUnit computedCSSPaddingTop() const;
-    LayoutUnit computedCSSPaddingBottom() const;
-    LayoutUnit computedCSSPaddingLeft() const;
-    LayoutUnit computedCSSPaddingRight() const;
-    LayoutUnit computedCSSPaddingBefore() const;
-    LayoutUnit computedCSSPaddingAfter() const;
-    LayoutUnit computedCSSPaddingStart() const;
-    LayoutUnit computedCSSPaddingEnd() const;
+    LayoutUnit computedCSSPaddingTop() const { return computedCSSPadding(style()->paddingTop()); }
+    LayoutUnit computedCSSPaddingBottom() const { return computedCSSPadding(style()->paddingBottom()); }
+    LayoutUnit computedCSSPaddingLeft() const { return computedCSSPadding(style()->paddingLeft()); }
+    LayoutUnit computedCSSPaddingRight() const { return computedCSSPadding(style()->paddingRight()); }
+    LayoutUnit computedCSSPaddingBefore() const { return computedCSSPadding(style()->paddingBefore()); }
+    LayoutUnit computedCSSPaddingAfter() const { return computedCSSPadding(style()->paddingAfter()); }
+    LayoutUnit computedCSSPaddingStart() const { return computedCSSPadding(style()->paddingStart()); }
+    LayoutUnit computedCSSPaddingEnd() const { return computedCSSPadding(style()->paddingEnd()); }
 
     // These functions are used during layout. Table cells and the MathML
     // code override them to include some extra intrinsic padding.
@@ -146,8 +149,6 @@ public:
 
     virtual LayoutUnit containingBlockLogicalWidthForContent() const;
 
-    virtual void childBecameNonInline(RenderObject* /*child*/) { }
-
     void paintBorder(const PaintInfo&, const LayoutRect&, const RenderStyle*, BackgroundBleedAvoidance = BackgroundBleedNone, bool includeLogicalLeftEdge = true, bool includeLogicalRightEdge = true);
     bool paintNinePieceImage(GraphicsContext*, const LayoutRect&, const RenderStyle*, const NinePieceImage&, CompositeOperator = CompositeSourceOver);
     void paintBoxShadow(const PaintInfo&, const LayoutRect&, const RenderStyle*, ShadowStyle, bool includeLogicalLeftEdge = true, bool includeLogicalRightEdge = true);
@@ -164,6 +165,8 @@ public:
     void highQualityRepaintTimerFired(Timer<RenderBoxModelObject>*);
 
     virtual void setSelectionState(SelectionState s);
+
+    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isBlockFlow(); }
 
 #if USE(ACCELERATED_COMPOSITING)
     void contentChanged(ContentChangeType);
@@ -182,6 +185,9 @@ public:
 
 protected:
     virtual void willBeDestroyed();
+
+    virtual bool backgroundIsOpaqueInRect(const LayoutRect&) const { return false; }
+    virtual bool foregroundIsOpaqueInRect(const LayoutRect&) const { return false; }
 
     class BackgroundImageGeometry {
     public:
@@ -248,6 +254,8 @@ protected:
 
     static void clipRoundedInnerRect(GraphicsContext*, const LayoutRect&, const RoundedRect& clipRect);
 
+    bool hasAutoHeightOrContainingBlockWithAutoHeight() const;
+
 public:
     // For RenderBlocks and RenderInlines with m_style->styleType() == FIRST_LETTER, this tracks their remaining text fragments
     RenderObject* firstLetterRemainingText() const;
@@ -278,6 +286,7 @@ public:
     void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false);
 
 private:
+    LayoutUnit computedCSSPadding(Length) const;
     virtual bool isBoxModelObject() const { return true; }
     
     virtual LayoutRect frameRectForStickyPositioning() const = 0;
@@ -289,7 +298,8 @@ private:
 
     RoundedRect getBackgroundRoundedRect(const LayoutRect&, InlineFlowBox*, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
         bool includeLogicalLeftEdge, bool includeLogicalRightEdge) const;
-
+    
+    bool fixedBackgroundPaintsInLocalCoordinates() const;
 
     void clipBorderSidePolygon(GraphicsContext*, const RoundedRect& outerBorder, const RoundedRect& innerBorder,
                                BoxSide, bool firstEdgeMatches, bool secondEdgeMatches);
@@ -309,13 +319,13 @@ private:
 
 inline RenderBoxModelObject* toRenderBoxModelObject(RenderObject* object)
 { 
-    ASSERT(!object || object->isBoxModelObject());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBoxModelObject());
     return static_cast<RenderBoxModelObject*>(object);
 }
 
 inline const RenderBoxModelObject* toRenderBoxModelObject(const RenderObject* object)
 { 
-    ASSERT(!object || object->isBoxModelObject());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBoxModelObject());
     return static_cast<const RenderBoxModelObject*>(object);
 }
 

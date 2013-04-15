@@ -157,6 +157,13 @@ namespace WebCore {
         {
             return m_bitmap.bitmap();
         }
+
+        void setMemoryAllocator(SkBitmap::Allocator* allocator)
+        {
+            m_allocator = allocator;
+        }
+
+        SkBitmap::Allocator* allocator() const { return m_allocator; }
 #endif
 
         // Use fix point multiplier instead of integer division or floating point math.
@@ -212,6 +219,7 @@ namespace WebCore {
 
 #if USE(SKIA)
         NativeImageSkia m_bitmap;
+        SkBitmap::Allocator* m_allocator;
 #else
         Vector<PixelData> m_backingStore;
         PixelData* m_bytes; // The memory is backed by m_backingStore.
@@ -406,6 +414,32 @@ namespace WebCore {
 
         virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
+#if USE(SKIA)
+        virtual void setMemoryAllocator(SkBitmap::Allocator* allocator)
+        {
+            // FIXME: this doesn't work for images with multiple frames.
+            if (m_frameBufferCache.isEmpty())
+                m_frameBufferCache.resize(1);
+            m_frameBufferCache[0].setMemoryAllocator(allocator);
+        }
+
+        virtual bool lockFrameBuffers()
+        {
+            bool ret = true;
+            for (unsigned i = 0; i < m_frameBufferCache.size(); ++i) {
+                const SkBitmap& bitmap = m_frameBufferCache[i].getSkBitmap();
+                bitmap.lockPixels();
+                ret = ret && bitmap.getPixels();
+            }
+            return ret;
+        }
+
+        virtual void unlockFrameBuffers()
+        {
+            for (unsigned i = 0; i < m_frameBufferCache.size(); ++i)
+                m_frameBufferCache[i].getSkBitmap().unlockPixels();
+        }
+#endif
     protected:
         void prepareScaleDataIfNecessary();
         int upperBoundScaledX(int origX, int searchStart = 0);

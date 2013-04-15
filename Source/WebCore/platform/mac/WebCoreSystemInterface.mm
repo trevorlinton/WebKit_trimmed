@@ -208,28 +208,25 @@ void (*wkCGPathAddRoundedRect)(CGMutablePathRef path, const CGAffineTransform* m
 void (*wkCFURLRequestAllowAllPostCaching)(CFURLRequestRef);
 #endif
 
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080 && !PLATFORM(IOS)
+#if USE(CONTENT_FILTERING)
 BOOL (*wkFilterIsManagedSession)(void);
 WebFilterEvaluator *(*wkFilterCreateInstance)(NSURLResponse *);
-void (*wkFilterRelease)(WebFilterEvaluator *);
 BOOL (*wkFilterWasBlocked)(WebFilterEvaluator *);
-const char* (*wkFilterAddData)(WebFilterEvaluator *, const char* data, int* length);
-const char* (*wkFilterDataComplete)(WebFilterEvaluator *, int* length);
+BOOL (*wkFilterIsBuffering)(WebFilterEvaluator *);
+NSData *(*wkFilterAddData)(WebFilterEvaluator *, NSData *);
+NSData *(*wkFilterDataComplete)(WebFilterEvaluator *);
+#endif
 
+#if !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
 CGFloat (*wkNSElasticDeltaForTimeDelta)(CGFloat initialPosition, CGFloat initialVelocity, CGFloat elapsedTime);
 CGFloat (*wkNSElasticDeltaForReboundDelta)(CGFloat delta);
 CGFloat (*wkNSReboundDeltaForElasticDelta)(CGFloat delta);
 #endif
 
-bool (*wkCaptionAppearanceHasUserPreferences)(void);
-bool (*wkCaptionAppearanceShowCaptionsWhenAvailable)(void);
-CGColorRef(*wkCaptionAppearanceCopyForegroundColor)(void);
-CGColorRef(*wkCaptionAppearanceCopyBackgroundColor)(void);
-CGColorRef(*wkCaptionAppearanceCopyWindowColor)(void);
-bool(*wkCaptionAppearanceGetForegroundOpacity)(CGFloat*);
-bool(*wkCaptionAppearanceGetBackgroundOpacity)(CGFloat*);
-bool(*wkCaptionAppearanceGetWindowOpacity)(CGFloat*);
-CGFontRef(*wkCaptionAppearanceCopyFontForStyle)(int);
-bool(*wkCaptionAppearanceGetRelativeCharacterSize)(CGFloat*);
-int(*wkCaptionAppearanceGetTextEdgeStyle)(void);
-CFStringRef(*wkCaptionAppearanceGetSettingsChangedNotification)(void);
+#if ENABLE(PUBLIC_SUFFIX_LIST)
+bool (*wkIsPublicSuffix)(NSString *host);
+#endif
+
+#if ENABLE(CACHE_PARTITIONING)
+CFStringRef (*wkCachePartitionKey)(void);
+#endif

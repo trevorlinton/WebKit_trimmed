@@ -37,6 +37,7 @@
 #include <WebCore/Frame.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/GLContext.h>
+#include <WebCore/GraphicsLayerTextureMapper.h>
 #include <WebCore/Page.h>
 #include <WebCore/Settings.h>
 
@@ -167,7 +168,16 @@ void LayerTreeHostGtk::invalidate()
     m_isValid = false;
 }
 
-void LayerTreeHostGtk::setNonCompositedContentsNeedDisplay(const IntRect& rect)
+void LayerTreeHostGtk::setNonCompositedContentsNeedDisplay()
+{
+    m_nonCompositedContentLayer->setNeedsDisplay();
+    if (m_pageOverlayLayer)
+        m_pageOverlayLayer->setNeedsDisplay();
+
+    scheduleLayerFlush();
+}
+
+void LayerTreeHostGtk::setNonCompositedContentsNeedDisplayInRect(const IntRect& rect)
 {
     m_nonCompositedContentLayer->setNeedsDisplayInRect(rect);
     if (m_pageOverlayLayer)
@@ -176,9 +186,9 @@ void LayerTreeHostGtk::setNonCompositedContentsNeedDisplay(const IntRect& rect)
     scheduleLayerFlush();
 }
 
-void LayerTreeHostGtk::scrollNonCompositedContents(const IntRect& scrollRect, const IntSize& scrollOffset)
+void LayerTreeHostGtk::scrollNonCompositedContents(const IntRect& scrollRect)
 {
-    setNonCompositedContentsNeedDisplay(scrollRect);
+    setNonCompositedContentsNeedDisplayInRect(scrollRect);
 }
 
 void LayerTreeHostGtk::sizeDidChange(const IntSize& newSize)
@@ -207,7 +217,7 @@ void LayerTreeHostGtk::sizeDidChange(const IntSize& newSize)
     compositeLayersToContext(ForResize);
 }
 
-void LayerTreeHostGtk::deviceScaleFactorDidChange()
+void LayerTreeHostGtk::deviceOrPageScaleFactorChanged()
 {
     // Other layers learn of the scale factor change via WebPage::setDeviceScaleFactor.
     m_nonCompositedContentLayer->deviceOrPageScaleFactorChanged();

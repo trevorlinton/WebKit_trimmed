@@ -32,6 +32,7 @@
 #if ENABLE(JAVASCRIPT_DEBUGGER) && ENABLE(INSPECTOR)
 #include "InspectorDebuggerAgent.h"
 
+#include "CachedResource.h"
 #include "ContentSearchUtils.h"
 #include "InjectedScript.h"
 #include "InjectedScriptManager.h"
@@ -60,7 +61,7 @@ static const char javaScriptBreakpoints[] = "javaScriptBreakopints";
 static const char pauseOnExceptionsState[] = "pauseOnExceptionsState";
 };
 
-const char* InspectorDebuggerAgent::backtraceObjectGroup = "backtrace-object-group";
+const char* InspectorDebuggerAgent::backtraceObjectGroup = "backtrace";
 
 InspectorDebuggerAgent::InspectorDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager)
     : InspectorBaseAgent<InspectorDebuggerAgent>("Debugger", instrumentingAgents, inspectorState)
@@ -411,7 +412,7 @@ void InspectorDebuggerAgent::getFunctionDetails(ErrorString* errorString, const 
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(functionId);
     if (injectedScript.hasNoValue()) {
-        *errorString = "Inspected frame has gone";
+        *errorString = "Function object id is obsolete";
         return;
     }
     injectedScript.getFunctionDetails(errorString, functionId, &details);
@@ -455,6 +456,7 @@ void InspectorDebuggerAgent::stepOver(ErrorString* errorString)
 {
     if (!assertPaused(errorString))
         return;
+    m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
     scriptDebugServer().stepOverStatement();
 }
 
@@ -462,6 +464,7 @@ void InspectorDebuggerAgent::stepInto(ErrorString* errorString)
 {
     if (!assertPaused(errorString))
         return;
+    m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
     scriptDebugServer().stepIntoStatement();
     m_listener->stepInto();
 }
@@ -470,6 +473,7 @@ void InspectorDebuggerAgent::stepOut(ErrorString* errorString)
 {
     if (!assertPaused(errorString))
         return;
+    m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
     scriptDebugServer().stepOutOfFunction();
 }
 
@@ -578,6 +582,30 @@ void InspectorDebuggerAgent::runScript(ErrorString* errorString, const ScriptId&
 
 void InspectorDebuggerAgent::setOverlayMessage(ErrorString*, const String*)
 {
+}
+
+void InspectorDebuggerAgent::setVariableValue(ErrorString* errorString, int scopeNumber, const String& variableName, const RefPtr<InspectorObject>& newValue, const String* callFrameId, const String* functionObjectId)
+{
+    InjectedScript injectedScript;
+    if (callFrameId) {
+        injectedScript = m_injectedScriptManager->injectedScriptForObjectId(*callFrameId);
+        if (injectedScript.hasNoValue()) {
+            *errorString = "Inspected frame has gone";
+            return;
+        }
+    } else if (functionObjectId) {
+        injectedScript = m_injectedScriptManager->injectedScriptForObjectId(*functionObjectId);
+        if (injectedScript.hasNoValue()) {
+            *errorString = "Function object id cannot be resolved";
+            return;
+        }
+    } else {
+        *errorString = "Either call frame or function object must be specified";
+        return;
+    }
+    String newValueString = newValue->toJSONString();
+
+    injectedScript.setVariableValue(errorString, m_currentCallStack, callFrameId, functionObjectId, scopeNumber, variableName, newValueString);
 }
 
 void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directiveText)
@@ -740,23 +768,23 @@ void InspectorDebuggerAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInf
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorDebuggerAgent);
     InspectorBaseAgent<InspectorDebuggerAgent>::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_injectedScriptManager);
+    info.addMember(m_injectedScriptManager, "injectedScriptManager");
     info.addWeakPointer(m_frontend);
-    info.addMember(m_pausedScriptState);
-    info.addMember(m_currentCallStack);
-    info.addMember(m_scripts);
-    info.addMember(m_breakpointIdToDebugServerBreakpointIds);
-    info.addMember(m_continueToLocationBreakpointId);
-    info.addMember(m_breakAuxData);
+    info.addMember(m_pausedScriptState, "pausedScriptState");
+    info.addMember(m_currentCallStack, "currentCallStack");
+    info.addMember(m_scripts, "scripts");
+    info.addMember(m_breakpointIdToDebugServerBreakpointIds, "breakpointIdToDebugServerBreakpointIds");
+    info.addMember(m_continueToLocationBreakpointId, "continueToLocationBreakpointId");
+    info.addMember(m_breakAuxData, "breakAuxData");
     info.addWeakPointer(m_listener);
 }
 
 void ScriptDebugListener::Script::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorDebuggerAgent);
-    info.addMember(url);
-    info.addMember(source);
-    info.addMember(sourceMappingURL);
+    info.addMember(url, "url");
+    info.addMember(source, "source");
+    info.addMember(sourceMappingURL, "sourceMappingURL");
 }
 
 void InspectorDebuggerAgent::reset()

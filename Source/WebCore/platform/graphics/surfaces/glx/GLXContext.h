@@ -32,24 +32,12 @@
 
 namespace WebCore {
 
-class GLXCurrentContextWrapper : public GLPlatformContext {
-
-public:
-    GLXCurrentContextWrapper()
-        : GLPlatformContext()
-    {
-        m_contextHandle = glXGetCurrentContext();
-    }
-
-    virtual ~GLXCurrentContextWrapper() { }
-};
-
 class GLXOffScreenContext : public GLPlatformContext {
 
 public:
     GLXOffScreenContext();
     virtual ~GLXOffScreenContext();
-    virtual bool initialize(GLPlatformSurface*) OVERRIDE;
+    virtual bool initialize(GLPlatformSurface*, PlatformContext) OVERRIDE;
     virtual bool platformMakeCurrent(GLPlatformSurface*) OVERRIDE;
     virtual void platformReleaseCurrent() OVERRIDE;
     virtual void destroy() OVERRIDE;
@@ -57,7 +45,6 @@ public:
 
 private:
     void freeResources();
-    Display* m_display;
 };
 
 }

@@ -26,14 +26,25 @@
 #include "config.h"
 #import "JavaScriptCore.h"
 
-#if JS_OBJC_API_ENABLED
+#if JSC_OBJC_API_ENABLED
 
+#import "APICast.h"
 #import "JSContextInternal.h"
 #import "JSWrapperMap.h"
 #import "ObjCCallbackFunction.h"
 #import "ObjcRuntimeExtras.h"
+#import "Operations.h"
+#import "WeakGCMap.h"
 #import <wtf/TCSpinLock.h>
-#import "wtf/Vector.h"
+#import <wtf/Vector.h>
+
+@class JSObjCClassInfo;
+
+@interface JSWrapperMap () 
+
+- (JSObjCClassInfo*)classInfoForClass:(Class)cls;
+
+@end
 
 static void wrapperFinalize(JSObjectRef object)
 {
@@ -63,7 +74,7 @@ static JSClassRef wrapperClass()
 // All semicolons are removed, lowercase letters following a semicolon are capitalized.
 static NSString *selectorToPropertyName(const char* start)
 {
-    // Use 'index' to check for colons, if there are non, this is easy!
+    // Use 'index' to check for colons, if there are none, this is easy!
     const char* firstColon = index(start, ':');
     if (!firstColon)
         return [NSString stringWithUTF8String:start];
@@ -103,9 +114,9 @@ done:
     return result;
 }
 
-// Make an object that is in all ways are completely vanilla JavaScript object,
+// Make an object that is in all ways a completely vanilla JavaScript object,
 // other than that it has a native brand set that will be displayed by the default
-// Object.prototype.toString comversion.
+// Object.prototype.toString conversion.
 static JSValue *createObjectWithCustomBrand(JSContext *context, NSString *brand, JSClassRef parentClass = 0, void* privateData = 0)
 {
     JSClassDefinition definition;
@@ -113,7 +124,7 @@ static JSValue *createObjectWithCustomBrand(JSContext *context, NSString *brand,
     definition.className = [brand UTF8String];
     definition.parentClass = parentClass;
     JSClassRef classRef = JSClassCreate(&definition);
-    JSObjectRef result = JSObjectMake(contextInternalContext(context), classRef, privateData);
+    JSObjectRef result = JSObjectMake([context globalContextRef], classRef, privateData);
     JSClassRelease(classRef);
     return [[JSValue alloc] initWithValue:result inContext:context];
 }
@@ -151,8 +162,8 @@ inline void putNonEnumerable(JSValue *base, NSString *propertyName, JSValue *val
 
 // This method will iterate over the set of required methods in the protocol, and:
 //  * Determine a property name (either via a renameMap or default conversion).
-//  * If an accessorMap is provided, and conatins a this name, store the method in the map.
-//  * Otherwise, if the object doesn't already conatin a property with name, create it.
+//  * If an accessorMap is provided, and contains this name, store the method in the map.
+//  * Otherwise, if the object doesn't already contain a property with name, create it.
 static void copyMethodsToObject(JSContext *context, Class objcClass, Protocol *protocol, BOOL isInstanceMethod, JSValue *object, NSMutableDictionary *accessorMethods = nil)
 {
     NSMutableDictionary *renameMap = createRenameMap(protocol, isInstanceMethod);
@@ -288,8 +299,8 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
     Class m_class;
     bool m_block;
     JSClassRef m_classRef;
-    JSValue *m_prototype;
-    JSValue *m_constructor;
+    JSC::Weak<JSC::JSObject> m_prototype;
+    JSC::Weak<JSC::JSObject> m_constructor;
 }
 
 - (id)initWithContext:(JSContext *)context forClass:(Class)cls superClassInfo:(JSObjCClassInfo*)superClassInfo;
@@ -316,26 +327,7 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
     definition.parentClass = wrapperClass();
     m_classRef = JSClassCreate(&definition);
 
-    ASSERT((cls == [NSObject class]) == !superClassInfo);
-    if (!superClassInfo) {
-        m_constructor = [context[@"Object"] retain];
-        m_prototype = [m_constructor[@"prototype"] retain];
-    } else {
-        // Create the prototype/constructor pair.
-        m_prototype = createObjectWithCustomBrand(context, [NSString stringWithFormat:@"%sPrototype", className]);
-        m_constructor = createObjectWithCustomBrand(context, [NSString stringWithFormat:@"%sConstructor", className], wrapperClass(), [cls retain]);
-        putNonEnumerable(m_prototype, @"constructor", m_constructor);
-        putNonEnumerable(m_constructor, @"prototype", m_prototype);
-
-        Protocol *exportProtocol = getJSExportProtocol();
-        forEachProtocolImplementingProtocol(cls, exportProtocol, ^(Protocol *protocol){
-            copyPrototypeProperties(context, cls, protocol, m_prototype);
-            copyMethodsToObject(context, cls, protocol, NO, m_constructor);
-        });
-
-        // Set [Prototype].
-        m_prototype[@"__proto__"] = superClassInfo->m_prototype;
-    }
+    [self allocateConstructorAndPrototypeWithSuperClassInfo:superClassInfo];
 
     return self;
 }
@@ -343,9 +335,63 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
 - (void)dealloc
 {
     JSClassRelease(m_classRef);
-    [m_prototype release];
-    [m_constructor release];
     [super dealloc];
+}
+
+- (void)allocateConstructorAndPrototypeWithSuperClassInfo:(JSObjCClassInfo*)superClassInfo
+{
+    ASSERT(!m_constructor || !m_prototype);
+    ASSERT((m_class == [NSObject class]) == !superClassInfo);
+    if (!superClassInfo) {
+        JSContextRef cContext = [m_context globalContextRef];
+        JSValue *constructor = m_context[@"Object"];
+        if (!m_constructor)
+            m_constructor = toJS(JSValueToObject(cContext, valueInternalValue(constructor), 0));
+
+        if (!m_prototype) {
+            JSValue *prototype = constructor[@"prototype"];
+            m_prototype = toJS(JSValueToObject(cContext, valueInternalValue(prototype), 0));
+        }
+    } else {
+        const char* className = class_getName(m_class);
+
+        // Create or grab the prototype/constructor pair.
+        JSValue *prototype;
+        JSValue *constructor;
+        if (m_prototype)
+            prototype = [JSValue valueWithValue:toRef(m_prototype.get()) inContext:m_context];
+        else
+            prototype = createObjectWithCustomBrand(m_context, [NSString stringWithFormat:@"%sPrototype", className]);
+
+        if (m_constructor)
+            constructor = [JSValue valueWithValue:toRef(m_constructor.get()) inContext:m_context];
+        else
+            constructor = createObjectWithCustomBrand(m_context, [NSString stringWithFormat:@"%sConstructor", className], wrapperClass(), [m_class retain]);
+
+        JSContextRef cContext = [m_context globalContextRef];
+        m_prototype = toJS(JSValueToObject(cContext, valueInternalValue(prototype), 0));
+        m_constructor = toJS(JSValueToObject(cContext, valueInternalValue(constructor), 0));
+
+        putNonEnumerable(prototype, @"constructor", constructor);
+        putNonEnumerable(constructor, @"prototype", prototype);
+
+        Protocol *exportProtocol = getJSExportProtocol();
+        forEachProtocolImplementingProtocol(m_class, exportProtocol, ^(Protocol *protocol){
+            copyPrototypeProperties(m_context, m_class, protocol, prototype);
+            copyMethodsToObject(m_context, m_class, protocol, NO, constructor);
+        });
+
+        // Set [Prototype].
+        JSObjectSetPrototype([m_context globalContextRef], toRef(m_prototype.get()), toRef(superClassInfo->m_prototype.get()));
+
+        [constructor release];
+        [prototype release];
+    }
+}
+
+- (void)reallocateConstructorAndOrPrototype
+{
+    [self allocateConstructorAndPrototypeWithSuperClassInfo:[m_context.wrapperMap classInfoForClass:class_getSuperclass(m_class)]];
 }
 
 - (JSValue *)wrapperForObject:(id)object
@@ -357,18 +403,21 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
             return [JSValue valueWithValue:method inContext:m_context];
     }
 
-    JSValueRef prototypeValue = valueInternalValue(m_prototype);
-    ASSERT(JSValueIsObject(contextInternalContext(m_context), prototypeValue));
-    JSObjectRef prototype = JSValueToObject(contextInternalContext(m_context), prototypeValue, 0);
+    if (!m_prototype)
+        [self reallocateConstructorAndOrPrototype];
+    ASSERT(!!m_prototype);
 
-    JSObjectRef wrapper = JSObjectMake(contextInternalContext(m_context), m_classRef, [object retain]);
-    JSObjectSetPrototype(contextInternalContext(m_context), wrapper, prototype);
+    JSObjectRef wrapper = JSObjectMake([m_context globalContextRef], m_classRef, [object retain]);
+    JSObjectSetPrototype([m_context globalContextRef], wrapper, toRef(m_prototype.get()));
     return [JSValue valueWithValue:wrapper inContext:m_context];
 }
 
 - (JSValue *)constructor
 {
-    return m_constructor;
+    if (!m_constructor)
+        [self reallocateConstructorAndOrPrototype];
+    ASSERT(!!m_constructor);
+    return [JSValue valueWithValue:toRef(m_constructor.get()) inContext:m_context];
 }
 
 @end
@@ -376,6 +425,8 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
 @implementation JSWrapperMap {
     JSContext *m_context;
     NSMutableDictionary *m_classMap;
+    JSC::WeakGCMap<id, JSC::JSObject> m_cachedJSWrappers;
+    NSMapTable *m_cachedObjCWrappers;
 }
 
 - (id)initWithContext:(JSContext *)context
@@ -384,6 +435,10 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
     if (!self)
         return nil;
 
+    NSPointerFunctionsOptions keyOptions = NSPointerFunctionsOpaqueMemory | NSPointerFunctionsOpaquePersonality;
+    NSPointerFunctionsOptions valueOptions = NSPointerFunctionsWeakMemory | NSPointerFunctionsObjectPersonality;
+    m_cachedObjCWrappers = [[NSMapTable alloc] initWithKeyOptions:keyOptions valueOptions:valueOptions capacity:0];
+    
     m_context = context;
     m_classMap = [[NSMutableDictionary alloc] init];
     return self;
@@ -404,19 +459,20 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
     if (JSObjCClassInfo* classInfo = (JSObjCClassInfo*)m_classMap[cls])
         return classInfo;
 
-    // Skip internal classes begining with '_' - just copy link to the parent class's info.
+    // Skip internal classes beginning with '_' - just copy link to the parent class's info.
     if ('_' == *class_getName(cls))
         return m_classMap[cls] = [self classInfoForClass:class_getSuperclass(cls)];
 
     return m_classMap[cls] = [[[JSObjCClassInfo alloc] initWithContext:m_context forClass:cls superClassInfo:[self classInfoForClass:class_getSuperclass(cls)]] autorelease];
 }
 
-- (JSValue *)wrapperForObject:(id)object
+- (JSValue *)jsWrapperForObject:(id)object
 {
-    JSValue *wrapper = objc_getAssociatedObject(object, m_context);
-    if (wrapper && wrapper.context)
-        return wrapper;
+    JSC::JSObject* jsWrapper = m_cachedJSWrappers.get(object);
+    if (jsWrapper)
+        return [JSValue valueWithValue:toRef(jsWrapper) inContext:m_context];
 
+    JSValue *wrapper;
     if (class_isMetaClass(object_getClass(object)))
         wrapper = [[self classInfoForClass:(Class)object] constructor];
     else {
@@ -427,9 +483,21 @@ static void copyPrototypeProperties(JSContext *context, Class objcClass, Protoco
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=105891
     // This general approach to wrapper caching is pretty effective, but there are a couple of problems:
     // (1) For immortal objects JSValues will effectively leak and this results in error output being logged - we should avoid adding associated objects to immortal objects.
-    // (2) A long lived object may rack up many JSValues. When the contexts are released these will unproctect the associated JavaScript objects,
+    // (2) A long lived object may rack up many JSValues. When the contexts are released these will unprotect the associated JavaScript objects,
     //     but still, would probably nicer if we made it so that only one associated object was required, broadcasting object dealloc.
-    objc_setAssociatedObject(object, m_context, wrapper, OBJC_ASSOCIATION_RETAIN);
+    JSC::ExecState* exec = toJS([m_context globalContextRef]);
+    jsWrapper = toJS(exec, valueInternalValue(wrapper)).toObject(exec);
+    m_cachedJSWrappers.set(object, jsWrapper);
+    return wrapper;
+}
+
+- (JSValue *)objcWrapperForJSValueRef:(JSValueRef)value
+{
+    JSValue *wrapper = static_cast<JSValue *>(NSMapGet(m_cachedObjCWrappers, value));
+    if (!wrapper) {
+        wrapper = [[[JSValue alloc] initWithValue:value inContext:m_context] autorelease];
+        NSMapInsert(m_cachedObjCWrappers, value, wrapper);
+    }
     return wrapper;
 }
 

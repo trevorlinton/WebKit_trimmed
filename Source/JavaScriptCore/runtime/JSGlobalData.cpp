@@ -32,6 +32,7 @@
 #include "ArgList.h"
 #include "CodeCache.h"
 #include "CommonIdentifiers.h"
+#include "DFGLongLivedState.h"
 #include "DebuggerActivation.h"
 #include "FunctionConstructor.h"
 #include "GCActivityCallback.h"
@@ -56,6 +57,7 @@
 #include "ParserArena.h"
 #include "RegExpCache.h"
 #include "RegExpObject.h"
+#include "SourceProviderCache.h"
 #include "StrictEvalActivation.h"
 #include "StrongInlines.h"
 #include "UnlinkedCodeBlock.h"
@@ -185,7 +187,6 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, HeapType heapType)
     , m_timeoutCount(512)
 #endif
     , m_newStringsSinceLastHashConst(0)
-    , m_apiData(0)
 #if ENABLE(ASSEMBLER)
     , m_canUseAssembler(enableAssembler(executableAllocator))
 #endif
@@ -207,6 +208,7 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, HeapType heapType)
     JSLockHolder lock(this);
     IdentifierTable* existingEntryIdentifierTable = wtfThreadData().setCurrentIdentifierTable(identifierTable);
     structureStructure.set(*this, Structure::createStructure(*this));
+    structureRareDataStructure.set(*this, StructureRareData::createStructure(*this, 0, jsNull()));
     debuggerActivationStructure.set(*this, DebuggerActivation::createStructure(*this, 0, jsNull()));
     interruptedExecutionErrorStructure.set(*this, InterruptedExecutionError::createStructure(*this, 0, jsNull()));
     terminatedExecutionErrorStructure.set(*this, TerminatedExecutionError::createStructure(*this, 0, jsNull()));
@@ -230,11 +232,13 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, HeapType heapType)
     unlinkedProgramCodeBlockStructure.set(*this, UnlinkedProgramCodeBlock::createStructure(*this, 0, jsNull()));
     unlinkedEvalCodeBlockStructure.set(*this, UnlinkedEvalCodeBlock::createStructure(*this, 0, jsNull()));
     unlinkedFunctionCodeBlockStructure.set(*this, UnlinkedFunctionCodeBlock::createStructure(*this, 0, jsNull()));
+    smallStrings.initializeCommonStrings(*this);
 
     wtfThreadData().setCurrentIdentifierTable(existingEntryIdentifierTable);
 
 #if ENABLE(JIT)
-    jitStubs = adoptPtr(new JITThunks(this));
+    jitStubs = adoptPtr(new JITThunks());
+    performPlatformSpecificJITAssertions(this);
 #endif
     
     interpreter->initialize(this->canUseJIT());
@@ -244,11 +248,16 @@ JSGlobalData::JSGlobalData(GlobalDataType globalDataType, HeapType heapType)
 #endif
 
     heap.notifyIsSafeToCollect();
-    
+
     LLInt::Data::performAssertions(*this);
     
     if (Options::enableProfiler())
         m_perBytecodeProfiler = adoptPtr(new Profiler::Database(*this));
+
+#if ENABLE(DFG_JIT)
+    if (canUseJIT())
+        m_dfgState = adoptPtr(new DFG::LongLivedState());
+#endif
 }
 
 JSGlobalData::~JSGlobalData()
@@ -445,6 +454,19 @@ void JSGlobalData::dumpSampleData(ExecState* exec)
 #if ENABLE(ASSEMBLER)
     ExecutableAllocator::dumpProfile();
 #endif
+}
+
+SourceProviderCache* JSGlobalData::addSourceProviderCache(SourceProvider* sourceProvider)
+{
+    SourceProviderCacheMap::AddResult addResult = sourceProviderCacheMap.add(sourceProvider, 0);
+    if (addResult.isNewEntry)
+        addResult.iterator->value = adoptRef(new SourceProviderCache);
+    return addResult.iterator->value.get();
+}
+
+void JSGlobalData::clearSourceProviderCaches()
+{
+    sourceProviderCacheMap.clear();
 }
 
 struct StackPreservingRecompiler : public MarkedBlock::VoidFunctor {

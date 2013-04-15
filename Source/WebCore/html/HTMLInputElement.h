@@ -27,7 +27,6 @@
 
 #include "FileChooser.h"
 #include "HTMLTextFormControlElement.h"
-#include "ImageLoaderClient.h"
 #include "StepRange.h"
 
 namespace WebCore {
@@ -43,7 +42,7 @@ class KURL;
 class ListAttributeTargetObserver;
 struct DateTimeChooserParameters;
 
-class HTMLInputElement : public HTMLTextFormControlElement, public ImageLoaderClientBase<HTMLInputElement> {
+class HTMLInputElement : public HTMLTextFormControlElement {
 public:
     static PassRefPtr<HTMLInputElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
@@ -96,6 +95,10 @@ public:
     bool isPasswordField() const;
     bool isCheckbox() const;
     bool isRangeControl() const;
+
+#if ENABLE(INPUT_TYPE_COLOR)
+    bool isColorControl() const;
+#endif
 
     // FIXME: It's highly likely that any call site calling this function should instead
     // be using a different one. Many input elements behave like text fields, and in addition
@@ -268,6 +271,9 @@ public:
     void setCapture(const String& value);
 #endif
 
+    String nwWorkingDir() const;
+    void setNwWorkingDir(const String& value);
+
     static const int maximumLength;
 
     unsigned height() const;
@@ -277,8 +283,6 @@ public:
 
     virtual void blur() OVERRIDE;
     void defaultBlur();
-    void defaultFocus(bool restorePreviousSelection);
-    virtual void focus(bool restorePreviousSelection = true) OVERRIDE;
 
     virtual const AtomicString& name() const OVERRIDE;
 
@@ -298,14 +302,17 @@ public:
 
 protected:
     HTMLInputElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
-    void createShadowSubtree();
+
     virtual void defaultEventHandler(Event*);
+
+private:
+    enum AutoCompleteSetting { Uninitialized, On, Off };
+
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=92608
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
-private:
-    enum AutoCompleteSetting { Uninitialized, On, Off };
+    virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
 
     virtual void willChangeForm() OVERRIDE;
     virtual void didChangeForm() OVERRIDE;
@@ -337,7 +344,7 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual void finishParsingChildren();
 
     virtual void copyNonAttributePropertiesFromElement(const Element&);
@@ -354,7 +361,6 @@ private:
     virtual void postDispatchEventHandler(Event*, void* dataFromPreDispatch);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-
     virtual bool isInRange() const;
     virtual bool isOutOfRange() const;
 
@@ -374,7 +380,7 @@ private:
     virtual void updatePlaceholderText();
     virtual bool isEmptyValue() const OVERRIDE { return innerTextValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const { return suggestedValue().isEmpty(); }
-    virtual void handleFocusEvent();
+    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection) OVERRIDE;
     virtual void handleBlurEvent();
 
     virtual bool isOptionalFormControl() const { return !isRequiredFormControl(); }
@@ -396,6 +402,9 @@ private:
     CheckedRadioButtons* checkedRadioButtons() const;
     void addToRadioButtonGroup();
     void removeFromRadioButtonGroup();
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
+#endif
 
     AtomicString m_name;
     String m_valueIfDirty;

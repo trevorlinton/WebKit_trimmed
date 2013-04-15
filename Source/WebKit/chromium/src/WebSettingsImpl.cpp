@@ -54,7 +54,7 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_renderVSyncEnabled(true)
     , m_renderVSyncNotificationEnabled(false)
     , m_viewportEnabled(false)
-    , m_applyDeviceScaleFactorInCompositor(false)
+    , m_initializeAtMinimumPageScale(true)
     , m_gestureTapHighlightEnabled(true)
     , m_autoZoomFocusedNodeToLegibleScale(false)
     , m_deferredImageDecodingEnabled(false)
@@ -142,7 +142,7 @@ bool WebSettingsImpl::deviceSupportsTouch()
 
 void WebSettingsImpl::setApplyDeviceScaleFactorInCompositor(bool applyDeviceScaleFactorInCompositor)
 {
-    m_applyDeviceScaleFactorInCompositor = applyDeviceScaleFactorInCompositor;
+    m_settings->setApplyDeviceScaleFactorInCompositor(applyDeviceScaleFactorInCompositor);
 }
 
 void WebSettingsImpl::setApplyPageScaleFactorInCompositor(bool applyPageScaleFactorInCompositor)
@@ -206,6 +206,11 @@ void WebSettingsImpl::setLoadsImagesAutomatically(bool loadsImagesAutomatically)
 void WebSettingsImpl::setImagesEnabled(bool enabled)
 {
     m_settings->setImagesEnabled(enabled);
+}
+
+void WebSettingsImpl::setInitializeAtMinimumPageScale(bool enabled)
+{
+    m_initializeAtMinimumPageScale = enabled;
 }
 
 void WebSettingsImpl::setPluginsEnabled(bool enabled)
@@ -293,6 +298,11 @@ void WebSettingsImpl::setXSSAuditorEnabled(bool enabled)
     m_settings->setXSSAuditorEnabled(enabled);
 }
 
+void WebSettingsImpl::setUnsafePluginPastingEnabled(bool enabled)
+{
+    m_settings->setUnsafePluginPastingEnabled(enabled);
+}
+
 void WebSettingsImpl::setDNSPrefetchingEnabled(bool enabled)
 {
     m_settings->setDNSPrefetchingEnabled(enabled);
@@ -352,6 +362,13 @@ void WebSettingsImpl::setTouchDragDropEnabled(bool enabled)
     m_settings->setTouchDragDropEnabled(enabled);
 }
 
+void WebSettingsImpl::setThreadedHTMLParser(bool enabled)
+{
+#if ENABLE(THREADED_HTML_PARSER)
+    m_settings->setThreadedHTMLParser(enabled);
+#endif
+}
+
 void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
 {
     m_settings->setOfflineWebApplicationCacheEnabled(enabled);
@@ -395,6 +412,11 @@ void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 void WebSettingsImpl::setPrivilegedWebGLExtensionsEnabled(bool enabled)
 {
     m_settings->setPrivilegedWebGLExtensionsEnabled(enabled);
+}
+
+void WebSettingsImpl::setRecordRenderingStats(bool enabled)
+{
+    m_recordRenderingStats = enabled;
 }
 
 void WebSettingsImpl::setRenderVSyncEnabled(bool enabled)
@@ -502,6 +524,11 @@ void WebSettingsImpl::setAcceleratedFiltersEnabled(bool enabled)
 void WebSettingsImpl::setAccelerated2dCanvasEnabled(bool enabled)
 {
     m_settings->setAccelerated2dCanvasEnabled(enabled);
+}
+
+void WebSettingsImpl::setAntialiased2dCanvasEnabled(bool enabled)
+{
+    m_settings->setAntialiased2dCanvasEnabled(enabled);
 }
 
 void WebSettingsImpl::setDeferred2dCanvasEnabled(bool enabled)
@@ -714,6 +741,11 @@ void WebSettingsImpl::setGestureTapHighlightEnabled(bool enableHighlight)
     m_gestureTapHighlightEnabled = enableHighlight;
 }
 
+bool WebSettingsImpl::applyDeviceScaleFactorInCompositor() const
+{
+    return m_settings->applyDeviceScaleFactorInCompositor();
+}
+
 bool WebSettingsImpl::applyPageScaleFactorInCompositor() const
 {
     return m_settings->applyPageScaleFactorInCompositor();
@@ -722,6 +754,11 @@ bool WebSettingsImpl::applyPageScaleFactorInCompositor() const
 void WebSettingsImpl::setAllowCustomScrollbarInMainFrame(bool enabled)
 {
     m_settings->setAllowCustomScrollbarInMainFrame(enabled);
+}
+
+void WebSettingsImpl::setCompositedScrollingForFramesEnabled(bool enabled)
+{
+    m_settings->setCompositedScrollingForFramesEnabled(enabled);
 }
 
 } // namespace WebKit

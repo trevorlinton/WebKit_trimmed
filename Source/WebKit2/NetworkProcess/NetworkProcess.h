@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -61,13 +61,14 @@ public:
     template <typename T>
     void addSupplement()
     {
-        m_supplements.add(T::supplementName(), new T(this));
+        m_supplements.add(T::supplementName(), adoptPtr<NetworkProcessSupplement>(new T(this)));
     }
 
     void removeNetworkConnectionToWebProcess(NetworkConnectionToWebProcess*);
 
     NetworkResourceLoadScheduler& networkResourceLoadScheduler() { return m_networkResourceLoadScheduler; }
 
+    AuthenticationManager& authenticationManager();
     DownloadManager& downloadManager();
 
 private:
@@ -77,12 +78,14 @@ private:
     void platformInitializeNetworkProcess(const NetworkProcessCreationParameters&);
 
     // ChildProcess
+    virtual void initializeProcessName(const ChildProcessInitializationParameters&) OVERRIDE;
+    virtual void initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&) OVERRIDE;
+    virtual void initializeConnection(CoreIPC::Connection*) OVERRIDE;
     virtual bool shouldTerminate() OVERRIDE;
-    virtual void initializeSandbox(const String& clientIdentifier) OVERRIDE;
 
     // CoreIPC::Connection::Client
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&) OVERRIDE;
-    virtual void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
+    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    virtual void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
     virtual void didClose(CoreIPC::Connection*) OVERRIDE;
     virtual void didReceiveInvalidMessage(CoreIPC::Connection*, CoreIPC::StringReference messageReceiverName, CoreIPC::StringReference messageName) OVERRIDE;
 
@@ -93,7 +96,7 @@ private:
     virtual AuthenticationManager& downloadsAuthenticationManager() OVERRIDE;
 
     // Message Handlers
-    void didReceiveNetworkProcessMessage(CoreIPC::Connection*, CoreIPC::MessageID, CoreIPC::MessageDecoder&);
+    void didReceiveNetworkProcessMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
     void initializeNetworkProcess(const NetworkProcessCreationParameters&);
     void createNetworkConnectionToWebProcess();
     void ensurePrivateBrowsingSession();
@@ -103,6 +106,8 @@ private:
     void setCacheModel(uint32_t);
 
     void allowSpecificHTTPSCertificateForHost(const PlatformCertificateInfo&, const String& host);
+
+    void getNetworkProcessStatistics(uint64_t callbackID);
 
     // Platform Helpers
     void platformSetCacheModel(CacheModel);
@@ -116,7 +121,7 @@ private:
     bool m_hasSetCacheModel;
     CacheModel m_cacheModel;
 
-    typedef HashMap<AtomicString, NetworkProcessSupplement*> NetworkProcessSupplementMap;
+    typedef HashMap<const char*, OwnPtr<NetworkProcessSupplement>, PtrHash<const char*> > NetworkProcessSupplementMap;
     NetworkProcessSupplementMap m_supplements;
 };
 

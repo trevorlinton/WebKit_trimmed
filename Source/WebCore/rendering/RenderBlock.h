@@ -88,8 +88,10 @@ public:
     template <class> friend struct ValueToString;
 #endif
 
-    RenderBlock(Node*);
+    explicit RenderBlock(ContainerNode*);
     virtual ~RenderBlock();
+
+    static RenderBlock* createAnonymous(Document*);
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -139,6 +141,15 @@ public:
 
     void setHasMarkupTruncation(bool b) { m_hasMarkupTruncation = b; }
     bool hasMarkupTruncation() const { return m_hasMarkupTruncation; }
+
+    void setHasMarginBeforeQuirk(bool b) { m_hasMarginBeforeQuirk = b; }
+    void setHasMarginAfterQuirk(bool b) { m_hasMarginAfterQuirk = b; }
+
+    bool hasMarginBeforeQuirk() const { return m_hasMarginBeforeQuirk; }
+    bool hasMarginAfterQuirk() const { return m_hasMarginAfterQuirk; }
+
+    bool hasMarginBeforeQuirk(const RenderBox* child) const;
+    bool hasMarginAfterQuirk(const RenderBox* child) const;
 
     RootInlineBox* createAndAppendRootInlineBox();
 
@@ -238,10 +249,10 @@ public:
     RenderBlock* blockBeforeWithinSelectionRoot(LayoutSize& offset) const;
 
     LayoutRect logicalRectToPhysicalRect(const LayoutPoint& physicalPosition, const LayoutRect& logicalRect);
-        
+
     // Helper methods for computing line counts and heights for line counts.
-    RootInlineBox* lineAtIndex(int);
-    int lineCount();
+    RootInlineBox* lineAtIndex(int) const;
+    int lineCount(const RootInlineBox* = 0, bool* = 0) const;
     int heightForLineCount(int);
     void clearTruncation();
 
@@ -422,6 +433,7 @@ public:
     LayoutUnit endOffsetForContent() const { return !style()->isLeftToRightDirection() ? logicalLeftOffsetForContent() : logicalWidth() - logicalRightOffsetForContent(); }
     
     void setStaticInlinePositionForChild(RenderBox*, LayoutUnit blockOffset, LayoutUnit inlinePosition);
+    void updateStaticInlinePositionForChild(RenderBox*, LayoutUnit logicalTop);
 
     LayoutUnit computeStartPositionDeltaForChildAvoidingFloats(const RenderBox* child, LayoutUnit childMarginStart, RenderRegion* = 0, LayoutUnit offsetFromLogicalTopOfFirstPage = 0);
 
@@ -435,6 +447,7 @@ public:
 
 #if ENABLE(CSS_EXCLUSIONS)
     ExclusionShapeInsideInfo* exclusionShapeInsideInfo() const;
+    ExclusionShapeInsideInfo* layoutExclusionShapeInsideInfo() const;
     bool allowsExclusionShapeInsideInfoSharing() const { return !isInline() && !isFloating(); }
 #endif
 
@@ -452,18 +465,34 @@ protected:
     void setMaxMarginBeforeValues(LayoutUnit pos, LayoutUnit neg);
     void setMaxMarginAfterValues(LayoutUnit pos, LayoutUnit neg);
 
+    void setMustDiscardMarginBefore(bool = true);
+    void setMustDiscardMarginAfter(bool = true);
+
+    bool mustDiscardMarginBefore() const;
+    bool mustDiscardMarginAfter() const;
+
+    bool mustDiscardMarginBeforeForChild(const RenderBox*) const;
+    bool mustDiscardMarginAfterForChild(const RenderBox*) const;
+
+    bool mustSeparateMarginBeforeForChild(const RenderBox*) const;
+    bool mustSeparateMarginAfterForChild(const RenderBox*) const;
+
     void initMaxMarginValues()
     {
         if (m_rareData) {
             m_rareData->m_margins = MarginValues(RenderBlockRareData::positiveMarginBeforeDefault(this) , RenderBlockRareData::negativeMarginBeforeDefault(this),
                                                  RenderBlockRareData::positiveMarginAfterDefault(this), RenderBlockRareData::negativeMarginAfterDefault(this));
             m_rareData->m_paginationStrut = 0;
+
+            m_rareData->m_discardMarginBefore = false;
+            m_rareData->m_discardMarginAfter = false;
         }
     }
 
     virtual void layout();
 
-    void layoutPositionedObjects(bool relayoutChildren);
+    void layoutPositionedObjects(bool relayoutChildren, bool fixedPositionObjectsOnly = false);
+    void markFixedPositionObjectForLayoutIfNeeded(RenderObject* child);
 
     virtual void paint(PaintInfo&, const LayoutPoint&);
     virtual void paintObject(PaintInfo&, const LayoutPoint&);
@@ -506,7 +535,9 @@ protected:
 
     void setDesiredColumnCountAndWidth(int, LayoutUnit);
 
+public:
     void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false);
+protected:
     virtual void addOverflowFromChildren();
     void addOverflowFromFloats();
     void addOverflowFromPositionedObjects();
@@ -514,7 +545,7 @@ protected:
     void addOverflowFromInlineChildren();
     void addVisualOverflowFromTheme();
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
 #if ENABLE(SVG)
     // Only used by RenderSVGText, which explicitely overrides RenderBlock::layoutBlock(), do NOT use for anything else.
@@ -527,8 +558,8 @@ protected:
     }
 #endif
 
-    void updateRegionsAndExclusionsLogicalSize();
-    void computeRegionRangeForBlock();
+    bool updateRegionsAndExclusionsLogicalSize(RenderFlowThread*);
+    void computeRegionRangeForBlock(RenderFlowThread*);
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox*);
 
@@ -729,6 +760,12 @@ private:
 
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
+#if ENABLE(CSS_EXCLUSIONS)
+        ExclusionShapeOutsideInfo *shapeOutside = child->renderer()->exclusionShapeOutsideInfo();
+        if (shapeOutside)
+            return child->x();
+#endif
+
         if (isHorizontalWritingMode())
             return child->x() + child->renderer()->marginLeft();
         else
@@ -737,6 +774,12 @@ private:
         
     LayoutUnit yPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
+#if ENABLE(CSS_EXCLUSIONS)
+        ExclusionShapeOutsideInfo *shapeOutside = child->renderer()->exclusionShapeOutsideInfo();
+        if (shapeOutside)
+            return child->y();
+#endif
+
         if (isHorizontalWritingMode())
             return child->y() + marginBeforeForChild(child->renderer());
         else
@@ -855,7 +898,6 @@ private:
     
     virtual RenderObject* hoverAncestor() const;
     virtual void updateDragState(bool dragOn);
-    virtual void childBecameNonInline(RenderObject* child);
 
     virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool /*clipToVisibleContent*/) OVERRIDE
     {
@@ -930,9 +972,11 @@ private:
 
         // These variables are used to detect quirky margins that we need to collapse away (in table cells
         // and in the body element).
-        bool m_marginBeforeQuirk : 1;
-        bool m_marginAfterQuirk : 1;
+        bool m_hasMarginBeforeQuirk : 1;
+        bool m_hasMarginAfterQuirk : 1;
         bool m_determinedMarginBeforeQuirk : 1;
+
+        bool m_discardMargin : 1;
 
         // These flags track the previous maximal positive and negative margins.
         LayoutUnit m_positiveMargin;
@@ -948,45 +992,46 @@ private:
             m_positiveMargin = 0;
             m_negativeMargin = 0;
         }
-        void setMarginBeforeQuirk(bool b) { m_marginBeforeQuirk = b; }
-        void setMarginAfterQuirk(bool b) { m_marginAfterQuirk = b; }
+        void setHasMarginBeforeQuirk(bool b) { m_hasMarginBeforeQuirk = b; }
+        void setHasMarginAfterQuirk(bool b) { m_hasMarginAfterQuirk = b; }
         void setDeterminedMarginBeforeQuirk(bool b) { m_determinedMarginBeforeQuirk = b; }
-        void setPositiveMargin(LayoutUnit p) { m_positiveMargin = p; }
-        void setNegativeMargin(LayoutUnit n) { m_negativeMargin = n; }
+        void setPositiveMargin(LayoutUnit p) { ASSERT(!m_discardMargin); m_positiveMargin = p; }
+        void setNegativeMargin(LayoutUnit n) { ASSERT(!m_discardMargin); m_negativeMargin = n; }
         void setPositiveMarginIfLarger(LayoutUnit p)
         {
+            ASSERT(!m_discardMargin);
             if (p > m_positiveMargin)
                 m_positiveMargin = p;
         }
         void setNegativeMarginIfLarger(LayoutUnit n)
         {
+            ASSERT(!m_discardMargin);
             if (n > m_negativeMargin)
                 m_negativeMargin = n;
         }
 
-        void setMargin(LayoutUnit p, LayoutUnit n) { m_positiveMargin = p; m_negativeMargin = n; }
+        void setMargin(LayoutUnit p, LayoutUnit n) { ASSERT(!m_discardMargin); m_positiveMargin = p; m_negativeMargin = n; }
+        void setCanCollapseMarginAfterWithChildren(bool collapse) { m_canCollapseMarginAfterWithChildren = collapse; }
+        void setDiscardMargin(bool value) { m_discardMargin = value; }
 
         bool atBeforeSideOfBlock() const { return m_atBeforeSideOfBlock; }
         bool canCollapseWithMarginBefore() const { return m_atBeforeSideOfBlock && m_canCollapseMarginBeforeWithChildren; }
         bool canCollapseWithMarginAfter() const { return m_atAfterSideOfBlock && m_canCollapseMarginAfterWithChildren; }
         bool canCollapseMarginBeforeWithChildren() const { return m_canCollapseMarginBeforeWithChildren; }
         bool canCollapseMarginAfterWithChildren() const { return m_canCollapseMarginAfterWithChildren; }
-        void setCanCollapseMarginAfterWithChildren(bool collapse) { m_canCollapseMarginAfterWithChildren = collapse; }
         bool quirkContainer() const { return m_quirkContainer; }
         bool determinedMarginBeforeQuirk() const { return m_determinedMarginBeforeQuirk; }
-        bool marginBeforeQuirk() const { return m_marginBeforeQuirk; }
-        bool marginAfterQuirk() const { return m_marginAfterQuirk; }
+        bool hasMarginBeforeQuirk() const { return m_hasMarginBeforeQuirk; }
+        bool hasMarginAfterQuirk() const { return m_hasMarginAfterQuirk; }
         LayoutUnit positiveMargin() const { return m_positiveMargin; }
         LayoutUnit negativeMargin() const { return m_negativeMargin; }
+        bool discardMargin() const { return m_discardMargin; }
         LayoutUnit margin() const { return m_positiveMargin - m_negativeMargin; }
     };
 
     void layoutBlockChild(RenderBox* child, MarginInfo&, LayoutUnit& previousFloatLogicalBottom, LayoutUnit& maxFloatLogicalBottom);
     void adjustPositionedBlock(RenderBox* child, const MarginInfo&);
     void adjustFloatingBlock(const MarginInfo&);
-    bool handleSpecialChild(RenderBox* child, const MarginInfo&);
-    bool handleFloatingChild(RenderBox* child, const MarginInfo&);
-    bool handlePositionedChild(RenderBox* child, const MarginInfo&);
 
     RenderBoxModelObject* createReplacementRunIn(RenderBoxModelObject* runIn);
     void moveRunInUnderSiblingBlockIfNeeded(RenderObject* runIn);
@@ -995,7 +1040,7 @@ private:
     LayoutUnit collapseMargins(RenderBox* child, MarginInfo&);
     LayoutUnit clearFloatsIfNeeded(RenderBox* child, MarginInfo&, LayoutUnit oldTopPosMargin, LayoutUnit oldTopNegMargin, LayoutUnit yPos);
     LayoutUnit estimateLogicalTopPosition(RenderBox* child, const MarginInfo&, LayoutUnit& estimateWithoutPagination);
-    void marginBeforeEstimateForChild(RenderBox* child, LayoutUnit& positiveMarginBefore, LayoutUnit& negativeMarginBefore) const;
+    void marginBeforeEstimateForChild(RenderBox*, LayoutUnit&, LayoutUnit&, bool&) const;
     void determineLogicalLeftPositionForChild(RenderBox* child);
     void handleAfterSideOfBlock(LayoutUnit top, LayoutUnit bottom, MarginInfo&);
     void setCollapsedBottomMargin(const MarginInfo&);
@@ -1036,7 +1081,7 @@ protected:
     bool pushToNextPageWithMinimumLogicalHeight(LayoutUnit& adjustment, LayoutUnit logicalOffset, LayoutUnit minimumLogicalHeight) const;
 
     LayoutUnit adjustForUnsplittableChild(RenderBox* child, LayoutUnit logicalOffset, bool includeMargins = false); // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
-    void adjustLinePositionForPagination(RootInlineBox*, LayoutUnit& deltaOffset); // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
+    void adjustLinePositionForPagination(RootInlineBox*, LayoutUnit& deltaOffset, RenderFlowThread*); // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
     LayoutUnit adjustBlockChildForPagination(LayoutUnit logicalTopAfterClear, LayoutUnit estimateWithoutPagination, RenderBox* child, bool atBeforeSideOfBlock);
 
     // Adjust from painting offsets to the local coords of this renderer
@@ -1045,9 +1090,9 @@ protected:
     // This function is called to test a line box that has moved in the block direction to see if it has ended up in a new
     // region/page/column that has a different available line width than the old one. Used to know when you have to dirty a
     // line, i.e., that it can't be re-used.
-    bool lineWidthForPaginatedLineChanged(RootInlineBox*, LayoutUnit lineDelta = 0) const;
+    bool lineWidthForPaginatedLineChanged(RootInlineBox*, LayoutUnit lineDelta, RenderFlowThread*) const;
 
-    bool logicalWidthChangedInRegions() const;
+    bool logicalWidthChangedInRegions(RenderFlowThread*) const;
 
     virtual bool requiresColumns(int desiredColumnCount) const;
 
@@ -1102,17 +1147,13 @@ protected:
         LayoutUnit* m_heightRemaining;
     };
 
-    class FloatingObjects {
-    public:
-        FloatingObjects(const RenderBlock* renderer, bool horizontalWritingMode)
-            : m_placedFloatsTree(UninitializedTree)
-            , m_leftObjectsCount(0)
-            , m_rightObjectsCount(0)
-            , m_horizontalWritingMode(horizontalWritingMode)
-            , m_renderer(renderer)
-        {
-        }
+    void createFloatingObjects();
 
+public:
+
+    class FloatingObjects {
+        WTF_MAKE_NONCOPYABLE(FloatingObjects); WTF_MAKE_FAST_ALLOCATED;
+    public:
         void clear();
         void add(FloatingObject*);
         void remove(FloatingObject*);
@@ -1129,6 +1170,7 @@ protected:
             return m_placedFloatsTree; 
         }
     private:
+        FloatingObjects(const RenderBlock*, bool horizontalWritingMode);
         void computePlacedFloatsTree();
         inline void computePlacedFloatsTreeIfNeeded()
         {
@@ -1145,7 +1187,12 @@ protected:
         unsigned m_rightObjectsCount;
         bool m_horizontalWritingMode;
         const RenderBlock* m_renderer;
+
+        friend void RenderBlock::createFloatingObjects();
     };
+
+protected:
+
     OwnPtr<FloatingObjects> m_floatingObjects;
 
     // Allocated only when some of these fields have non-default values
@@ -1157,8 +1204,10 @@ protected:
             , m_paginationStrut(0)
             , m_pageLogicalOffset(0)
             , m_lineGridBox(0)
-            , m_shouldBreakAtLineToAvoidWidow(false)
             , m_lineBreakToAvoidWidow(0)
+            , m_shouldBreakAtLineToAvoidWidow(false)
+            , m_discardMarginBefore(false)
+            , m_discardMarginAfter(false)
         { 
         }
 
@@ -1166,7 +1215,6 @@ protected:
         { 
             return std::max<LayoutUnit>(block->marginBefore(), 0);
         }
-        
         static LayoutUnit negativeMarginBeforeDefault(const RenderBlock* block)
         { 
             return std::max<LayoutUnit>(-block->marginBefore(), 0);
@@ -1186,8 +1234,10 @@ protected:
         
         RootInlineBox* m_lineGridBox;
 
-        bool m_shouldBreakAtLineToAvoidWidow;
         RootInlineBox* m_lineBreakToAvoidWidow;
+        bool m_shouldBreakAtLineToAvoidWidow : 1;
+        bool m_discardMarginBefore : 1;
+        bool m_discardMarginAfter : 1;
      };
 
     OwnPtr<RenderBlockRareData> m_rareData;
@@ -1195,9 +1245,12 @@ protected:
     RenderObjectChildList m_children;
     RenderLineBoxList m_lineBoxes;   // All of the root line boxes created for this block flow.  For example, <div>Hello<br>world.</div> will have two total lines for the <div>.
 
-    mutable signed m_lineHeight : 30;
+    mutable signed m_lineHeight : 27;
+    unsigned m_hasMarginBeforeQuirk : 1; // Note these quirk values can't be put in RenderBlockRareData since they are set too frequently.
+    unsigned m_hasMarginAfterQuirk : 1;
     unsigned m_beingDestroyed : 1;
     unsigned m_hasMarkupTruncation : 1;
+    unsigned m_hasBorderOrPaddingLogicalWidthChanged : 1;
 
     // RenderRubyBase objects need to be able to split and merge, moving their children around
     // (calling moveChildTo, moveAllChildrenTo, and makeChildrenNonInline).
@@ -1211,13 +1264,13 @@ private:
 
 inline RenderBlock* toRenderBlock(RenderObject* object)
 { 
-    ASSERT(!object || object->isRenderBlock());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderBlock());
     return static_cast<RenderBlock*>(object);
 }
 
 inline const RenderBlock* toRenderBlock(const RenderObject* object)
 { 
-    ASSERT(!object || object->isRenderBlock());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderBlock());
     return static_cast<const RenderBlock*>(object);
 }
 

@@ -33,7 +33,7 @@
 #include "PaintInfo.h"
 #include "RenderTableCol.h"
 #include "RenderView.h"
-#include "StyleInheritedData.h"
+#include "StylePropertySet.h"
 #include "TransformState.h"
 
 #if ENABLE(MATHML)
@@ -55,8 +55,8 @@ struct SameSizeAsRenderTableCell : public RenderBlock {
 COMPILE_ASSERT(sizeof(RenderTableCell) == sizeof(SameSizeAsRenderTableCell), RenderTableCell_should_stay_small);
 COMPILE_ASSERT(sizeof(CollapsedBorderValue) == 8, CollapsedBorderValue_should_stay_small);
 
-RenderTableCell::RenderTableCell(Node* node)
-    : RenderBlock(node)
+RenderTableCell::RenderTableCell(Element* element)
+    : RenderBlock(element)
     , m_column(unsetColumnIndex)
     , m_cellWidthChanged(false)
     , m_intrinsicPaddingBefore(0)
@@ -79,10 +79,10 @@ unsigned RenderTableCell::parseColSpanFromDOM() const
 {
     ASSERT(node());
     if (node()->hasTagName(tdTag) || node()->hasTagName(thTag))
-        return toHTMLTableCellElement(node())->colSpan();
+        return min<unsigned>(toHTMLTableCellElement(node())->colSpan(), maxColumnIndex);
 #if ENABLE(MATHML)
     if (node()->hasTagName(MathMLNames::mtdTag))
-        return toMathMLElement(node())->colSpan();
+        return min<unsigned>(toMathMLElement(node())->colSpan(), maxColumnIndex);
 #endif
     return 1;
 }
@@ -91,10 +91,10 @@ unsigned RenderTableCell::parseRowSpanFromDOM() const
 {
     ASSERT(node());
     if (node()->hasTagName(tdTag) || node()->hasTagName(thTag))
-        return toHTMLTableCellElement(node())->rowSpan();
+        return min<unsigned>(toHTMLTableCellElement(node())->rowSpan(), maxRowIndex);
 #if ENABLE(MATHML)
     if (node()->hasTagName(MathMLNames::mtdTag))
-        return toMathMLElement(node())->rowSpan();
+        return min<unsigned>(toMathMLElement(node())->rowSpan(), maxRowIndex);
 #endif
     return 1;
 }
@@ -1246,10 +1246,17 @@ void RenderTableCell::scrollbarsChanged(bool horizontalScrollbarChanged, bool ve
         setIntrinsicPaddingAfter(intrinsicPaddingAfter() - scrollbarHeight);
 }
 
+RenderTableCell* RenderTableCell::createAnonymous(Document* document)
+{
+    RenderTableCell* renderer = new (document->renderArena()) RenderTableCell(0);
+    renderer->setDocumentForAnonymous(document);
+    return renderer;
+}
+
 RenderTableCell* RenderTableCell::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
+    RenderTableCell* newCell = RenderTableCell::createAnonymous(parent->document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_CELL);
-    RenderTableCell* newCell = new (parent->renderArena()) RenderTableCell(parent->document() /* is anonymous */);
     newCell->setStyle(newStyle.release());
     return newCell;
 }

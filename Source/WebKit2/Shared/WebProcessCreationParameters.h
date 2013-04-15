@@ -53,7 +53,7 @@ struct WebProcessCreationParameters {
     WebProcessCreationParameters();
 
     void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder*, WebProcessCreationParameters&);
+    static bool decode(CoreIPC::ArgumentDecoder&, WebProcessCreationParameters&);
 
     String injectedBundlePath;
     SandboxExtension::Handle injectedBundlePathExtensionHandle;
@@ -122,19 +122,7 @@ struct WebProcessCreationParameters {
 
     bool shouldForceScreenFontSubstitution;
     bool shouldEnableKerningAndLigaturesByDefault;
-
-#elif PLATFORM(WIN)
-    uint64_t cfURLCacheDiskCapacity;
-    uint64_t cfURLCacheMemoryCapacity;
-
-    uint32_t initialHTTPCookieAcceptPolicy;
-
-    bool shouldPaintNativeControls;
-
-#if USE(CFNETWORK)
-    RetainPtr<CFDataRef> serializedDefaultStorageSession;
-#endif
-#endif // PLATFORM(WIN)
+#endif // PLATFORM(MAC)
 
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     HashMap<String, bool> notificationPermissions;

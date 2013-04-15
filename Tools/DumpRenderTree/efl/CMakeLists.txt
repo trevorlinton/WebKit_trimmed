@@ -1,4 +1,5 @@
 set(DumpRenderTree_SOURCES
+    ${TOOLS_DIR}/DumpRenderTree/atk/AccessibilityCallbacksAtk.cpp
     ${TOOLS_DIR}/DumpRenderTree/DumpRenderTreeCommon.cpp
     ${TOOLS_DIR}/DumpRenderTree/CyclicRedundancyCheck.cpp
     ${TOOLS_DIR}/DumpRenderTree/GCController.cpp
@@ -88,6 +89,7 @@ set(DumpRenderTree_INCLUDE_DIRECTORIES
     ${JAVASCRIPTCORE_DIR}/runtime
     ${JAVASCRIPTCORE_DIR}/ForwardingHeaders
     ${TOOLS_DIR}/DumpRenderTree
+    ${TOOLS_DIR}/DumpRenderTree/atk
     ${TOOLS_DIR}/DumpRenderTree/cairo
     ${TOOLS_DIR}/DumpRenderTree/efl
     ${WTF_DIR}
@@ -110,6 +112,15 @@ set(DumpRenderTree_INCLUDE_DIRECTORIES
     ${GLIB_INCLUDE_DIRS}
     ${LIBSOUP_INCLUDE_DIRS}
 )
+
+if (ENABLE_ACCESSIBILITY)
+    list(APPEND DumpRenderTree_INCLUDE_DIRECTORIES
+        ${ATK_INCLUDE_DIRS}
+    )
+    list(APPEND DumpRenderTree_LIBRARIES
+        ${ATK_LIBRARIES}
+    )
+endif ()
 
 # FIXME: DOWNLOADED_FONTS_DIR should not hardcode the directory
 # structure. See <https://bugs.webkit.org/show_bug.cgi?id=81475>.
